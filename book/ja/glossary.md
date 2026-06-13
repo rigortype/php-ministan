@@ -29,3 +29,7 @@
 | **置換（substitution）** | 型変数 `T` を具体型に置き換えること。`identity(42)` で `T → 42`、`Box<int>::get(): T` で `T → int`。一方向の代入（双方向の単一化はしない）。 | [S3](seasoned/03-generics.md) |
 | **スタブ（stub）** | ネイティブのリフレクションでは表せない型を、PHPDoc 付きの宣言を**パースして**外から補うファイル（Psalm の `.phpstub` 系）。 | [S5](seasoned/05-byref-stubs.md) |
 | **by-ref 出力引数** | `preg_match($s, $m)` の `$m` のような参照渡しの引数。関数が書き込むので、読み取りではなく**定義**として扱う（C# の `out`/`ref` 相当）。 | [S5](seasoned/05-byref-stubs.md) |
+| **制御フロー絞り込み** | コードの「形」が型を狭めること。早期 return で終わる枝は合流に寄与しない、`assert(...)` は以降を狭める、`match` の腕は条件で絞り込まれる。 | [S4](seasoned/04-control-flow.md) |
+| **結果キャッシュ** | ファイルの内容ハッシュをキーに解析結果を保存し、変わらないファイルの再解析を省く仕組み。salt（版・レベル）でロジック変更時に自動無効化。 | [S6](seasoned/06-performance.md) |
+| **型ワイドニング（loop widening）** | ループ本体を 2 パス（無音発見＋本解析）で解析し、ループをまたぐ変数の型を広げる不動点近似。型は単調に広がるので近似で足りる。 | [S7](seasoned/07-precision.md) |
+| **名前付き引数** | `f(size: 'big')` のように名前で渡す引数。型照合では、パラメータ名から宣言上の位置を逆引きして突き合わせる。 | [S7](seasoned/07-precision.md) |
