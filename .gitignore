@@ -2,4 +2,6 @@
 /dev/composer.lock
 /dev/.phpunit.result.cache
 /dev/.phpunit.cache/
+.ministan-cache/
+ministan-baseline.json
 .DS_Store

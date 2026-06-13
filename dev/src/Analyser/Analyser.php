@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ministan\Analyser;
 
+use Ministan\Cache\ResultCache;
 use Ministan\Reflection\ReflectionProvider;
 use Ministan\Reflection\ReflectionProviderStaticAccessor;
 use Ministan\Rules\RuleRegistry;
@@ -17,11 +18,13 @@ use PhpParser\Node;
  * Part 1: パース済み AST にルール群を適用する。
  * Part 2: スコープを伝播させながらルールを適用する。
  * Part 4: スコープが各式の型を推論する。ルール適用は走査へのコールバックとして渡す。
+ * S6:     ファイル内容が変わっていなければ結果キャッシュを使う。
  */
 final class Analyser
 {
     public function __construct(
         private readonly RuleRegistry $registry,
+        private readonly ?ResultCache $cache = null,
     ) {
     }
 
@@ -54,14 +57,38 @@ final class Analyser
             return [new Error(sprintf('File "%s" was not found.', $file), $file, 0)];
         }
 
+        if ($this->cache !== null) {
+            $cached = $this->cache->load($code);
+            if ($cached !== null) {
+                // キャッシュは (メッセージ, 行) だけ持つ。ファイル名は今のものを付け直す。
+                return array_map(
+                    static fn (array $entry): Error => new Error($entry['message'], $file, $entry['line']),
+                    $cached,
+                );
+            }
+        }
+
+        $errors = $this->computeErrors($code, $file);
+
+        $this->cache?->save(
+            $code,
+            array_map(static fn (Error $e): array => ['message' => $e->message, 'line' => $e->line], $errors),
+        );
+
+        return $errors;
+    }
+
+    /**
+     * @return list<Error>
+     */
+    private function computeErrors(string $code, string $file): array
+    {
         try {
             $ast = Parsing::parse($code);
         } catch (ParserError $e) {
-            // 構文エラーがある間はルールを走らせても意味がないので、ここで打ち切る。
             return [new Error($e->getRawMessage(), $file, $e->getStartLine())];
         }
 
-        // 解析対象の宣言からリフレクションを組み、型オブジェクトから引けるようにする。
         ReflectionProviderStaticAccessor::set(ReflectionProvider::fromNodes($ast));
 
         $errors = [];

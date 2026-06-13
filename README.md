@@ -54,7 +54,14 @@ $ dev/bin/ministan analyse examples/hello.php
 
 ### The Seasoned ministan（応用編）
 
-本格ジェネリクス、ループの不動点解析、constant array shape、拡張ルール API、結果キャッシュ・並列。
+| 章 | テーマ | 完成する機能 |
+|----|--------|--------------|
+| S1 | 設定と拡張 | NEON 設定・ignoreErrors・カスタムルール |
+| S2 | 配列を深める | constant array shape・配列アクセス・foreach 要素型 |
+| S3 | ジェネリクス | `@template`・`GenericObjectType`・型パラメータ置換 |
+| S4 | 制御フローと高度な narrowing | 早期 return・`assert`・`match` の腕 |
+| S5 | 参照渡しとスタブ | by-ref 出力引数・スタブによるシグネチャ補完 |
+| S6 | パフォーマンス | 結果キャッシュ |
 
 ## ライセンス
 

@@ -6,6 +6,7 @@ namespace Ministan\Command;
 
 use Ministan\Analyser\Analyser;
 use Ministan\Analyser\FileFinder;
+use Ministan\Cache\ResultCache;
 use Ministan\Configuration\Configuration;
 use Ministan\Configuration\ConfigurationLoader;
 use Ministan\Configuration\IgnoredErrorHelper;
@@ -34,6 +35,8 @@ final class AnalyseCommand
 
     private const string DEFAULT_CONFIG = 'ministan.neon';
 
+    private const string DEFAULT_CACHE = '.ministan-cache';
+
     /**
      * @param list<string> $args
      */
@@ -44,11 +47,16 @@ final class AnalyseCommand
         $configFile = null;
         $baselineToApply = null;
         $baselineToGenerate = null;
+        $cacheDir = null;
         $cliPaths = [];
 
         foreach ($args as $arg) {
             if (str_starts_with($arg, '--level=')) {
                 $cliLevel = min((int) substr($arg, strlen('--level=')), RuleRegistryFactory::MAX_LEVEL);
+            } elseif ($arg === '--cache') {
+                $cacheDir = self::DEFAULT_CACHE;
+            } elseif (str_starts_with($arg, '--cache=')) {
+                $cacheDir = substr($arg, strlen('--cache='));
             } elseif (str_starts_with($arg, '--configuration=')) {
                 $configFile = substr($arg, strlen('--configuration='));
             } elseif (str_starts_with($arg, '--error-format=')) {
@@ -77,7 +85,8 @@ final class AnalyseCommand
 
         $files = (new FileFinder())->find($paths);
         $registry = (new RuleRegistryFactory())->createForLevel($level, $this->instantiateRules($config));
-        $errors = (new Analyser($registry))->analyse($files);
+        $cache = $cacheDir !== null ? new ResultCache($cacheDir, sprintf('ministan-1|level=%d', $level)) : null;
+        $errors = (new Analyser($registry, $cache))->analyse($files);
 
         $errors = (new IgnoredErrorHelper($config->ignoreErrors))->filter($errors);
 

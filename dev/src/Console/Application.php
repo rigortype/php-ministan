@@ -44,6 +44,7 @@ final class Application
               --error-format=json       JSON で出力する
               --baseline=FILE           既知の指摘を無視する
               --generate-baseline[=FILE]  現在の指摘を baseline に書き出す
+              --cache[=DIR]             結果キャッシュを使う（既定 .ministan-cache）
 
             TXT;
 
