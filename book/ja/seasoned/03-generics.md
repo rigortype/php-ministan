@@ -100,6 +100,11 @@ foreach ($class->templateNames as $i => $templateName) {
 return (new TemplateTypeMap($map))->resolve($returnType);
 ```
 
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="../figures/s3-substitution-dark.svg">
+  <img src="../figures/s3-substitution.svg" alt="型変数の置換: 型変数 T が呼び出しごとに 42・'hello'・int といった具体型へ置換される">
+</picture>
+
 ## 動かす
 
 ```console

@@ -1,0 +1,36 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 700 340" width="700" height="340" role="img" aria-label="constant array shape: キーごとに値型を覚え、添字アクセスがピンポイントに効く" style="font-family:'Inter',system-ui,'Hiragino Kaku Gothic ProN','Yu Gothic','Noto Sans JP',sans-serif;fill:#0E1116">
+  <defs>
+    <marker id="arr" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="context-stroke"></path>
+    </marker>
+  </defs>
+
+  <rect x="0" y="0" width="700" height="340" style="fill:#F6F4EE"></rect>
+
+  <line x1="360" y1="28" x2="360" y2="258" style="stroke:#C9C4B7;stroke-width:1.2;stroke-dasharray:3 4"></line>
+
+  <text x="40" y="40" style="font-size:12.5px;font-weight:600;fill:#2D5C9E">constant array shape（ministan）</text>
+  <rect x="38" y="54" width="288" height="130" rx="8" style="fill:#FFFFFF;stroke:#C9C4B7;stroke-width:1.5"></rect>
+  <g style="font-family:'JetBrains Mono',ui-monospace,Menlo,Consolas,monospace;font-size:13.5px">
+    <text x="54" y="84" style="fill:#0E1116">array{</text>
+    <text x="70" y="114" style="fill:#0E1116">'id'   =&gt; <tspan style="fill:#2D5C9E;font-weight:700">42</tspan></text>
+    <text x="70" y="142" style="fill:#0E1116">'name' =&gt; <tspan style="fill:#2D5C9E;font-weight:700">'ada'</tspan></text>
+    <text x="54" y="170" style="fill:#0E1116">}</text>
+  </g>
+  <text x="44" y="222" style="font-family:'JetBrains Mono',ui-monospace,Menlo,Consolas,monospace;font-size:14px;fill:#0E1116">$row['id']</text>
+  <line x1="150" y1="217" x2="190" y2="217" marker-end="url(#arr)" style="fill:none;stroke:#585F6B;stroke-width:1.6"></line>
+  <text x="202" y="224" style="font-family:'JetBrains Mono',ui-monospace,Menlo,Consolas,monospace;font-size:17px;font-weight:700;fill:#2D5C9E">42</text>
+  <text x="44" y="248" style="font-size:11.5px;fill:#585F6B">定数 42 —— int ではない</text>
+
+  <text x="388" y="40" style="font-size:12.5px;font-weight:600;fill:#585F6B">一般の array（基礎編まで）</text>
+  <rect x="386" y="54" width="288" height="130" rx="8" style="fill:#FFFFFF;stroke:#C9C4B7;stroke-width:1.5"></rect>
+  <text x="402" y="92" style="font-family:'JetBrains Mono',ui-monospace,Menlo,Consolas,monospace;font-size:13.5px;fill:#0E1116">array&lt;string, int&gt;</text>
+  <text x="402" y="124" style="font-size:11.5px;fill:#585F6B">キー = string</text>
+  <text x="402" y="148" style="font-size:11.5px;fill:#585F6B">値 = int（個別の値は忘れる）</text>
+  <text x="396" y="222" style="font-family:'JetBrains Mono',ui-monospace,Menlo,Consolas,monospace;font-size:14px;fill:#0E1116">$row['id']</text>
+  <line x1="502" y1="217" x2="542" y2="217" marker-end="url(#arr)" style="fill:none;stroke:#585F6B;stroke-width:1.6"></line>
+  <text x="554" y="224" style="font-family:'JetBrains Mono',ui-monospace,Menlo,Consolas,monospace;font-size:17px;font-weight:700;fill:#585F6B">int</text>
+  <text x="396" y="248" style="font-size:11.5px;fill:#585F6B">型は分かるが値は不明</text>
+
+  <text x="38" y="316" style="font-family:'Source Serif 4',Georgia,serif;font-style:italic;font-size:13.5px;fill:#585F6B">キーごとに値型を覚えるから、添字アクセスがピンポイントに効く —— これが constant array shape。</text>
+</svg>

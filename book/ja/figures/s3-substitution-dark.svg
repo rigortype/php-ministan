@@ -1,0 +1,48 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 700 360" width="700" height="360" role="img" aria-label="型変数の置換: 型変数 T は呼び出しごとに具体型へ置換される" style="font-family:'Inter',system-ui,'Hiragino Kaku Gothic ProN','Yu Gothic','Noto Sans JP',sans-serif;fill:#F4F0E2">
+  <defs>
+    <marker id="arr" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="context-stroke"></path>
+    </marker>
+  </defs>
+
+  <rect x="0" y="0" width="700" height="360" style="fill:#1A1D23"></rect>
+
+  <text x="40" y="34" style="font-family:'JetBrains Mono',ui-monospace,Menlo,monospace;font-size:11.5px;fill:#B6BAC2">@template T</text>
+  <rect x="38" y="44" width="624" height="46" rx="8" style="fill:#22262E;stroke:#454A54;stroke-width:1.5"></rect>
+  <text x="56" y="74" style="font-family:'JetBrains Mono',ui-monospace,Menlo,Consolas,monospace;font-size:15px;fill:#F4F0E2">function identity(<tspan style="fill:#E4B25A;font-weight:700">T</tspan> $value): <tspan style="fill:#E4B25A;font-weight:700">T</tspan></text>
+  <text x="356" y="73" style="font-size:11px;fill:#B6BAC2">（<tspan style="font-family:'JetBrains Mono',ui-monospace,monospace;fill:#E4B25A;font-weight:700">T</tspan> ＝ 型変数・未確定）</text>
+
+  <text x="40" y="120" style="font-size:12px;fill:#B6BAC2">呼び出しごとに <tspan style="font-family:'JetBrains Mono',ui-monospace,Menlo,monospace;font-size:11.5px">TemplateTypeMap</tspan> が型変数 T を具体型へ置換する：</text>
+
+  <g style="font-family:'JetBrains Mono',ui-monospace,Menlo,Consolas,monospace">
+    <text x="48" y="163" style="font-size:14px;fill:#F4F0E2">identity(42)</text>
+    <text x="48" y="213" style="font-size:14px;fill:#F4F0E2">identity('hello')</text>
+    <text x="48" y="263" style="font-size:14px;fill:#F4F0E2">Box&lt;int&gt;::get()</text>
+  </g>
+
+  <g style="fill:none;stroke:#B6BAC2;stroke-width:1.6">
+    <line x1="226" y1="158" x2="262" y2="158" marker-end="url(#arr)"></line>
+    <line x1="226" y1="208" x2="262" y2="208" marker-end="url(#arr)"></line>
+    <line x1="226" y1="258" x2="262" y2="258" marker-end="url(#arr)"></line>
+    <line x1="410" y1="158" x2="446" y2="158" marker-end="url(#arr)"></line>
+    <line x1="410" y1="208" x2="446" y2="208" marker-end="url(#arr)"></line>
+    <line x1="410" y1="258" x2="446" y2="258" marker-end="url(#arr)"></line>
+  </g>
+
+  <g style="font-family:'JetBrains Mono',ui-monospace,Menlo,monospace;font-size:13px">
+    <rect x="266" y="143" width="140" height="30" rx="15" style="fill:#3A2E1C;stroke:#E4B25A;stroke-width:1.4"></rect>
+    <text x="336" y="163" text-anchor="middle" style="fill:#E4B25A;font-weight:600">T = 42</text>
+    <rect x="266" y="193" width="140" height="30" rx="15" style="fill:#3A2E1C;stroke:#E4B25A;stroke-width:1.4"></rect>
+    <text x="336" y="213" text-anchor="middle" style="fill:#E4B25A;font-weight:600">T = 'hello'</text>
+    <rect x="266" y="243" width="140" height="30" rx="15" style="fill:#3A2E1C;stroke:#E4B25A;stroke-width:1.4"></rect>
+    <text x="336" y="263" text-anchor="middle" style="fill:#E4B25A;font-weight:600">T = int</text>
+  </g>
+
+  <g style="font-family:'JetBrains Mono',ui-monospace,Menlo,Consolas,monospace;font-size:16px;font-weight:700;fill:#8AB6E6">
+    <text x="458" y="164">42</text>
+    <text x="458" y="214">'hello'</text>
+    <text x="458" y="264">int</text>
+  </g>
+
+  <text x="40" y="332" style="font-family:'Source Serif 4',Georgia,serif;font-style:italic;font-size:13.5px;fill:#B6BAC2">型変数 T は、呼び出しごとに具体型へと姿を変える —— これが置換（substitution）。</text>
+</svg>

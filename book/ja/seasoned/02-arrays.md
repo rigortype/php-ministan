@@ -28,6 +28,11 @@ public function getOffsetValueType(Type $offset): Type
 }
 ```
 
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="../figures/s2-array-shape-dark.svg">
+  <img src="../figures/s2-array-shape.svg" alt="constant array shape: キーごとに値型を保持し、$row['id'] を定数 42 にピンポイント解決する。一般の配列型では int 止まり">
+</picture>
+
 ## 配列リテラルを推論する
 
 `Scope::getType()` に配列リテラルを足します。キーがすべて定数なら shape、そうでなければ
