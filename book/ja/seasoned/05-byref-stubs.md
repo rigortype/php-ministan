@@ -1,6 +1,6 @@
 # The Seasoned ministan — S5: 参照渡しとスタブ
 
-> ＊コードはライブ実装ツリー [`dev/`](../../../dev) にあります（この章の到達点は `git tag seasoned-05`）。
+> ＊この章のコードはスナップショット [`impls/seasoned/05-byref-stubs`](../../../impls/seasoned/05-byref-stubs) にあります（この章の到達点は `git tag seasoned-05`）。
 
 Part 8 で自分自身を解析したとき、こう叱られました:
 
@@ -17,7 +17,7 @@ preg_match('/\d+/', $input, $matches);
 
 まずリフレクションに「どのパラメータが参照渡しか」を持たせます。ネイティブ関数は
 `ReflectionParameter::isPassedByReference()`、解析対象コードは `Param::$byRef` から
-分かります（[`FunctionReflection`](../../../dev/src/Reflection/FunctionReflection.php)）:
+分かります（[`FunctionReflection`](../../../impls/seasoned/05-byref-stubs/src/Reflection/FunctionReflection.php)）:
 
 ```php
 array_map(static fn ($param): bool => $param->isPassedByReference(), $function->getParameters());
@@ -27,7 +27,7 @@ array_map(static fn ($param): bool => $param->isPassedByReference(), $function->
 
 これまで呼び出しの引数はすべて「読み取り」として処理していました。参照渡しの位置に
 変数が来たら、それは **書き込み（定義）** です。`NodeScopeResolver` で呼び出しを専用処理し、
-その引数だけ変数を定義します（[`processCallArgs`](../../../dev/src/Analyser/NodeScopeResolver.php)）:
+その引数だけ変数を定義します（[`processCallArgs`](../../../impls/seasoned/05-byref-stubs/src/Analyser/NodeScopeResolver.php)）:
 
 ```php
 if (($byRef[$position] ?? false) && $arg->value instanceof Expr\Variable) {
@@ -50,7 +50,7 @@ Part 8 の宿題を回収しました。
 では `array`（＝ ministan では `mixed`）ですが、本当は `list<string>` です。PHPStan は
 **スタブ**（functionMap / `.stub`）でこれを補います。ministan も同じ手を使います。
 
-[`dev/stubs/core.php`](../../../dev/stubs/core.php) は**実行されません**。シグネチャを読むためだけに
+[`stubs/core.php`](../../../impls/seasoned/05-byref-stubs/stubs/core.php) は**実行されません**。シグネチャを読むためだけに
 **パース**されます:
 
 ```php
@@ -58,7 +58,7 @@ Part 8 の宿題を回収しました。
 function explode(string $separator, string $string, int $limit = PHP_INT_MAX): array {}
 ```
 
-[`ReflectionProvider`](../../../dev/src/Reflection/ReflectionProvider.php) は起動時にこれを読み、
+[`ReflectionProvider`](../../../impls/seasoned/05-byref-stubs/src/Reflection/ReflectionProvider.php) は起動時にこれを読み、
 ネイティブより優先します:
 
 ```php

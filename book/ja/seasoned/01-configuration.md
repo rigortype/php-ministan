@@ -1,6 +1,6 @@
 # The Seasoned ministan — S1: 設定と拡張
 
-> ＊コードはライブ実装ツリー [`dev/`](../../../dev) にあります（この章の到達点は `git tag seasoned-01`）。
+> ＊この章のコードはスナップショット [`impls/seasoned/01-configuration`](../../../impls/seasoned/01-configuration) にあります（この章の到達点は `git tag seasoned-01`）。
 
 基礎編は CLI フラグだけで動かしました。実務では、レベルやパス、無視するエラー、独自
 ルールを **設定ファイル** にまとめたい。PHPStan に倣い **NEON** を採用します。
@@ -8,8 +8,8 @@
 ## なぜ NEON か
 
 `phpstan.neon` と同じ書き味にすることで、PHPStan ユーザーがそのまま読めます。`nette/neon`
-を入れ、[`ConfigurationLoader`](../../../dev/src/Configuration/ConfigurationLoader.php) で
-[`Configuration`](../../../dev/src/Configuration/Configuration.php) に写します:
+を入れ、[`ConfigurationLoader`](../../../impls/seasoned/01-configuration/src/Configuration/ConfigurationLoader.php) で
+[`Configuration`](../../../impls/seasoned/01-configuration/src/Configuration/Configuration.php) に写します:
 
 ```neon
 parameters:
@@ -49,7 +49,7 @@ $paths  = $cliPaths !== [] ? $cliPaths : $config->paths;
 
 baseline が「この具体的な箇所」を無視するのに対し、`ignoreErrors` は「この**種類**の
 メッセージ」を正規表現で無視します
-（[`IgnoredErrorHelper`](../../../dev/src/Configuration/IgnoredErrorHelper.php)）:
+（[`IgnoredErrorHelper`](../../../impls/seasoned/01-configuration/src/Configuration/IgnoredErrorHelper.php)）:
 
 ```php
 foreach ($this->patterns as $pattern) {

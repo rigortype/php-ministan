@@ -1,6 +1,6 @@
 # Part 9 — ツール化
 
-> ＊コードはライブ実装ツリー [`dev/`](../../dev) にあります（この章の到達点は `git tag part-09`）。
+> ＊この章のコードはスナップショット [`impls/09-tooling`](../../impls/09-tooling) にあります（この章の到達点は `git tag part-09`）。
 
 基礎編の最終章。型チェッカーの核はできました。あとは**実用ツール**にする最後の一歩——
 ディレクトリ再帰、複数フォーマット、baseline です。
@@ -8,7 +8,7 @@
 ## ディレクトリを丸ごと
 
 これまで 1 ファイルずつでしたが、実務ではディレクトリを渡します
-（[`FileFinder`](../../dev/src/Analyser/FileFinder.php)）:
+（[`FileFinder`](../../impls/09-tooling/src/Analyser/FileFinder.php)）:
 
 ```php
 foreach ($iterator as $info) {
@@ -30,9 +30,9 @@ $ dev/bin/ministan analyse dev/src
 ## 出力を差し替える —— `ErrorFormatter`
 
 人間向けの表と、CI 向けの JSON。出力を**インターフェイス**で抽象化します
-（[`ErrorFormatter`](../../dev/src/Output/ErrorFormatter.php)）。
-[`TableErrorFormatter`](../../dev/src/Output/TableErrorFormatter.php) はファイルごとにまとめ、
-[`JsonErrorFormatter`](../../dev/src/Output/JsonErrorFormatter.php) は機械可読に出します:
+（[`ErrorFormatter`](../../impls/09-tooling/src/Output/ErrorFormatter.php)）。
+[`TableErrorFormatter`](../../impls/09-tooling/src/Output/TableErrorFormatter.php) はファイルごとにまとめ、
+[`JsonErrorFormatter`](../../impls/09-tooling/src/Output/JsonErrorFormatter.php) は機械可読に出します:
 
 ```console
 $ dev/bin/ministan analyse --error-format=json examples/reflection.php
@@ -51,7 +51,7 @@ $ dev/bin/ministan analyse --error-format=json examples/reflection.php
 
 既存の巨大なコードベースに型チェッカーを入れると、何千もの指摘が出ます。全部直すまで
 CI を赤にはできない。そこで **baseline**——今ある指摘を「許容済み」として固め、
-**新しく入った指摘だけ**を赤にする運用にします（[`Baseline`](../../dev/src/Output/Baseline.php)）。
+**新しく入った指摘だけ**を赤にする運用にします（[`Baseline`](../../impls/09-tooling/src/Output/Baseline.php)）。
 「これ以上増やさない」守りであり、**変更の恐怖で止まっていた改善を再開させる**攻めでもあります:
 
 ```console

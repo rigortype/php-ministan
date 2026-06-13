@@ -1,6 +1,6 @@
 # Part 1 — PHP-Parser と AST
 
-> ＊コードはライブ実装ツリー [`dev/`](../../dev) にあります（この章の到達点は `git tag part-01`）。
+> ＊この章のコードはスナップショット [`impls/01-php-parser`](../../impls/01-php-parser) にあります（この章の到達点は `git tag part-01`）。
 
 Part 0 では入口（パース）と出口（報告）を通しました。本章ではその **間** に
 最初の検査を差し込みます。題材は、誰もが一度はやらかす **`var_dump()` の消し忘れ** です。
@@ -30,7 +30,7 @@ Stmt\Expression
 ## `Rule` インターフェイス
 
 PHPStan の心臓は `Rule` です。ministan でも同じ形を最小化して導入します
-（[`dev/src/Rules/Rule.php`](../../dev/src/Rules/Rule.php)）:
+（[`src/Rules/Rule.php`](../../impls/01-php-parser/src/Rules/Rule.php)）:
 
 ```php
 /** @template TNodeType of Node */
@@ -57,7 +57,7 @@ interface Rule
 
 ## 最初のルール
 
-[`NoVarDumpRule`](../../dev/src/Rules/Functions/NoVarDumpRule.php) は型を一切使いません。
+[`NoVarDumpRule`](../../impls/01-php-parser/src/Rules/Functions/NoVarDumpRule.php) は型を一切使いません。
 純粋な構文パターンマッチです:
 
 ```php
@@ -98,7 +98,7 @@ final class NoVarDumpRule implements Rule
 ## ルールを束ねる — `RuleRegistry`
 
 ノードは何千個もあり、ルールも増えていきます。全ノード×全ルールを総当たりするのは
-無駄なので、**ノード種別で索引**します（[`RuleRegistry`](../../dev/src/Rules/RuleRegistry.php)）。
+無駄なので、**ノード種別で索引**します（[`RuleRegistry`](../../impls/01-php-parser/src/Rules/RuleRegistry.php)）。
 
 引き当てのとき、ノード自身のクラスだけでなく **親クラスと実装インターフェイス** も
 たどるのがミソです:
@@ -122,7 +122,7 @@ private function classHierarchy(Node $node): array
 ## AST を歩く — Visitor
 
 最後に、AST を 1 ノードずつ訪ねてルールを当てる係が要ります。php-parser の
-`NodeVisitor` に乗ります（[`RuleApplyingVisitor`](../../dev/src/Analyser/RuleApplyingVisitor.php)）:
+`NodeVisitor` に乗ります（[`RuleApplyingVisitor`](../../impls/01-php-parser/src/Analyser/RuleApplyingVisitor.php)）:
 
 ```php
 public function enterNode(Node $node): null

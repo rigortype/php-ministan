@@ -1,6 +1,6 @@
 # The Seasoned ministan — S6: パフォーマンス（結果キャッシュ）
 
-> ＊コードはライブ実装ツリー [`dev/`](../../../dev) にあります（この章の到達点は `git tag seasoned-06`）。
+> ＊この章のコードはスナップショット [`impls/seasoned/06-performance`](../../../impls/seasoned/06-performance) にあります（この章の到達点は `git tag seasoned-06`）。
 
 応用編の最終章。数千ファイルのコードベースで、変更のたびに全ファイルを解析するのは
 非現実的です。CI でも、ローカルでも、待たされるツールは使われません。最後の一歩は
@@ -10,7 +10,7 @@
 
 単純な事実に乗ります —— **ファイルの内容が変わっていなければ、結果も変わらない**。
 だから「内容のハッシュ」をキーに結果を保存し、次回はそれを返します
-（[`ResultCache`](../../../dev/src/Cache/ResultCache.php)）:
+（[`ResultCache`](../../../impls/seasoned/06-performance/src/Cache/ResultCache.php)）:
 
 ```php
 private function pathFor(string $code): string
@@ -27,7 +27,7 @@ private function pathFor(string $code): string
 ## 解析器につなぐ
 
 `Analyser` は、解析前にキャッシュを引き、ヒットすればそれを返します
-（[`Analyser`](../../../dev/src/Analyser/Analyser.php)）:
+（[`Analyser`](../../../impls/seasoned/06-performance/src/Analyser/Analyser.php)）:
 
 ```php
 if ($this->cache !== null) {

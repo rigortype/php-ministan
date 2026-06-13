@@ -1,6 +1,6 @@
 # Part 2 — Scope と変数追跡
 
-> ＊コードはライブ実装ツリー [`dev/`](../../dev) にあります（この章の到達点は `git tag part-02`）。
+> ＊この章のコードはスナップショット [`impls/02-scope`](../../impls/02-scope) にあります（この章の到達点は `git tag part-02`）。
 
 Part 1 のルールは AST の形だけを見ていました。本章で初めて **文脈** が登場します。
 「この地点で、いったい何が分かっているのか？」を運ぶ器 —— **`Scope`** です。
@@ -60,7 +60,7 @@ final readonly class Scope
 ## 幼生から成体へ —— `NodeScopeResolver`
 
 Part 1 の `RuleApplyingVisitor`（ただノードを訪れるだけ）を捨て、スコープを伝播させる
-**再帰下降**に置き換えます（[`NodeScopeResolver`](../../dev/src/Analyser/NodeScopeResolver.php)）。
+**再帰下降**に置き換えます（[`NodeScopeResolver`](../../impls/02-scope/src/Analyser/NodeScopeResolver.php)）。
 これは PHPStan の `NodeScopeResolver` に対応する、本シリーズの背骨です。
 
 設計の核心はただ一つ —— **読み取り文脈と書き込み文脈を区別する**こと。
@@ -101,7 +101,7 @@ private function processAssign(Expr\Assign $node, Scope $scope): Scope
 ## ルールは走査を知らない
 
 未定義検出は、文脈を一切持たない素朴なルールです
-（[`UndefinedVariableRule`](../../dev/src/Rules/Variables/UndefinedVariableRule.php)）:
+（[`UndefinedVariableRule`](../../impls/02-scope/src/Rules/Variables/UndefinedVariableRule.php)）:
 
 ```php
 public function processNode(Node $node, Scope $scope): array
@@ -124,7 +124,7 @@ public function processNode(Node $node, Scope $scope): array
 
 - **スーパーグローバル**（`$_GET` など）は最初から定義済みとして種をまく
 - **`isset($x)` / `empty($x)` / `$x ?? d`** の内側は未定義チェックしない（未定義でも合法だから）
-- **分岐の合流は楽観的な和集合**（[`Scope::mergeWith()`](../../dev/src/Analyser/Scope.php)）。
+- **分岐の合流は楽観的な和集合**（[`Scope::mergeWith()`](../../impls/02-scope/src/Analyser/Scope.php)）。
   「どれかの経路で定義されていれば定義済み」とみなす:
 
   ```php

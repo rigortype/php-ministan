@@ -1,6 +1,6 @@
 # Part 5 — Union と型の絞り込み
 
-> ＊コードはライブ実装ツリー [`dev/`](../../dev) にあります（この章の到達点は `git tag part-05`）。
+> ＊この章のコードはスナップショット [`impls/05-narrowing`](../../impls/05-narrowing) にあります（この章の到達点は `git tag part-05`）。
 
 Part 4 で式の型を推論できるようになりました。でも本物のコードは条件で枝分かれします。
 
@@ -20,7 +20,7 @@ function f(int|null $x): int
 
 ## まず合併型 —— `UnionType`
 
-「int または string」を表す型が要ります（[`UnionType`](../../dev/src/Type/UnionType.php)）。
+「int または string」を表す型が要ります（[`UnionType`](../../impls/05-narrowing/src/Type/UnionType.php)）。
 部分型判定は素直で、相手が単型なら **どれか 1 つのメンバが受ければよい（OR）**:
 
 ```php
@@ -31,7 +31,7 @@ foreach ($this->types as $member) {
 return $result; // int|string ⊇ 42 は Yes（int が受ける）
 ```
 
-合併の **生成** は型クラスではなく [`TypeCombinator`](../../dev/src/Type/TypeCombinator.php)
+合併の **生成** は型クラスではなく [`TypeCombinator`](../../impls/05-narrowing/src/Type/TypeCombinator.php)
 に集約します。正規化—フラット化・`never` 除去・`mixed` 吸収・重複除去・1 個なら単型—は
 横断的な操作で、各型に持たせるべきではないからです:
 
@@ -50,8 +50,8 @@ TypeCombinator::remove($intOrNull, new NullType()); // int
 ## 絞り込みエンジン —— `TypeSpecifier`
 
 条件式を受け取り、「真だったとき」「偽だったとき」それぞれで成り立つスコープを返すのが
-[`TypeSpecifier`](../../dev/src/Analyser/TypeSpecifier.php)（PHPStan の同名クラスに対応）。
-結果は [`SpecifiedTypes`](../../dev/src/Analyser/SpecifiedTypes.php)（truthy/falsy の組）です。
+[`TypeSpecifier`](../../impls/05-narrowing/src/Analyser/TypeSpecifier.php)（PHPStan の同名クラスに対応）。
+結果は [`SpecifiedTypes`](../../impls/05-narrowing/src/Analyser/SpecifiedTypes.php)（truthy/falsy の組）です。
 
 ```php
 public function specify(Expr $condition, Scope $scope): SpecifiedTypes
@@ -86,7 +86,7 @@ $falsy  = $scope->assignVariable($name, TypeCombinator::remove($current, $narrow
 ## 分岐に織り込む
 
 `NodeScopeResolver` の `if` を専用処理にし、条件の絞り込みを各枝へ流します
-（[`processIf`](../../dev/src/Analyser/NodeScopeResolver.php)）:
+（[`processIf`](../../impls/05-narrowing/src/Analyser/NodeScopeResolver.php)）:
 
 ```php
 $specified = $this->typeSpecifier->specify($node->cond, $scope);
@@ -116,7 +116,7 @@ $merged[$name] = isset($merged[$name])
 
 Part 2 で「`isset($y) ? $y : 1` の取りこぼし」を Part 5 送りにしました。三項演算子も
 絞り込みを使うよう処理したことで、これが解消されます
-（[`processTernary`](../../dev/src/Analyser/NodeScopeResolver.php)）:
+（[`processTernary`](../../impls/05-narrowing/src/Analyser/NodeScopeResolver.php)）:
 
 ```php
 $specified = $this->typeSpecifier->specify($node->cond, $scope);

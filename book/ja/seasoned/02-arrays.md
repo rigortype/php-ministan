@@ -1,6 +1,6 @@
 # The Seasoned ministan — S2: 配列を深める
 
-> ＊コードはライブ実装ツリー [`dev/`](../../../dev) にあります（この章の到達点は `git tag seasoned-02`）。
+> ＊この章のコードはスナップショット [`impls/seasoned/02-arrays`](../../../impls/seasoned/02-arrays) にあります（この章の到達点は `git tag seasoned-02`）。
 
 PHP コードは配列まみれです。基礎編では配列を `mixed` で素通りさせていました。本章で
 **配列の中身**まで踏み込みます。
@@ -13,7 +13,7 @@ $id = $row['id']; // これは int？ いや、ちょうど 42
 ## constant array shape
 
 `['id' => 42]` の型は `array<string, int>` ではなく **`array{id: 42}`** であるべきです。
-キーごとに値の型が分かる——これが [`ConstantArrayType`](../../../dev/src/Type/Constant/ConstantArrayType.php)
+キーごとに値の型が分かる——これが [`ConstantArrayType`](../../../impls/seasoned/02-arrays/src/Type/Constant/ConstantArrayType.php)
 （PHPStan の constant array shape）。定数型が配列にも効きます:
 
 ```php
@@ -31,7 +31,7 @@ public function getOffsetValueType(Type $offset): Type
 ## 配列リテラルを推論する
 
 `Scope::getType()` に配列リテラルを足します。キーがすべて定数なら shape、そうでなければ
-一般の `ArrayType` に落とします（[`arrayLiteralType`](../../../dev/src/Analyser/Scope.php)）:
+一般の `ArrayType` に落とします（[`arrayLiteralType`](../../../impls/seasoned/02-arrays/src/Analyser/Scope.php)）:
 
 ```php
 if ($item->key === null) {
@@ -53,7 +53,7 @@ if ($item->key === null) {
 
 基礎編では `foreach ($arr as $v)` の `$v` を `mixed` にしていました。配列の要素型が
 分かる今、`$v` に正しい型を与えられます
-（[`processForeach`](../../../dev/src/Analyser/NodeScopeResolver.php)）:
+（[`processForeach`](../../../impls/seasoned/02-arrays/src/Analyser/NodeScopeResolver.php)）:
 
 ```php
 $iterableType = $scope->getType($node->expr);

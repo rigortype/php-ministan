@@ -1,6 +1,6 @@
 # The Seasoned ministan — S3: ジェネリクス
 
-> ＊コードはライブ実装ツリー [`dev/`](../../../dev) にあります（この章の到達点は `git tag seasoned-03`）。
+> ＊この章のコードはスナップショット [`impls/seasoned/03-generics`](../../../impls/seasoned/03-generics) にあります（この章の到達点は `git tag seasoned-03`）。
 
 PHP には言語レベルのジェネリクスがありませんが、PHPDoc の `@template` で表現します。
 これを解析できるかどうかが、現代の PHP 静的解析の分水嶺です。
@@ -16,9 +16,9 @@ $a = identity(42); // mixed ではなく、ちょうど 42 であってほしい
 
 二つの新しい型を導入します。
 
-- [`TemplateType`](../../../dev/src/Type/TemplateType.php) … 「まだ決まっていない型」`T`。
+- [`TemplateType`](../../../impls/seasoned/03-generics/src/Type/TemplateType.php) … 「まだ決まっていない型」`T`。
   関係判定は上限境界に委ね、同一性は名前で見る。
-- [`GenericObjectType`](../../../dev/src/Type/GenericObjectType.php) … 型引数を伴うオブジェクト
+- [`GenericObjectType`](../../../impls/seasoned/03-generics/src/Type/GenericObjectType.php) … 型引数を伴うオブジェクト
   `Collection<int>`。`ObjectType` を**継承**するので、未定義メソッド検出などの「クラスを
   見る」処理は型引数を無視してそのまま働きます:
 
@@ -35,7 +35,7 @@ final class GenericObjectType extends ObjectType
 ## 置換 —— substitution
 
 ジェネリクスの心臓は **型変数を具体型に置き換える**こと
-（[`TemplateTypeMap`](../../../dev/src/Type/TemplateTypeMap.php)）。複合型の中まで再帰します:
+（[`TemplateTypeMap`](../../../impls/seasoned/03-generics/src/Type/TemplateTypeMap.php)）。複合型の中まで再帰します:
 
 ```php
 public function resolve(Type $type): Type
@@ -50,7 +50,7 @@ public function resolve(Type $type): Type
 
 ## `@template` を読む
 
-[`PhpDocTypeResolver`](../../../dev/src/Reflection/PhpDocTypeResolver.php) に型変数の概念を
+[`PhpDocTypeResolver`](../../../impls/seasoned/03-generics/src/Reflection/PhpDocTypeResolver.php) に型変数の概念を
 足します。`@template T` を集め、その名前の識別子を `TemplateType` に、`Collection<int>` の
 ような識別子付きジェネリックを `GenericObjectType` に解決します:
 
@@ -65,11 +65,11 @@ private function fromIdentifier(string $name, array $templateNames): Type
 ```
 
 クラスの型変数はメソッドの `@return T` からも見えるべきなので、クラスの `@template` を
-集めてメソッドの docblock 解析に渡します（[`ClassReflection`](../../../dev/src/Reflection/ClassReflection.php)）。
+集めてメソッドの docblock 解析に渡します（[`ClassReflection`](../../../impls/seasoned/03-generics/src/Reflection/ClassReflection.php)）。
 
 ## 呼び出しで置換する
 
-二か所で substitution が起きます（[`Scope`](../../../dev/src/Analyser/Scope.php)）。
+二か所で substitution が起きます（[`Scope`](../../../impls/seasoned/03-generics/src/Analyser/Scope.php)）。
 
 **ジェネリック関数** —— 実引数から型変数を推論します:
 

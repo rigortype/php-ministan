@@ -1,6 +1,6 @@
 # The Seasoned ministan — S4: 制御フローと高度な narrowing
 
-> ＊コードはライブ実装ツリー [`dev/`](../../../dev) にあります（この章の到達点は `git tag seasoned-04`）。
+> ＊この章のコードはスナップショット [`impls/seasoned/04-control-flow`](../../../impls/seasoned/04-control-flow) にあります（この章の到達点は `git tag seasoned-04`）。
 
 絞り込みは `if` の枝の中だけのものではありません。**早期 return** の後、`assert()` の後、
 `match` の腕の中——コードの「形」が型を狭めます。本章はその制御フロー感覚を実装します。
@@ -21,7 +21,7 @@ function plus_one(?int $x): int
 ```
 
 鍵は「**return / throw で終わる枝は、if の後の世界に合流しない**」こと。`processIf` で
-枝の終端を判定し、終わる枝を合流から外します（[`NodeScopeResolver`](../../../dev/src/Analyser/NodeScopeResolver.php)）:
+枝の終端を判定し、終わる枝を合流から外します（[`NodeScopeResolver`](../../../impls/seasoned/04-control-flow/src/Analyser/NodeScopeResolver.php)）:
 
 ```php
 $thenScope = $this->processStmts($node->stmts, $specified->truthy);
@@ -56,7 +56,7 @@ $r = $value + 1; // $value は int → $r : int
 
 S2 で `match (true) { $x instanceof Foo => $x->bar() }` の腕を絞り込めず、自己解析に
 叱られました。その宿題をここで回収します。各腕を、その条件で絞り込んだスコープで
-解析します（[`processMatch`](../../../dev/src/Analyser/NodeScopeResolver.php)）:
+解析します（[`processMatch`](../../../impls/seasoned/04-control-flow/src/Analyser/NodeScopeResolver.php)）:
 
 ```php
 $matchesTrue = $node->cond instanceof Expr\ConstFetch && $node->cond->name->toLowerString() === 'true';

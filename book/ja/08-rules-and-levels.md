@@ -1,6 +1,6 @@
 # Part 8 — ルールとレベル
 
-> ＊コードはライブ実装ツリー [`dev/`](../../dev) にあります（この章の到達点は `git tag part-08`）。
+> ＊この章のコードはスナップショット [`impls/08-rules-and-levels`](../../impls/08-rules-and-levels) にあります（この章の到達点は `git tag part-08`）。
 
 ここまでで型を推論できます。いよいよ型を**使う**ルール——引数や戻り値の型不一致の
 検出——と、PHPStan の真骨頂 **レベル制** を実装します。
@@ -9,7 +9,7 @@
 
 「`int` を期待する場所に `mixed` を渡してよいか？」の答えは Part 3 の三値です:
 `int` は `mixed` を **Maybe**（たぶん int）で受けます。この Maybe をどう扱うかが
-**レベルの正体**です（[`RuleLevelHelper`](../../dev/src/Rules/RuleLevelHelper.php)）:
+**レベルの正体**です（[`RuleLevelHelper`](../../impls/08-rules-and-levels/src/Rules/RuleLevelHelper.php)）:
 
 ```php
 public function isAcceptable(Type $accepting, Type $accepted): bool
@@ -31,7 +31,7 @@ public function isAcceptable(Type $accepting, Type $accepted): bool
 ## 型を使うルール
 
 引数の照合は関数とメソッドで共通なので
-[`ArgumentTypeChecker`](../../dev/src/Rules/ArgumentTypeChecker.php) に括り出します。各実引数を
+[`ArgumentTypeChecker`](../../impls/08-rules-and-levels/src/Rules/ArgumentTypeChecker.php) に括り出します。各実引数を
 推論し、対応するパラメータ型に `isAcceptable()` で照らすだけ:
 
 ```php
@@ -43,10 +43,10 @@ if (!$this->ruleLevelHelper->isAcceptable($expected, $actual)) {
 ```
 
 これを使うのが
-[`FunctionCallParameterTypesRule`](../../dev/src/Rules/Functions/FunctionCallParameterTypesRule.php)・
-[`MethodCallParameterTypesRule`](../../dev/src/Rules/Methods/MethodCallParameterTypesRule.php) と、
+[`FunctionCallParameterTypesRule`](../../impls/08-rules-and-levels/src/Rules/Functions/FunctionCallParameterTypesRule.php)・
+[`MethodCallParameterTypesRule`](../../impls/08-rules-and-levels/src/Rules/Methods/MethodCallParameterTypesRule.php) と、
 戻り値を見る
-[`FunctionReturnTypeRule`](../../dev/src/Rules/Functions/FunctionReturnTypeRule.php) です。
+[`FunctionReturnTypeRule`](../../impls/08-rules-and-levels/src/Rules/Functions/FunctionReturnTypeRule.php) です。
 戻り値検査は「現在いる関数の戻り値型」を必要とするので、`Scope` がそれを運ぶようにしました
 （関数本体に入るとき `withFunctionReturnType()` で設定）。
 
@@ -61,7 +61,7 @@ if ($docComment === null || trim($docComment) === '') { /* … */ }
 
 実行時は `||` の短絡で安全ですが、解析器が右辺で `$docComment` を非 null に
 **絞り込めていません**でした。そこで Part 5 の絞り込みを `&&`／`||` の右辺にも流します
-（[`processLogical`](../../dev/src/Analyser/NodeScopeResolver.php)）:
+（[`processLogical`](../../impls/08-rules-and-levels/src/Analyser/NodeScopeResolver.php)）:
 
 ```php
 $specified = $this->typeSpecifier->specify($node->left, $scope);
@@ -75,7 +75,7 @@ $this->processNode($node->right, $rightScope);
 ## レベルでルールを束ねる
 
 各ルールに「最低レベル」を添えた表を持ち、要求レベル以下を集めます
-（[`RuleRegistryFactory`](../../dev/src/Rules/RuleRegistryFactory.php)）:
+（[`RuleRegistryFactory`](../../impls/08-rules-and-levels/src/Rules/RuleRegistryFactory.php)）:
 
 ```php
 $leveled = [

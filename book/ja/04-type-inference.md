@@ -1,6 +1,6 @@
 # Part 4 — 型推論と `annotate`
 
-> ＊コードはライブ実装ツリー [`dev/`](../../dev) にあります（この章の到達点は `git tag part-04`）。
+> ＊この章のコードはスナップショット [`impls/04-type-inference`](../../impls/04-type-inference) にあります（この章の到達点は `git tag part-04`）。
 
 Part 3 で型の語彙を作りました。Part 2 で変数を追う器を作りました。本章でこの二つを
 繋ぎます。`Scope` を「変数が定義済みか」から **「変数が何の型か」** へ育て、任意の式の型を
@@ -106,8 +106,8 @@ private function processAssign(Expr\Assign $node, Scope $scope): Scope
 public function __construct(callable $nodeCallback) { /* … */ }
 ```
 
-- `analyse` はルールを走らせるコールバックを渡す（[`Analyser`](../../dev/src/Analyser/Analyser.php)）
-- `annotate` は型を集めるコールバックを渡す（[`AnnotateCommand`](../../dev/src/Command/AnnotateCommand.php)）
+- `analyse` はルールを走らせるコールバックを渡す（[`Analyser`](../../impls/04-type-inference/src/Analyser/Analyser.php)）
+- `annotate` は型を集めるコールバックを渡す（[`AnnotateCommand`](../../impls/04-type-inference/src/Command/AnnotateCommand.php)）
 
 同じスコープ伝播を二つの用途で共有できます。コールバックは各ノードの**処理前**に
 呼ばれるので、代入ノードではまだ束縛前のスコープが渡り、右辺を素直に推論できます:
