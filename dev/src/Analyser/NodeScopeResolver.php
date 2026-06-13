@@ -80,6 +80,8 @@ final class NodeScopeResolver
             $node instanceof Expr\AssignRef      => $this->processAssign($node, $scope),
             $node instanceof Expr\AssignOp       => $this->processAssignOp($node, $scope),
             $node instanceof Stmt\Expression     => $this->processExpressionStmt($node, $scope),
+            $node instanceof Expr\BinaryOp\BooleanAnd,
+            $node instanceof Expr\BinaryOp\BooleanOr => $this->processLogical($node, $scope),
             $node instanceof Stmt\If_            => $this->processIf($node, $scope),
             $node instanceof Expr\Ternary        => $this->processTernary($node, $scope),
             $node instanceof Stmt\Foreach_       => $this->processForeach($node, $scope),
@@ -207,6 +209,22 @@ final class NodeScopeResolver
         }
 
         return $this->processChildren($node, $scope);
+    }
+
+    /**
+     * `&&`／`||` の右辺は、左辺で絞り込まれた世界で評価される。
+     * `$x !== null && $x->foo()` の右辺で $x が非 null になるのはこのため。
+     */
+    private function processLogical(Expr\BinaryOp\BooleanAnd|Expr\BinaryOp\BooleanOr $node, Scope $scope): Scope
+    {
+        $scope = $this->processNode($node->left, $scope);
+        $specified = $this->typeSpecifier->specify($node->left, $scope);
+
+        // && は「左が真」、|| は「左が偽」の世界線で右辺を評価する。
+        $rightScope = $node instanceof Expr\BinaryOp\BooleanAnd ? $specified->truthy : $specified->falsy;
+        $this->processNode($node->right, $rightScope);
+
+        return $scope;
     }
 
     // --- 条件分岐: 型の絞り込みを適用する ---
@@ -342,7 +360,10 @@ final class NodeScopeResolver
 
     private function processFunctionLike(Stmt\Function_|Stmt\ClassMethod $node, Scope $outer): Scope
     {
-        $inner = Scope::createForFunction();
+        $doc = $this->phpDocTypeResolver->parse($node->getDocComment()?->getText());
+        $returnType = $doc->returnType ?? $this->typeNodeResolver->resolve($node->returnType);
+
+        $inner = Scope::createForFunction()->withFunctionReturnType($returnType);
         $inner = $this->bindParams($node->params, $inner);
 
         if ($node instanceof Stmt\ClassMethod && !$node->isStatic()) {

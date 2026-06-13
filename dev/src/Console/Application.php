@@ -36,8 +36,8 @@ final class Application
             ministan {$this->versionLine()}
 
             Usage:
-              ministan analyse <file>    PHP ファイルを解析する
-              ministan annotate <file>   推論された型を表示する
+              ministan analyse [--level=N] <file>   PHP ファイルを解析する（N=0..9, 既定 5）
+              ministan annotate <file>              推論された型を表示する
 
             TXT;
 

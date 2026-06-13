@@ -33,9 +33,11 @@ final readonly class Scope
 {
     /**
      * @param array<string, Type> $variableTypes 定義済み変数名 → その型
+     * @param Type|null $functionReturnType 現在いる関数／メソッドの宣言戻り値型（無ければ null）
      */
     private function __construct(
         private array $variableTypes,
+        private ?Type $functionReturnType = null,
     ) {
     }
 
@@ -74,7 +76,18 @@ final readonly class Scope
 
     public function assignVariable(string $name, Type $type): self
     {
-        return new self([...$this->variableTypes, $name => $type]);
+        return new self([...$this->variableTypes, $name => $type], $this->functionReturnType);
+    }
+
+    /** 関数本体に入るとき、宣言された戻り値型を覚えておく（戻り値検査が使う）。 */
+    public function withFunctionReturnType(Type $type): self
+    {
+        return new self($this->variableTypes, $type);
+    }
+
+    public function getFunctionReturnType(): ?Type
+    {
+        return $this->functionReturnType;
     }
 
     /**
@@ -91,7 +104,7 @@ final readonly class Scope
                 : $type;
         }
 
-        return new self($merged);
+        return new self($merged, $this->functionReturnType);
     }
 
     /**
