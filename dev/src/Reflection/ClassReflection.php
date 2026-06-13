@@ -33,7 +33,7 @@ final class ClassReflection
     ) {
     }
 
-    public static function fromNode(string $name, ClassLike $node, TypeNodeResolver $resolver, ReflectionProvider $provider): self
+    public static function fromNode(string $name, ClassLike $node, TypeNodeResolver $resolver, PhpDocTypeResolver $phpDoc, ReflectionProvider $provider): self
     {
         $parents = [];
         if ($node instanceof Class_) {
@@ -55,7 +55,7 @@ final class ClassReflection
 
         $methods = [];
         foreach ($node->getMethods() as $method) {
-            $methods[strtolower($method->name->toString())] = MethodReflection::fromNode($method, $resolver);
+            $methods[strtolower($method->name->toString())] = MethodReflection::fromNode($method, $resolver, $phpDoc);
         }
 
         return new self($name, $parents, $methods, $provider);

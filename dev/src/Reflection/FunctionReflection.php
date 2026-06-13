@@ -5,11 +5,12 @@ declare(strict_types=1);
 namespace Ministan\Reflection;
 
 use Ministan\Type\Type;
+use PhpParser\Node\Expr\Variable;
 use PhpParser\Node\Stmt\Function_;
 use ReflectionFunction;
 
 /**
- * 関数 1 つのシグネチャ。
+ * 関数 1 つのシグネチャ。PHPDoc を上位、ネイティブ宣言を下位に置く。
  */
 final readonly class FunctionReflection
 {
@@ -23,12 +24,22 @@ final readonly class FunctionReflection
     ) {
     }
 
-    public static function fromNode(string $name, Function_ $node, TypeNodeResolver $resolver): self
+    public static function fromNode(string $name, Function_ $node, TypeNodeResolver $resolver, PhpDocTypeResolver $phpDoc): self
     {
+        $doc = $phpDoc->parse($node->getDocComment()?->getText());
+
+        $parameterTypes = [];
+        foreach ($node->params as $param) {
+            $paramName = $param->var instanceof Variable && is_string($param->var->name) ? $param->var->name : null;
+            $parameterTypes[] = $paramName !== null && isset($doc->paramTypes[$paramName])
+                ? $doc->paramTypes[$paramName]
+                : $resolver->resolve($param->type);
+        }
+
         return new self(
             $name,
-            $resolver->resolve($node->returnType),
-            array_map(static fn ($param): Type => $resolver->resolve($param->type), $node->params),
+            $doc->returnType ?? $resolver->resolve($node->returnType),
+            $parameterTypes,
         );
     }
 

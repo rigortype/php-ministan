@@ -30,9 +30,12 @@ final class ReflectionProvider
 
     private TypeNodeResolver $typeNodeResolver;
 
+    private PhpDocTypeResolver $phpDocTypeResolver;
+
     public function __construct()
     {
         $this->typeNodeResolver = new TypeNodeResolver();
+        $this->phpDocTypeResolver = new PhpDocTypeResolver();
     }
 
     /**
@@ -59,10 +62,10 @@ final class ReflectionProvider
                 $this->collect($node->stmts);
             } elseif ($node instanceof ClassLike && $node->name !== null) {
                 $name = ($node->namespacedName ?? $node->name)->toString();
-                $this->classes[strtolower($name)] = ClassReflection::fromNode($name, $node, $this->typeNodeResolver, $this);
+                $this->classes[strtolower($name)] = ClassReflection::fromNode($name, $node, $this->typeNodeResolver, $this->phpDocTypeResolver, $this);
             } elseif ($node instanceof Function_) {
                 $name = ($node->namespacedName ?? $node->name)->toString();
-                $this->functions[strtolower($name)] = FunctionReflection::fromNode($name, $node, $this->typeNodeResolver);
+                $this->functions[strtolower($name)] = FunctionReflection::fromNode($name, $node, $this->typeNodeResolver, $this->phpDocTypeResolver);
             }
         }
     }

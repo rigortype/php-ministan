@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Ministan\Analyser;
 
 use Closure;
+use Ministan\Reflection\PhpDocTypeResolver;
 use Ministan\Reflection\TypeNodeResolver;
 use Ministan\Type\MixedType;
 use Ministan\Type\Type;
@@ -32,6 +33,8 @@ final class NodeScopeResolver
 
     private TypeNodeResolver $typeNodeResolver;
 
+    private PhpDocTypeResolver $phpDocTypeResolver;
+
     /**
      * @param callable(Node, Scope): void $nodeCallback
      */
@@ -40,6 +43,7 @@ final class NodeScopeResolver
         $this->nodeCallback = Closure::fromCallable($nodeCallback);
         $this->typeSpecifier = new TypeSpecifier();
         $this->typeNodeResolver = new TypeNodeResolver();
+        $this->phpDocTypeResolver = new PhpDocTypeResolver();
     }
 
     /**
@@ -75,6 +79,7 @@ final class NodeScopeResolver
             $node instanceof Expr\Assign,
             $node instanceof Expr\AssignRef      => $this->processAssign($node, $scope),
             $node instanceof Expr\AssignOp       => $this->processAssignOp($node, $scope),
+            $node instanceof Stmt\Expression     => $this->processExpressionStmt($node, $scope),
             $node instanceof Stmt\If_            => $this->processIf($node, $scope),
             $node instanceof Expr\Ternary        => $this->processTernary($node, $scope),
             $node instanceof Stmt\Foreach_       => $this->processForeach($node, $scope),
@@ -176,6 +181,32 @@ final class NodeScopeResolver
 
         // $arr[...] = ... で $arr は配列になるが、配列型は後章。ここでは mixed。
         return $this->processAssignTarget($node->var, new MixedType(), $scope);
+    }
+
+    // --- 文と @var ---
+
+    private function processExpressionStmt(Stmt\Expression $node, Scope $scope): Scope
+    {
+        $expr = $node->expr;
+        $doc = $node->getDocComment();
+
+        if ($doc !== null
+            && $expr instanceof Expr\Assign
+            && $expr->var instanceof Expr\Variable
+            && is_string($expr->var->name)
+        ) {
+            $parsed = $this->phpDocTypeResolver->parse($doc->getText());
+            $varType = $parsed->varTypes[$expr->var->name] ?? $parsed->varTypes[''] ?? null;
+
+            if ($varType !== null) {
+                // 通常どおり代入を処理（ルール適用・右辺読み取り）した上で、@var で型を上書きする。
+                $scope = $this->processNode($expr, $scope);
+
+                return $scope->assignVariable($expr->var->name, $varType);
+            }
+        }
+
+        return $this->processChildren($node, $scope);
     }
 
     // --- 条件分岐: 型の絞り込みを適用する ---

@@ -27,4 +27,17 @@ final class AnnotateCommandTest extends TestCase
         self::assertMatchesRegularExpression('/\$text\s+:\s+string$/m', $output);
         self::assertMatchesRegularExpression('/return\s+:\s+string$/m', $output);
     }
+
+    public function testPhpDocDrivesInference(): void
+    {
+        ob_start();
+        $exitCode = (new AnnotateCommand())->run([__DIR__ . '/../fixtures/phpdoc.php']);
+        $output = ob_get_clean();
+
+        self::assertSame(0, $exitCode);
+        // @return array<int, string> が呼び出し結果に伝わる。
+        self::assertMatchesRegularExpression('/\$result\s+:\s+array<int, string>$/m', $output);
+        // @var int が右辺の mixed を上書きする。
+        self::assertMatchesRegularExpression('/\$count\s+:\s+int$/m', $output);
+    }
 }

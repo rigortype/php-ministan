@@ -7,6 +7,7 @@ namespace Ministan\Command;
 use Ministan\Analyser\NodeScopeResolver;
 use Ministan\Analyser\Parsing;
 use Ministan\Analyser\Scope;
+use Ministan\Reflection\PhpDocTypeResolver;
 use Ministan\Reflection\ReflectionProvider;
 use Ministan\Reflection\ReflectionProviderStaticAccessor;
 use PhpParser\Error as ParserError;
@@ -56,18 +57,26 @@ final class AnnotateCommand
 
         /** @var list<array{int, string, string}> $rows */
         $rows = [];
+        $phpDoc = new PhpDocTypeResolver();
         $resolver = new NodeScopeResolver(
-            static function (Node $node, Scope $scope) use (&$rows): void {
-                if ($node instanceof Expr\Assign
-                    && $node->var instanceof Expr\Variable
-                    && is_string($node->var->name)
+            static function (Node $node, Scope $scope) use (&$rows, $phpDoc): void {
+                if ($node instanceof Stmt\Expression
+                    && $node->expr instanceof Expr\Assign
+                    && $node->expr->var instanceof Expr\Variable
+                    && is_string($node->expr->var->name)
                 ) {
-                    // コールバックは代入の処理前に呼ばれるので、右辺は現在のスコープで推論できる。
-                    $rows[] = [
-                        $node->getStartLine(),
-                        '$' . $node->var->name,
-                        $scope->getType($node->expr)->describe(),
-                    ];
+                    $name = $node->expr->var->name;
+
+                    // @var があればそれを、無ければ右辺の推論型を表示する。
+                    $type = null;
+                    $doc = $node->getDocComment();
+                    if ($doc !== null) {
+                        $parsed = $phpDoc->parse($doc->getText());
+                        $type = $parsed->varTypes[$name] ?? $parsed->varTypes[''] ?? null;
+                    }
+                    $type ??= $scope->getType($node->expr->expr);
+
+                    $rows[] = [$node->getStartLine(), '$' . $name, $type->describe()];
                 } elseif ($node instanceof Stmt\Return_ && $node->expr !== null) {
                     $rows[] = [
                         $node->getStartLine(),
