@@ -13,7 +13,7 @@ Part 3 で型の語彙を作りました。Part 2 で変数を追う器を作り
 （変数→型）に変えます。これだけで `Scope` は型環境になります。
 
 ```php
-// dev/src/Analyser/Scope.php
+// src/Analyser/Scope.php
 public function getVariableType(string $name): Type
 {
     return $this->variableTypes[$name] ?? new MixedType(); // 未定義は mixed に縮退
@@ -30,7 +30,7 @@ public function getVariableType(string $name): Type
 
 > ここでの「推論」は、リテラル・宣言型・式の構造から型を**ボトムアップで組み立てる**
 > 営みです。ML 系のような、関数全体の型を未知数として**解く**大域推論ではありません。
-> 分からないものは解かず `mixed` に縮退させる ―― それが non-rejecting の流儀です。
+> 分からないものは解かず `mixed` に縮退させる —— それが non-rejecting の流儀です。
 
 ```php
 public function getType(Expr $expr): Type
@@ -77,7 +77,7 @@ private function arithmeticType(Expr\BinaryOp $expr): Type
 ```
 
 > 定数畳み込み（`42 + 1` を `43` と推論する）は ministan ではしません。`$a + 1` の型は
-> `int` に留めます ―― 解析を重くする割に効用が限られるからです（実 PHPStan は `43` まで
+> `int` に留めます —— 解析を重くする割に効用が限られるからです（実 PHPStan は `43` まで
 > 畳み込みます）。
 
 ## 代入で型を結ぶ

@@ -120,7 +120,7 @@ $ dev/bin/ministan analyse examples/reflection.php
 > 未定義メソッド検出も `__call` があれば見送ります）。Eloquent などを精密に解析するには、
 > magic を型に翻訳する**スタブや拡張**が要ります（PHPStan なら larastan のような拡張、
 > ministan ではスタブを応用編 S5 で扱います）。「自分の Laravel コードがそのまま全部
-> 解析される」わけではない ―― が、型を書いた所はちゃんと効きます。
+> 解析される」わけではない —— が、型を書いた所はちゃんと効きます。
 
 ## まとめ
 
