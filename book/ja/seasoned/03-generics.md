@@ -3,7 +3,8 @@
 > ＊この章のコードはスナップショット [`impls/seasoned/03-generics`](../../../impls/seasoned/03-generics) にあります（この章の到達点は `git tag seasoned-03`）。
 
 PHP には言語レベルのジェネリクスがありませんが、PHPDoc の `@template` で表現します。
-これを解析できるかどうかが、現代の PHP 静的解析の分水嶺です。
+これを解析できるかどうかが、現代の PHP 静的解析の分水嶺です（この `@template` は Hack の
+ジェネリクスに源流を持ち、PHP では Psalm が先駆けました）。
 
 ```php
 /** @template T @param T $value @return T */
@@ -71,7 +72,8 @@ private function fromIdentifier(string $name, array $templateNames): Type
 
 二か所で substitution が起きます（[`Scope`](../../../impls/seasoned/03-generics/src/Analyser/Scope.php)）。
 
-**ジェネリック関数** —— 実引数から型変数を推論します:
+**ジェネリック関数** —— 実引数から型変数を解決します（パラメータが型変数そのものの位置に
+あるとき）:
 
 ```php
 foreach ($expr->args as $position => $arg) {
@@ -103,8 +105,12 @@ $ dev/bin/ministan annotate examples/seasoned/generics.php
     43  $value : int          ← Box<int>::get(): T を int に置換
 ```
 
-型変数 `T` が、呼び出しごとに `42`・`'hello'`・`int` へと姿を変えています。これが
-ジェネリクスの推論です。
+型変数 `T` が、呼び出しごとに `42`・`'hello'`・`int` へと姿を変えています。
+
+> ここでの「推論」は、型変数がそのまま現れる引数位置からの**一方向の置換（substitution）**
+> です。`array<T>` の `T` を実引数から逆算するような双方向の解（単一化）はしません ―― 入れ子の
+> 型変数推論は応用編の先へ。型理論で言えば、`@template T` は全称型 `∀T`、`identity(42)` の置換は
+> 型適用 `identity[42]` に当たります（TAPL / System F）。
 
 ## まとめ
 

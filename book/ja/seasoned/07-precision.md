@@ -55,10 +55,16 @@ $discovered = $this->silently(fn () => $this->processStmts($stmts, $entry));
 $widened = $entry->mergeWith($discovered);
 // 2. 広げたスコープで本体を 1 度だけ本解析する（ルールはこの 1 回のみ発火）
 $result = $this->processStmts($stmts, $widened);
+// ループは 0 回かもしれない。広げたスコープと本解析結果を合流して返す
+return $widened->mergeWith($result);
 ```
 
 肝は **無音パス**です。ルールを二度発火させないよう、発見パスではコールバックを
 一時的に無効化します。これで重複報告なしに、2 周目の型を踏まえられます:
+
+> なぜ 2 周で止めてよいのか。型は合流のたびに**広がる一方**（単調）で、1 周分の代入を
+> 織り込めば多くの場合そこで頭打ちになるからです。収束するまで反復する「真の不動点」は
+> 見送り（まとめ参照）―― だから見出しも「不動点**近似**」です。
 
 ```php
 $prev = 'start';
