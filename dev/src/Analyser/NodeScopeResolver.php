@@ -7,6 +7,8 @@ namespace Ministan\Analyser;
 use Closure;
 use Ministan\Reflection\PhpDocTypeResolver;
 use Ministan\Reflection\TypeNodeResolver;
+use Ministan\Type\ArrayType;
+use Ministan\Type\Constant\ConstantArrayType;
 use Ministan\Type\MixedType;
 use Ministan\Type\Type;
 use PhpParser\Node;
@@ -280,16 +282,41 @@ final class NodeScopeResolver
     private function processForeach(Stmt\Foreach_ $node, Scope $scope): Scope
     {
         $scope = $this->processNode($node->expr, $scope);
+        $iterableType = $scope->getType($node->expr);
 
         $loopScope = $scope;
         if ($node->keyVar !== null) {
-            $loopScope = $this->processAssignTarget($node->keyVar, new MixedType(), $loopScope);
+            $loopScope = $this->processAssignTarget($node->keyVar, $this->iterableKeyType($iterableType), $loopScope);
         }
-        $loopScope = $this->processAssignTarget($node->valueVar, new MixedType(), $loopScope);
+        $loopScope = $this->processAssignTarget($node->valueVar, $this->iterableValueType($iterableType), $loopScope);
 
         $bodyScope = $this->processStmts($node->stmts, $loopScope);
 
         return $scope->mergeWith($bodyScope);
+    }
+
+    private function iterableKeyType(Type $type): Type
+    {
+        if ($type instanceof ConstantArrayType) {
+            return $type->getIterableKeyType();
+        }
+        if ($type instanceof ArrayType) {
+            return $type->getIterableKeyType();
+        }
+
+        return new MixedType();
+    }
+
+    private function iterableValueType(Type $type): Type
+    {
+        if ($type instanceof ConstantArrayType) {
+            return $type->getIterableValueType();
+        }
+        if ($type instanceof ArrayType) {
+            return $type->getIterableValueType();
+        }
+
+        return new MixedType();
     }
 
     private function processCatch(Stmt\Catch_ $node, Scope $scope): Scope

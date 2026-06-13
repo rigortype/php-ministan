@@ -4,7 +4,9 @@ declare(strict_types=1);
 
 namespace Ministan\Analyser;
 
+use Ministan\Type\ArrayType;
 use Ministan\Type\BooleanType;
+use Ministan\Type\Constant\ConstantArrayType;
 use Ministan\Type\Constant\ConstantBooleanType;
 use Ministan\Type\Constant\ConstantIntegerType;
 use Ministan\Type\Constant\ConstantStringType;
@@ -17,6 +19,7 @@ use Ministan\Type\StringType;
 use Ministan\Type\Type;
 use Ministan\Type\TypeCombinator;
 use Ministan\Reflection\ReflectionProviderStaticAccessor;
+use PhpParser\Node\ArrayItem;
 use PhpParser\Node\Expr;
 use PhpParser\Node\Identifier;
 use PhpParser\Node\Name;
@@ -129,6 +132,10 @@ final readonly class Scope
                 ? $this->getVariableType($expr->name)
                 : new MixedType(),
 
+            // --- 配列リテラルとアクセス ---
+            $expr instanceof Expr\Array_ => $this->arrayLiteralType($expr),
+            $expr instanceof Expr\ArrayDimFetch => $this->arrayDimType($expr),
+
             // --- オブジェクト生成・呼び出し（リフレクションを使う）---
             $expr instanceof Expr\New_ => $expr->class instanceof Name
                 ? new ObjectType($expr->class->toString())
@@ -163,6 +170,65 @@ final readonly class Scope
             // --- 分からないものは mixed に縮退 ---
             default => new MixedType(),
         };
+    }
+
+    private function arrayLiteralType(Expr\Array_ $expr): Type
+    {
+        $keyTypes = [];
+        $valueTypes = [];
+        $nextInt = 0;
+        $isConstant = true;
+
+        foreach ($expr->items as $item) {
+            if (!$item instanceof ArrayItem || $item->unpack) {
+                $isConstant = false; // スプレッド ...$a は静的に分からない
+                continue;
+            }
+
+            $valueType = $this->getType($item->value);
+
+            if ($item->key === null) {
+                $keyType = new ConstantIntegerType($nextInt);
+                $nextInt++;
+            } else {
+                $keyType = $this->getType($item->key);
+                if ($keyType instanceof ConstantIntegerType) {
+                    $nextInt = max($nextInt, $keyType->value + 1);
+                } elseif (!$keyType instanceof ConstantStringType) {
+                    $isConstant = false; // キーが定数でなければ shape にできない
+                }
+            }
+
+            $keyTypes[] = $keyType;
+            $valueTypes[] = $valueType;
+        }
+
+        if ($isConstant) {
+            return new ConstantArrayType($keyTypes, $valueTypes);
+        }
+
+        return new ArrayType(
+            $keyTypes === [] ? new MixedType() : TypeCombinator::union(...$keyTypes),
+            $valueTypes === [] ? new MixedType() : TypeCombinator::union(...$valueTypes),
+        );
+    }
+
+    private function arrayDimType(Expr\ArrayDimFetch $expr): Type
+    {
+        if ($expr->dim === null) {
+            return new MixedType(); // $arr[] は書き込み専用構文
+        }
+
+        $arrayType = $this->getType($expr->var);
+
+        if ($arrayType instanceof ConstantArrayType) {
+            return $arrayType->getOffsetValueType($this->getType($expr->dim));
+        }
+        if ($arrayType instanceof ArrayType) {
+            return $arrayType->itemType;
+        }
+
+        return new MixedType();
     }
 
     private function methodCallType(Expr\MethodCall $expr): Type

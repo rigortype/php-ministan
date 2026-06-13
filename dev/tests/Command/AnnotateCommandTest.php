@@ -28,6 +28,18 @@ final class AnnotateCommandTest extends TestCase
         self::assertMatchesRegularExpression('/return\s+:\s+string$/m', $output);
     }
 
+    public function testArrayShapeInference(): void
+    {
+        ob_start();
+        $exitCode = (new AnnotateCommand())->run([__DIR__ . '/../fixtures/array-shape.php']);
+        $output = ob_get_clean();
+
+        self::assertSame(0, $exitCode);
+        self::assertMatchesRegularExpression("/\\\$row\s+:\s+array\{id: 42, name: 'ada'\}$/m", $output);
+        self::assertMatchesRegularExpression('/\$id\s+:\s+42$/m', $output);
+        self::assertMatchesRegularExpression("/\\\$name\s+:\s+'ada'$/m", $output);
+    }
+
     public function testPhpDocDrivesInference(): void
     {
         ob_start();
