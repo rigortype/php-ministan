@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Ministan\Tests\Type;
 
 use Ministan\TrinaryLogic;
+use Ministan\Type\Constant\ConstantIntegerType;
 use Ministan\Type\IntegerType;
 use Ministan\Type\MixedType;
 use Ministan\Type\NeverType;
@@ -43,6 +44,13 @@ final class TypeCombinatorTest extends TestCase
             MixedType::class,
             TypeCombinator::union(new IntegerType(), new MixedType()),
         );
+    }
+
+    public function testUnionAbsorbsSubtypes(): void
+    {
+        // 0 は int の部分型 → int に吸収される。
+        self::assertSame('int', TypeCombinator::union(new IntegerType(), new ConstantIntegerType(0))->describe());
+        self::assertSame('int', TypeCombinator::union(new ConstantIntegerType(0), new IntegerType())->describe());
     }
 
     public function testRemoveFromUnion(): void

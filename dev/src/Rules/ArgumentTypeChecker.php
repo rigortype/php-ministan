@@ -20,28 +20,34 @@ final readonly class ArgumentTypeChecker
     }
 
     /**
-     * @param list<Type> $parameterTypes
+     * @param list<Type>   $parameterTypes
+     * @param list<string> $parameterNames 名前付き引数を位置へ対応づけるための名前
      * @param array<Arg|\PhpParser\Node\VariadicPlaceholder> $args
      *
      * @return list<array{int, Type, Type}> [位置(1始まり), 期待型, 実際の型] の不一致
      */
-    public function check(array $parameterTypes, array $args, Scope $scope): array
+    public function check(array $parameterTypes, array $parameterNames, array $args, Scope $scope): array
     {
         $mismatches = [];
 
         foreach ($args as $position => $arg) {
-            if (!$arg instanceof Arg || $arg->unpack || $arg->name !== null) {
-                continue; // ...$spread・名前付き引数は位置対応が崩れるので見送り
-            }
-            if (!isset($parameterTypes[$position])) {
-                continue; // 余剰引数・可変長は見送り（non-rejecting）
+            if (!$arg instanceof Arg || $arg->unpack) {
+                continue; // ...$spread は位置対応が崩れるので見送り
             }
 
-            $expected = $parameterTypes[$position];
+            // 名前付き引数は、宣言の何番目かを名前から解決する。
+            $index = $arg->name !== null
+                ? array_search($arg->name->toString(), $parameterNames, true)
+                : $position;
+            if ($index === false || !isset($parameterTypes[$index])) {
+                continue;
+            }
+
+            $expected = $parameterTypes[$index];
             $actual = $scope->getType($arg->value);
 
             if (!$this->ruleLevelHelper->isAcceptable($expected, $actual)) {
-                $mismatches[] = [$position + 1, $expected, $actual];
+                $mismatches[] = [$index + 1, $expected, $actual];
             }
         }
 

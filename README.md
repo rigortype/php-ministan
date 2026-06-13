@@ -62,6 +62,7 @@ $ dev/bin/ministan analyse examples/hello.php
 | S4 | 制御フローと高度な narrowing | 早期 return・`assert`・`match` の腕 |
 | S5 | 参照渡しとスタブ | by-ref 出力引数・スタブによるシグネチャ補完 |
 | S6 | パフォーマンス | 結果キャッシュ |
+| S7 | 推論と検査の精度向上 | match 式結果型・union 部分型吸収・ループ型ワイドニング・名前付き引数照合 |
 
 ## ライセンス
 

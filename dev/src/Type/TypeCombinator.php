@@ -38,11 +38,18 @@ final class TypeCombinator
                 return new MixedType(); // mixed は全てを吸収する
             }
 
+            // 既存メンバが $type の上位型なら、$type は不要（int があれば 0 は要らない）。
             foreach ($result as $existing) {
-                if ($existing->equals($type)) {
-                    continue 2; // 重複は捨てる
+                if ($existing->isSuperTypeOf($type)->yes()) {
+                    continue 2;
                 }
             }
+
+            // 逆に $type が上位型なら、その部分型の既存メンバを取り除く（0 を捨てて int を残す）。
+            $result = array_values(array_filter(
+                $result,
+                static fn (Type $existing): bool => !$type->isSuperTypeOf($existing)->yes(),
+            ));
             $result[] = $type;
         }
 

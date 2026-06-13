@@ -42,7 +42,7 @@ final class FunctionCallParameterTypesRule implements Rule
         $function = $provider->getFunction($node->name->toString());
 
         $errors = [];
-        foreach ($this->checker->check($function->parameterTypes, $node->args, $scope) as [$position, $expected, $actual]) {
+        foreach ($this->checker->check($function->parameterTypes, $function->parameterNames, $node->args, $scope) as [$position, $expected, $actual]) {
             $errors[] = new RuleError(
                 sprintf(
                     'Parameter #%d of function %s() expects %s, %s given.',

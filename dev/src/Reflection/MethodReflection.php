@@ -18,13 +18,15 @@ use ReflectionMethod;
 final readonly class MethodReflection
 {
     /**
-     * @param list<Type> $parameterTypes
-     * @param list<bool> $byRefParams   各パラメータが参照渡し（出力引数）か
+     * @param list<Type>   $parameterTypes
+     * @param list<string> $parameterNames 名前付き引数の照合に使う
+     * @param list<bool>   $byRefParams   各パラメータが参照渡し（出力引数）か
      */
     public function __construct(
         public string $name,
         public Type $returnType,
         public array $parameterTypes,
+        public array $parameterNames = [],
         public array $byRefParams = [],
     ) {
     }
@@ -37,12 +39,14 @@ final readonly class MethodReflection
         $doc = $phpDoc->parse($node->getDocComment()?->getText(), $classTemplateNames);
 
         $parameterTypes = [];
+        $parameterNames = [];
         $byRefParams = [];
         foreach ($node->params as $param) {
-            $name = $param->var instanceof Variable && is_string($param->var->name) ? $param->var->name : null;
-            $parameterTypes[] = $name !== null && isset($doc->paramTypes[$name])
+            $name = $param->var instanceof Variable && is_string($param->var->name) ? $param->var->name : '';
+            $parameterTypes[] = $name !== '' && isset($doc->paramTypes[$name])
                 ? $doc->paramTypes[$name]
                 : $resolver->resolve($param->type);
+            $parameterNames[] = $name;
             $byRefParams[] = $param->byRef;
         }
 
@@ -50,6 +54,7 @@ final readonly class MethodReflection
             $node->name->toString(),
             $doc->returnType ?? $resolver->resolve($node->returnType),
             $parameterTypes,
+            $parameterNames,
             $byRefParams,
         );
     }
@@ -61,6 +66,10 @@ final readonly class MethodReflection
             $resolver->resolveNative($method->getReturnType()),
             array_map(
                 static fn ($param): Type => $resolver->resolveNative($param->getType()),
+                $method->getParameters(),
+            ),
+            array_map(
+                static fn ($param): string => $param->getName(),
                 $method->getParameters(),
             ),
             array_map(

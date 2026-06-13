@@ -93,6 +93,7 @@ final class NodeScopeResolver
             $node instanceof Expr\Match_         => $this->processMatch($node, $scope),
             $node instanceof Expr\Ternary        => $this->processTernary($node, $scope),
             $node instanceof Stmt\Foreach_       => $this->processForeach($node, $scope),
+            $node instanceof Stmt\While_         => $this->processWhile($node, $scope),
             $node instanceof Stmt\Catch_         => $this->processCatch($node, $scope),
             $node instanceof Stmt\Global_        => $this->processGlobal($node, $scope),
             $node instanceof Stmt\Static_        => $this->processStaticVars($node, $scope),
@@ -386,9 +387,58 @@ final class NodeScopeResolver
         }
         $loopScope = $this->processAssignTarget($node->valueVar, $this->iterableValueType($iterableType), $loopScope);
 
-        $bodyScope = $this->processStmts($node->stmts, $loopScope);
+        $bodyScope = $this->analyseLoopBody($node->stmts, $loopScope);
 
         return $scope->mergeWith($bodyScope);
+    }
+
+    private function processWhile(Stmt\While_ $node, Scope $scope): Scope
+    {
+        $scope = $this->processNode($node->cond, $scope);
+        $specified = $this->typeSpecifier->specify($node->cond, $scope);
+
+        $bodyScope = $this->analyseLoopBody($node->stmts, $specified->truthy);
+
+        // ループ後: 条件が偽になった世界線（falsy）か、本体を回った後（bodyScope）。
+        return $specified->falsy->mergeWith($bodyScope);
+    }
+
+    /**
+     * ループ本体を不動点近似で解析する。
+     *
+     * まず**無音**（ルール非発火）で本体を辿り、ループをまたぐ代入で型を広げた
+     * スコープを得る。そのうえで本体を 1 度だけ本解析する（ルールはこの 1 回のみ発火）。
+     * これにより、2 周目以降の変数の型（union）を踏まえて解析できる。
+     *
+     * @param Node[] $stmts
+     */
+    private function analyseLoopBody(array $stmts, Scope $entry): Scope
+    {
+        $discovered = $this->silently(fn (): Scope => $this->processStmts($stmts, $entry));
+        $widened = $entry->mergeWith($discovered);
+
+        $result = $this->processStmts($stmts, $widened);
+
+        return $widened->mergeWith($result);
+    }
+
+    /**
+     * コールバック（ルール適用）を一時的に無効化して関数を実行する。スコープ発見だけ
+     * したいループの不動点パスで使う。
+     *
+     * @param callable(): Scope $fn
+     */
+    private function silently(callable $fn): Scope
+    {
+        $saved = $this->nodeCallback;
+        $this->nodeCallback = static function (): void {
+        };
+
+        try {
+            return $fn();
+        } finally {
+            $this->nodeCallback = $saved;
+        }
     }
 
     private function iterableKeyType(Type $type): Type

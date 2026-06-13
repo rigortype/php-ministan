@@ -146,6 +146,7 @@ final readonly class Scope
                 : new MixedType(),
             $expr instanceof Expr\MethodCall => $this->methodCallType($expr),
             $expr instanceof Expr\FuncCall => $this->funcCallType($expr),
+            $expr instanceof Expr\Match_ => $this->matchType($expr),
 
             // --- 文字列連結は常に string ---
             $expr instanceof Expr\BinaryOp\Concat => new StringType(),
@@ -294,6 +295,40 @@ final readonly class Scope
         }
 
         return (new TemplateTypeMap($map))->resolve($function->returnType);
+    }
+
+    /**
+     * match 式の結果型 = 各腕の本体の型の union。各腕は、その条件で絞り込んだ
+     * スコープで評価する（`$x instanceof Foo => $x->bar()` の bar() を解決できる）。
+     */
+    private function matchType(Expr\Match_ $expr): Type
+    {
+        $specifier = new TypeSpecifier();
+        $matchesTrue = $expr->cond instanceof Expr\ConstFetch
+            && $expr->cond->name->toLowerString() === 'true';
+
+        $armTypes = [];
+        $remaining = $this;
+        foreach ($expr->arms as $arm) {
+            if ($arm->conds === null) {
+                $armTypes[] = $remaining->getType($arm->body); // default
+
+                continue;
+            }
+
+            $armScope = $remaining;
+            foreach ($arm->conds as $cond) {
+                $specified = $matchesTrue
+                    ? $specifier->specify($cond, $remaining)
+                    : $specifier->specifyEquality($expr->cond, $cond, $remaining);
+                $armScope = $specified->truthy;
+                $remaining = $specified->falsy;
+            }
+
+            $armTypes[] = $armScope->getType($arm->body);
+        }
+
+        return $armTypes === [] ? new MixedType() : TypeCombinator::union(...$armTypes);
     }
 
     private function constFetchType(Expr\ConstFetch $expr): Type
