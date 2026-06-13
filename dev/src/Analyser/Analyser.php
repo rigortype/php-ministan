@@ -26,6 +26,25 @@ final class Analyser
     }
 
     /**
+     * 複数ファイルを解析し、エラーをまとめて返す。
+     *
+     * @param list<string> $files
+     *
+     * @return list<Error>
+     */
+    public function analyse(array $files): array
+    {
+        $errors = [];
+        foreach ($files as $file) {
+            foreach ($this->analyseFile($file) as $error) {
+                $errors[] = $error;
+            }
+        }
+
+        return $errors;
+    }
+
+    /**
      * @return list<Error>
      */
     public function analyseFile(string $file): array

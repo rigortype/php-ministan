@@ -1,0 +1,100 @@
+# Part 9 — ツール化
+
+> ＊コードはライブ実装ツリー [`dev/`](../../dev) にあります（この章の到達点は `git tag part-09`）。
+
+基礎編の最終章。型チェッカーの核はできました。あとは**実用ツール**にする最後の一歩——
+ディレクトリ再帰、複数フォーマット、baseline です。
+
+## ディレクトリを丸ごと
+
+これまで 1 ファイルずつでしたが、実務ではディレクトリを渡します
+（[`FileFinder`](../../dev/src/Analyser/FileFinder.php)）:
+
+```php
+foreach ($iterator as $info) {
+    if ($info->isFile() && $info->getExtension() === 'php') {
+        $files[] = $info->getPathname();
+    }
+}
+```
+
+`Analyser::analyse(array $files)` が各ファイルを順に解析し、エラーをまとめます。
+
+```console
+$ dev/bin/ministan analyse dev/src
+[OK] No errors
+```
+
+自分自身のソースツリーを丸ごと、1 コマンドで通せるようになりました。
+
+## 出力を差し替える —— `ErrorFormatter`
+
+人間向けの表と、CI 向けの JSON。出力を**インターフェイス**で抽象化します
+（[`ErrorFormatter`](../../dev/src/Output/ErrorFormatter.php)）。
+[`TableErrorFormatter`](../../dev/src/Output/TableErrorFormatter.php) はファイルごとにまとめ、
+[`JsonErrorFormatter`](../../dev/src/Output/JsonErrorFormatter.php) は機械可読に出します:
+
+```console
+$ dev/bin/ministan analyse --error-format=json examples/reflection.php
+{
+    "totals": { "file_errors": 1 },
+    "files": {
+        "examples/reflection.php": {
+            "errors": 1,
+            "messages": [ { "message": "Call to an undefined method …", "line": 17 } ]
+        }
+    }
+}
+```
+
+## baseline —— レガシーに導入する第一歩
+
+既存の巨大なコードベースに型チェッカーを入れると、何千もの指摘が出ます。全部直すまで
+CI を赤にはできない。そこで **baseline**——今ある指摘を「許容済み」として固め、
+**これ以上増やさない**運用にします（[`Baseline`](../../dev/src/Output/Baseline.php)）:
+
+```console
+$ dev/bin/ministan analyse --generate-baseline=ministan-baseline.json src
+Baseline written to ministan-baseline.json (1234 errors).
+
+$ dev/bin/ministan analyse --baseline=ministan-baseline.json src
+[OK] No errors
+```
+
+突き合わせは (ファイル, メッセージ) の組で行う簡略版です（PHPStan は件数まで見ます）。
+これで新しく入った指摘だけが赤くなります。
+
+## 終了コード
+
+CI のために、指摘があれば `1`、無ければ `0`。baseline 生成時は `0`。`--error-format=json`
+と組み合わせれば、エディタや CI から素直に扱えます。
+
+## 基礎編、完
+
+`Hello, World.` の 1 行から始めて、ここまで来ました:
+
+- **パース → スコープ伝播 → 型推論 → 絞り込み → ルール適用 → 報告**
+- 不変 `Scope`、`Type` の代数と三値論理、`UnionType`、リフレクション、PHPDoc
+- レベル制と baseline を備えた実用ツール
+- そして全行程を通じて **non-rejecting**——分からないことには黙る
+
+ministan は自分自身を解析して通ります。小さくとも、本物の静的解析器です。
+
+## 積み残しと、その先（The Seasoned ministan）
+
+基礎編は「最小で芯を通す」ことを優先し、多くを後回しにしました:
+
+- 本格ジェネリクス／テンプレート型（`@template T`）
+- ループの不動点解析、constant array shape、配列アクセスの型
+- by-ref 出力引数（`preg_match($s, $m)` の `$m`）、名前付き引数
+- PHPDoc のクラス名の名前空間解決、スタブによる外部シグネチャ
+- 結果キャッシュ・並列実行、設定ファイル
+
+応用編 **The Seasoned ministan** で、これらに踏み込みます。
+
+## まとめ
+
+- ディレクトリ再帰・複数フォーマット・baseline で実用ツールに仕上げた
+- 出力はインターフェイスで差し替え可能
+- baseline はレガシー導入の第一歩
+- 基礎編 10 章で、PHPStan のエッセンスを一周した

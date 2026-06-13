@@ -36,8 +36,14 @@ final class Application
             ministan {$this->versionLine()}
 
             Usage:
-              ministan analyse [--level=N] <file>   PHP ファイルを解析する（N=0..9, 既定 5）
-              ministan annotate <file>              推論された型を表示する
+              ministan analyse [options] <paths...>   ファイル／ディレクトリを解析する
+              ministan annotate <file>                推論された型を表示する
+
+            analyse options:
+              --level=N                 ルールレベル（0..9, 既定 5）
+              --error-format=json       JSON で出力する
+              --baseline=FILE           既知の指摘を無視する
+              --generate-baseline[=FILE]  現在の指摘を baseline に書き出す
 
             TXT;
 
