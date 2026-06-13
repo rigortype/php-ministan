@@ -83,6 +83,19 @@ CI のために、指摘があれば `1`、無ければ `0`。baseline 生成時
 - レベル制と baseline を備えた実用ツール
 - そして全行程を通じて **non-rejecting** —— 分からないことには黙る
 
+そして、Part 0 の冒頭で「最終的にこうなります」と掲げた、あの画面を思い出してください:
+
+```console
+$ ministan analyse src/
+ src/Foo.php:42
+   Parameter #1 $name of function greet() expects string, int given.
+
+ [ERROR] Found 1 error
+```
+
+ministan はいま、これを本当に出します。引数の型不一致を、Part 4〜7 で積み上げた型推論と
+Part 8 のルールが導いている —— 最初に掲げたゴールに、自分の手で辿り着きました。
+
 ministan は自分自身を解析して通ります。小さくとも、本物の静的解析器です。
 
 ## 積み残しと、その先（The Seasoned ministan）
