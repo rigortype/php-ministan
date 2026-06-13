@@ -22,8 +22,11 @@ public function isAcceptable(Type $accepting, Type $accepted): bool
 }
 ```
 
-低レベルでは `mixed` を素通りさせ、高レベル（既定では 7 以上）では `mixed` の混入も
-咎める。Part 3 で「`TrinaryLogic` を一級市民にする」と言った布石が、ここで回収されます。
+低レベルでは `mixed` を素通りさせ、高レベル（ministan では閾値を 7 とした）では `mixed` の
+混入も咎める。Part 3 で「`TrinaryLogic` を一級市民にする」と言った布石が、ここで回収されます。
+
+> この「7」は ministan の簡略化した一つの閾値です。実 PHPStan は単一の数値ではなく、
+> explicit な `mixed` は level 9、union は 7、nullable は 8 …と段階的に厳しくします。
 
 ## 型を使うルール
 

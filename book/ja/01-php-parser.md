@@ -51,7 +51,8 @@ interface Rule
 - `processNode()` … そのノードを受け取り、問題があれば `RuleError` を返す
 
 ジェネリクス（`@template`）で「`getNodeType()` が返す型 = `processNode()` が受け取る型」を
-結びつけています。これは PHPStan 自身が自分のルールを解析するときに効く型注釈で、
+結びつけています。PHP の構文を変えずに docblock で型を持たせるこの擬似ジェネリクスは、
+もともと Hack に源流を持ち PHP では Psalm が先駆け、PHPStan も含め両者で日常的に使われます。
 私たちが目指す静的解析器が最終的に検証できるようになる種類のコードでもあります。
 
 ## 最初のルール

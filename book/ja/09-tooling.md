@@ -51,7 +51,8 @@ $ dev/bin/ministan analyse --error-format=json examples/reflection.php
 
 既存の巨大なコードベースに型チェッカーを入れると、何千もの指摘が出ます。全部直すまで
 CI を赤にはできない。そこで **baseline**——今ある指摘を「許容済み」として固め、
-**これ以上増やさない**運用にします（[`Baseline`](../../dev/src/Output/Baseline.php)）:
+**新しく入った指摘だけ**を赤にする運用にします（[`Baseline`](../../dev/src/Output/Baseline.php)）。
+「これ以上増やさない」守りであり、**変更の恐怖で止まっていた改善を再開させる**攻めでもあります:
 
 ```console
 $ dev/bin/ministan analyse --generate-baseline=ministan-baseline.json src
@@ -63,6 +64,10 @@ $ dev/bin/ministan analyse --baseline=ministan-baseline.json src
 
 突き合わせは (ファイル, メッセージ) の組で行う簡略版です（PHPStan は件数まで見ます）。
 これで新しく入った指摘だけが赤くなります。
+
+> baseline はこの本がモデルにする PHPStan の専売ではありません。PHP では Psalm が先行し、
+> その設計には既存エラーを「grandfather（既得権益化）」する Erik Booij の提案が取り込まれて
+> います。「恐怖を取り除いて変更を再開する」という発想は、PHP 静的解析の共有財産です。
 
 ## 終了コード
 

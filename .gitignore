@@ -10,3 +10,6 @@ ministan-baseline.json
 !.claude/
 .claude/*
 !.claude/skills/
+
+# 査読の作業台帳（ministan-review の内部メモ）はローカルのみ。
+book/ja/.reviews/

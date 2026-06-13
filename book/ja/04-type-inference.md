@@ -28,6 +28,10 @@ public function getVariableType(string $name): Type
 `Scope::getType(Expr): Type` が PHPStan の心臓 `Scope::getType()` に当たります。
 式の構造から型を組み立てます:
 
+> ここでの「推論」は、リテラル・宣言型・式の構造から型を**ボトムアップで組み立てる**
+> 営みです。ML 系のような、関数全体の型を未知数として**解く**大域推論ではありません。
+> 分からないものは解かず `mixed` に縮退させる ―― それが non-rejecting の流儀です。
+
 ```php
 public function getType(Expr $expr): Type
 {
@@ -56,8 +60,8 @@ public function getType(Expr $expr): Type
 リテラルが**定数型**になるのが効いています。`42` は `int` ではなく `42`。だから
 `annotate` で `$a : 42` と表示され、`match` の網羅性判定（後章）の土台になります。
 
-算術は Part 3 の型束を使って組み立てます。両辺が int なら int、どちらかが float なら
-float、それ以外は mixed:
+算術は Part 3 の型束を使って組み立てます。両辺が int なら int、両辺が numeric で
+どちらかが float なら float、それ以外は mixed:
 
 ```php
 private function arithmeticType(Expr\BinaryOp $expr): Type
@@ -72,8 +76,9 @@ private function arithmeticType(Expr\BinaryOp $expr): Type
 }
 ```
 
-> 定数畳み込み（`42 + 1` を `43` と推論する）は**あえてしません**。`$a + 1` の型は
-> `int`。畳み込みは解析を重くする割に効用が限られるため、PHPStan も既定では避けます。
+> 定数畳み込み（`42 + 1` を `43` と推論する）は ministan では**あえてしません**。
+> `$a + 1` の型は `int` に留めます。畳み込みは解析を重くする割に効用が限られる、という
+> 本書の判断です（実 PHPStan は `42 + 1` を `43` まで畳み込みます。ここは意図的な簡略化）。
 
 ## 代入で型を結ぶ
 
