@@ -1,0 +1,61 @@
+# php-ministan
+
+> Writing a PHP static analyzer: Step by Step, from one syntax error.
+
+**ministan** は、[PHPStan](https://github.com/phpstan/phpstan) のエッセンスを最小核に蒸留し、
+[nikic/php-parser](https://github.com/nikic/PHP-Parser) を基盤に**一から再構築する**ためのチュートリアルです。
+[chibivue](https://github.com/chibivue-land/chibivue) と
+[chibirigor](https://github.com/rigortype/chibirigor) のモデルに倣い、
+「動くものを少しずつ育てる」段階的アプローチで、PHP の静的解析・型チェッカー・型推論器を作ります。
+
+- 対象: **PHP 8.3+**
+- 基盤: **nikic/php-parser ^5**、PHPDoc は **phpstan/phpdoc-parser**（Part 7〜）
+- CLI: `ministan analyse <file>`（解析）/ `ministan annotate <file>`（推論型の表示・Part 4〜）
+
+## 設計哲学（non-rejecting）
+
+chibirigor 流に、**構文エラーでないコードは受理する**。不明な型は `mixed` に縮退させ、
+偽陽性を出さない。これが PHPStan のレベル段階制と `mixed` の意味論にそのまま接続します。
+
+## 構成
+
+```
+book/ja/        オンラインブック本文（Part 0–9 + Seasoned）
+dev/            ライブ実装ツリー（git 履歴で章ごとに育てる本体）
+examples/       解析対象のサンプル PHP
+impls/NN-xxx/   各章の完成スナップショット（git 履歴から機械生成。執筆後に再構成）
+```
+
+執筆・開発は単一の `dev/` ツリーで行い、章境界を git タグ（`part-00`, `part-01`, …）で刻みます。
+読者向けの `impls/NN-xxx`（自己完結した composer プロジェクト）は、その履歴から
+`git archive` / `format-patch` で機械的に再構成します。詳細は [WORKFLOW.md](WORKFLOW.md)。
+
+```console
+$ cd dev && composer install && cd ..
+$ dev/bin/ministan analyse examples/hello.php
+```
+
+## カリキュラム
+
+### The Little ministan（基礎編）
+
+| Part | テーマ | 完成する機能 |
+|------|--------|--------------|
+| 0 | 全体像と Hello World | 解析パイプラインを通し、構文エラーを報告する |
+| 1 | PHP-Parser と AST | 構文ベースのルール（`Rule` インターフェイス） |
+| 2 | Scope と変数追跡 | 未定義変数の使用検出 |
+| 3 | 型システムの基礎 | `Type` インターフェイスと定数型 |
+| 4 | 型推論 | `annotate` で推論型を表示 |
+| 5 | Union と絞り込み | `instanceof`/`is_*` による narrowing |
+| 6 | リフレクション | 戻り値推論・未定義メンバ検出 |
+| 7 | PHPDoc | `@param`/`@return`/`@var` を型に変換 |
+| 8 | ルールとレベル | 型互換チェックとレベル 0–max |
+| 9 | ツール化 | 設定・整形・baseline・CI 出力 |
+
+### The Seasoned ministan（応用編）
+
+本格ジェネリクス、ループの不動点解析、constant array shape、拡張ルール API、結果キャッシュ・並列。
+
+## ライセンス
+
+MIT

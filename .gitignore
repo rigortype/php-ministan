@@ -1,0 +1,5 @@
+/dev/vendor/
+/dev/composer.lock
+/dev/.phpunit.result.cache
+/dev/.phpunit.cache/
+.DS_Store
