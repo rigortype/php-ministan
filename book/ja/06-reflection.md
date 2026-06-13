@@ -113,6 +113,15 @@ $ dev/bin/ministan analyse examples/reflection.php
 
 メソッドの戻り値も、組み込み関数 `strlen()` の戻り値も推論できています。
 
+> **Laravel の magic はどうなる？** `User::find()` の戻り値や `$user->name` のような動的
+> プロパティ、ファサード、`Collection` のマクロ —— これらは `__call`/`__get`/`__callStatic`
+> という**魔法のメソッド**やランタイムの仕掛けで動いていて、シグネチャを*静的には*辿れません。
+> ministan（や素の PHPStan）は、こうした不明点では `mixed` に縮退して**黙ります**（だから
+> 未定義メソッド検出も `__call` があれば見送ります）。Eloquent などを精密に解析するには、
+> magic を型に翻訳する**スタブや拡張**が要ります（PHPStan なら larastan のような拡張、
+> ministan ではスタブを応用編 S5 で扱います）。「自分の Laravel コードがそのまま全部
+> 解析される」わけではない ―― が、型を書いた所はちゃんと効きます。
+
 ## まとめ
 
 - `NameResolver` で名前を FQN に解決してからリフレクションを引く

@@ -15,6 +15,11 @@ function shout(array $names): array { /* … */ }
 この **PHPDoc** こそ、PHP の静的解析が実用になる鍵です。本章では
 `phpstan/phpdoc-parser` を導入し、`@param`／`@return`／`@var` を型として取り込みます。
 
+> TypeScript と違い、PHP のジェネリクス（`array<int, string>`・`list<T>`・`@template T`）は
+> **PHPDoc にしか存在しません**。実行時には消え、PHP ランタイムが見るのはただの `array` や
+> `object` です。型情報を読み取って意味を与えるのは、解析器（PHPStan や ministan）の側
+> ―― つまり PHPDoc の型は「実行時の保証」ではなく「解析器への申告」です。
+
 ## phpdoc-parser をつなぐ
 
 型「文字列」のパースは自前で書かず、PHPStan 公式の

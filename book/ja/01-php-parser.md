@@ -50,10 +50,15 @@ interface Rule
 - `getNodeType()` … 「どのノードに反応するか」をクラス名で宣言する
 - `processNode()` … そのノードを受け取り、問題があれば `RuleError` を返す
 
-ジェネリクス（`@template`）で「`getNodeType()` が返す型 = `processNode()` が受け取る型」を
-結びつけています。PHP の構文を変えずに docblock で型を持たせるこの擬似ジェネリクスは、
-もともと Hack に源流を持ち PHP では Psalm が先駆け、PHPStan も含め両者で日常的に使われます。
-私たちが目指す静的解析器が最終的に検証できるようになる種類のコードでもあります。
+> このあと Part 2 で、`processNode()` には「その地点で何が分かっているか」を表す
+> `Scope` 引数が加わります（`processNode(Node $node, Scope $scope)`）。各章でルールは少しずつ
+> 賢くなります。
+
+`@template` は **PHPDoc で型変数を宣言する**記法です（型変数の本格的な話は応用編で扱うので、
+ここは「`getNodeType()` が返す型 = `processNode()` が受け取る型」を結ぶ印、くらいで読み流して
+構いません）。PHP の構文を変えずに docblock で型を持たせるこの擬似ジェネリクスは、もともと
+Hack に源流を持ち PHP では Psalm が先駆け、PHPStan も含め日常的に使われます。私たちが目指す
+静的解析器が最終的に検証できるようになる種類のコードでもあります。
 
 ## 最初のルール
 

@@ -96,7 +96,8 @@ private function processAssign(Expr\Assign $node, Scope $scope): Scope
 `foreach (... as $k => $v)` の `$k`/`$v`、関数パラメータ、`catch (E $e)`、`global $g`、
 `static $s`、分割代入 `[$a, $b] = …` —— **変数が生まれる場所** はこれだけ個別に捌けば、
 あとは `processChildren()` が子へ降りるだけ。降りた先で出会う `Variable` は読み取りなので、
-ルールに掛かります。
+ルールに掛かります（子の辿り方は php-parser の `Node::getSubNodeNames()` ―― 各ノードが
+持つ子の名前一覧 ―― を使えば、ノード種別を知らずに機械的に降りられます）。
 
 ## ルールは走査を知らない
 
@@ -135,8 +136,10 @@ public function processNode(Node $node, Scope $scope): array
   ```
 
   PHPStan は逆に「**全**経路で定義された場合のみ確定」とし、そうでなければ「未定義かも
-  しれない」を報告します。これは経路に敏感な解析（Part 5 の絞り込み）が要るので、
-  ここでは偽陽性を出さない側に倒しておきます。
+  しれない（possibly undefined）」と報告します。ministan はこの「かもしれない」を**あえて
+  採らず**、楽観的和集合で通します ―― 偽陽性ゼロを優先する non-rejecting の選択で、後の章でも
+  変えません。Part 5 で入れる*型*の絞り込みとは別の話で、変数が「定義済みか」の判定はこの
+  楽観のままです。
 
 > 既知の積み残し: `isset($y) ? $y : 1` のように、ガードが**式**で効くケースの精密化は
 > Part 5（型の絞り込み）に回します。
