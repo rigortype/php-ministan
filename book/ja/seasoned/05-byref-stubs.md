@@ -2,7 +2,7 @@
 
 > ＊この章のコードはスナップショット [`impls/seasoned/05-byref-stubs`](../../../impls/seasoned/05-byref-stubs) にあります（この章の到達点は `git tag seasoned-05`）。
 
-Part 8 で自分自身を解析したとき、こう叱られました:
+基礎編 Part 8 で自分自身を解析したとき、こう叱られました:
 
 ```php
 preg_match('/\d+/', $input, $matches);
@@ -42,7 +42,7 @@ $ dev/bin/ministan analyse examples/seasoned/byref-stubs.php
 [OK] No errors   # $matches はもう未定義扱いされない
 ```
 
-Part 8 の宿題を回収しました。
+基礎編 Part 8 の宿題を回収しました。
 
 ## スタブ —— シグネチャを外から補う
 
@@ -73,15 +73,19 @@ $ dev/bin/ministan annotate examples/seasoned/byref-stubs.php
     15  $first : string                ← $parts[0]
 ```
 
+`list<string>`（連番 int キーの string 配列）は ministan では `array<int, string>` に写ります
+（基礎編 Part 7 の `ArrayType` 化）。だから `$parts` が `array<int, string>`、その要素 `$parts[0]`
+が `string` と分かります。
+
 ## まとめ
 
 - 参照渡しのパラメータをリフレクションに持たせ、その位置の引数変数を**定義**として扱う
-- これで `preg_match(..., $m)` の `$m` が未定義扱いされない（Part 8 の宿題を回収）
+- これで `preg_match(..., $m)` の `$m` が未定義扱いされない（基礎編 Part 8 の宿題を回収）
 - **スタブ**でネイティブに足りないシグネチャを補い、ネイティブより優先する
 - スタブは実行せず**パース**するだけ ―― PHPDoc 付き宣言で外からシグネチャを補う（Psalm の `.phpstub` と同じ発想）
 
 > 簡略化: 名前付き引数の型照合（位置への対応付け）、参照渡しの出力型の精密化
 > （`@param string[] $matches` を $matches の型にする）は見送り。
 
-最終章 S6 では、これを大規模コードベースで現実的に使うための **結果キャッシュ** を
+S6 では、これを大規模コードベースで現実的に使うための **結果キャッシュ** を
 実装します。

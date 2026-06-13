@@ -3,7 +3,7 @@
 > ＊この章のコードはスナップショット [`impls/seasoned/03-generics`](../../../impls/seasoned/03-generics) にあります（この章の到達点は `git tag seasoned-03`）。
 
 PHP には言語レベルのジェネリクスがありませんが、PHPDoc の `@template` で表現します。
-これを解析できるかどうかが、現代の PHP 静的解析の分水嶺です（この `@template` は Hack の
+これを解析できるかどうかが、現代の PHP 静的解析の分かれ目です（この `@template` は Hack の
 ジェネリクスに源流を持ち、PHP では Psalm が先駆けました）。
 
 > Java の型消去（erasure）や C# の具現化（reified）とも違い、PHP の `@template` は **PHPDoc＝
@@ -129,5 +129,5 @@ $ dev/bin/ministan annotate examples/seasoned/generics.php
 > 簡略化: 入れ子の型変数推論（`array<T>` から T を逆算）、境界・変性、プロパティ型の
 > 推論は見送り。ここはジェネリクスの「芯」を通すことを優先しました。
 
-次の S4 では、S2 で宿題になった **`match` の腕での絞り込み** を含む、高度な narrowing と
-ループの不動点解析に踏み込みます。
+次の S4 では、S2 で宿題になった **`match` の腕での絞り込み** を含む、高度な narrowing
+（早期 return・`assert`・`match`）に踏み込みます（ループの型ワイドニングは S7 へ）。
