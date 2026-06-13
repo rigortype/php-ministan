@@ -29,15 +29,22 @@
 
 ## 再構成（執筆後・バッチ）
 
-各タグの `dev/` を `impls/NN-*/` として書き出す。例:
+各タグの `dev/`（＋その時点の `examples/`）を `impls/NN-*/` として書き出す。
+この生成は **`tools/build-impls.sh`** に集約済み:
 
 ```console
-# あるタグ時点の dev/ をスナップショットとして展開
-$ git archive part-02 dev | tar -x --strip-components=1 -C impls/02-scope
-
-# 章間の差分（＝読者に見せるパッチ）を取り出す
-$ git diff part-01 part-02 -- dev > tools/patches/02-scope.patch
+$ tools/build-impls.sh        # impls/ を全タグから作り直す（既存は破棄して再生成）
 ```
 
-この生成は `tools/` のスクリプトに集約する予定（執筆が進んでから整備する）。
-それまで `impls/` は空でよい。
+中身は単純で、各タグについて:
+
+```console
+$ git archive part-02 dev | tar -x --strip-components=1 -C impls/02-scope
+$ git archive part-02 examples | tar -x -C impls/02-scope
+```
+
+`vendor/`・`composer.lock` は元から git 管理外なので含まれない（読者は各章で
+`composer install`）。`impls/` は**生成物**なので手で編集しない ―― 直したいときは
+`dev/` を直し、タグを打ち直してから再生成する。
+
+> 章間の差分（読者に見せるパッチ）が欲しければ `git diff part-01 part-02 -- dev` で取れる。
