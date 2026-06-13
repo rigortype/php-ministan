@@ -80,12 +80,8 @@
 
 ## 読み方 —— `dev/` と `impls/`
 
-開発は単一のライブツリー [`dev/`](../../dev) で行い、章境界を git タグ（`part-00`…`part-09`,
-`seasoned-01`…）で刻んでいます。本文がリンクするコードは、**各章の完成スナップショット**
-`impls/NN-*`（その章まで書いたときのコード）です。`dev/` は全章を育てきった最終形なので、
-先の章のコードまで見たいときはそちらを。
-
-任意の章は、それだけで動かせます:
+本文がリンクするコードは、**各章の完成スナップショット** [`impls/NN-*`](../../impls)
+（その章まで書いたときのコード）です。任意の章は、それだけで動かせます:
 
 ```console
 $ cd impls/02-scope && composer install
@@ -96,8 +92,8 @@ $ ./bin/ministan analyse examples/with-var-dump.php
  [ERROR] Found 1 error
 ```
 
-スナップショットは `tools/build-impls.sh` が git タグから機械生成しています（手で編集しません）。
-詳しくはリポジトリの [WORKFLOW.md](../../WORKFLOW.md)。
+先の章まで含む最終形を見たいときは、全章を育てきったライブツリー [`dev/`](../../dev) を。
+スナップショットの生成方法など制作の裏側は、[WORKFLOW.md](../../WORKFLOW.md) に。
 
 ## その先 —— 本物の PHPStan へ
 
