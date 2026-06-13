@@ -8,6 +8,8 @@
 [chibirigor](https://github.com/rigortype/chibirigor) のモデルに倣い、
 「動くものを少しずつ育てる」段階的アプローチで、PHP の静的解析・型チェッカー・型推論器を作ります。
 
+📖 **本を読む → [`book/ja/`](book/ja/README.md)**（まえがき・二部構成の地図・読み方はこちら）
+
 - 対象: **PHP 8.3+**
 - 基盤: **nikic/php-parser ^5**、PHPDoc は **phpstan/phpdoc-parser**（Part 7〜）
 - CLI: `ministan analyse <file>`（解析）/ `ministan annotate <file>`（推論型の表示・Part 4〜）
