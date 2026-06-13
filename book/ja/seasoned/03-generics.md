@@ -9,7 +9,7 @@ PHP には言語レベルのジェネリクスがありませんが、PHPDoc の
 > Java の型消去（erasure）や C# の具現化（reified）とも違い、PHP の `@template` は **PHPDoc＝
 > コメント**なので、ランタイムは文字どおり何も認識しません。型引数は**静的解析の層にだけ
 > 存在**し、実行時のメソッド解決とは独立しています。だから型安全を担保するのは*解析器の
-> 責任*です ―― TypeScript の `<T>` がコンパイラに支えられるのと同じ役回りを、PHP では
+> 責任*です —— TypeScript の `<T>` がコンパイラに支えられるのと同じ役回りを、PHP では
 > PHPStan や ministan が担います。
 
 ```php
@@ -115,7 +115,7 @@ $ dev/bin/ministan annotate examples/seasoned/generics.php
 
 > ここでの「推論」は、型変数がそのまま現れる引数位置からの**一方向の置換（substitution）**
 > です。`array<T>` の `T` を実引数から逆算するような双方向の解（単一化）はしません（実 PHPStan は
-> `array_map` などでこの逆算までやります ―― `dumpType()` で見えるあの推論です。ministan は
+> `array_map` などでこの逆算までやります —— `dumpType()` で見えるあの推論です。ministan は
 > 最小核ゆえ一方向に留め、入れ子の型変数推論は応用編の先へ）。型理論で言えば、`@template T` は
 > 全称型 `∀T`、`identity(42)` の置換は型適用 `identity[42]` に当たります（TAPL / System F）。
 

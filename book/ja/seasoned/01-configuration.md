@@ -81,7 +81,7 @@ public function createForLevel(int $level, array $extraRules = []): RuleRegistry
 ```
 
 `AnalyseCommand` はクラス名から実体を作り（オートロード可能で `Rule` を実装していれば）、
-登録します。これで利用者は、自分のプロジェクト規約を表すルールを足せます——PHPStan の
+登録します。これで利用者は、自分のプロジェクト規約を表すルールを足せます —— PHPStan の
 エコシステムが豊かなのは、この拡張点があるからです。
 
 ## まとめ

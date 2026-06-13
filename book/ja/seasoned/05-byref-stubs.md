@@ -48,7 +48,7 @@ $ dev/bin/ministan analyse examples/seasoned/byref-stubs.php
 
 ネイティブのリフレクションでは表現できない型があります。`explode()` の戻り値はネイティブ
 では `array`（＝ ministan では `mixed`）ですが、本当は `list<string>` です。PHPStan/Psalm は
-**スタブ**（PHPDoc 付きの宣言をパースする `.stub` 系のファイル）でこれを補います ―― この
+**スタブ**（PHPDoc 付きの宣言をパースする `.stub` 系のファイル）でこれを補います —— この
 PHPDoc スタブを広めたのは Psalm（`.phpstub`）です。ministan も同じ手を使います。
 
 [`stubs/core.php`](../../../impls/seasoned/05-byref-stubs/stubs/core.php) は**実行されません**。シグネチャを読むためだけに
@@ -82,7 +82,7 @@ $ dev/bin/ministan annotate examples/seasoned/byref-stubs.php
 - 参照渡しのパラメータをリフレクションに持たせ、その位置の引数変数を**定義**として扱う
 - これで `preg_match(..., $m)` の `$m` が未定義扱いされない（基礎編 Part 8 の宿題を回収）
 - **スタブ**でネイティブに足りないシグネチャを補い、ネイティブより優先する
-- スタブは実行せず**パース**するだけ ―― PHPDoc 付き宣言で外からシグネチャを補う（Psalm の `.phpstub` と同じ発想）
+- スタブは実行せず**パース**するだけ —— PHPDoc 付き宣言で外からシグネチャを補う（Psalm の `.phpstub` と同じ発想）
 
 > 簡略化: 名前付き引数の型照合（位置への対応付け）、参照渡しの出力型の精密化
 > （`@param string[] $matches` を $matches の型にする）は見送り。

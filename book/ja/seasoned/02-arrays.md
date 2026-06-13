@@ -13,7 +13,7 @@ $id = $row['id']; // これは int？ いや、ちょうど 42
 ## constant array shape
 
 `['id' => 42]` の型は `array<string, int>` ではなく **`array{id: 42}`** であるべきです。
-キーごとに値の型が分かる——これが [`ConstantArrayType`](../../../impls/seasoned/02-arrays/src/Type/Constant/ConstantArrayType.php)
+キーごとに値の型が分かる —— これが [`ConstantArrayType`](../../../impls/seasoned/02-arrays/src/Type/Constant/ConstantArrayType.php)
 （PHPStan の constant array shape）。定数型が配列にも効きます:
 
 ```php
@@ -82,7 +82,7 @@ Call to an undefined method Ministan\Type\Type::getIterableValueType().
 `match (true) { $x instanceof ArrayType => $x->getIterableValueType() }` の **match の腕**で
 `$x` を絞り込めていなかったのです（`if ($x instanceof …)` なら絞り込めます）。今回は
 コードを `if` で書き直して回避しましたが、**match の腕での絞り込み**は次章以降の宿題に
-なりました——解析器が自分でロードマップを書いてくれるのは、dogfooding の醍醐味です。
+なりました —— 解析器が自分でロードマップを書いてくれるのは、dogfooding の醍醐味です。
 
 ## まとめ
 
