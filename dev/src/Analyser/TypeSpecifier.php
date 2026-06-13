@@ -146,7 +146,7 @@ final class TypeSpecifier
         return new SpecifiedTypes($truthy, $scope);
     }
 
-    private function specifyEquality(Expr $left, Expr $right, Scope $scope): SpecifiedTypes
+    public function specifyEquality(Expr $left, Expr $right, Scope $scope): SpecifiedTypes
     {
         [$variable, $value] = $this->orientVariableAndValue($left, $right);
         if ($variable === null || $value === null) {

@@ -12,7 +12,9 @@ use Ministan\Type\Constant\ConstantArrayType;
 use Ministan\Type\MixedType;
 use Ministan\Type\Type;
 use PhpParser\Node;
+use PhpParser\Node\Arg;
 use PhpParser\Node\Expr;
+use PhpParser\Node\Name;
 use PhpParser\Node\Stmt;
 
 /**
@@ -85,6 +87,7 @@ final class NodeScopeResolver
             $node instanceof Expr\BinaryOp\BooleanAnd,
             $node instanceof Expr\BinaryOp\BooleanOr => $this->processLogical($node, $scope),
             $node instanceof Stmt\If_            => $this->processIf($node, $scope),
+            $node instanceof Expr\Match_         => $this->processMatch($node, $scope),
             $node instanceof Expr\Ternary        => $this->processTernary($node, $scope),
             $node instanceof Stmt\Foreach_       => $this->processForeach($node, $scope),
             $node instanceof Stmt\Catch_         => $this->processCatch($node, $scope),
@@ -192,6 +195,18 @@ final class NodeScopeResolver
     private function processExpressionStmt(Stmt\Expression $node, Scope $scope): Scope
     {
         $expr = $node->expr;
+
+        // assert($x instanceof Foo) は、以降のスコープで $x を絞り込む。
+        if ($expr instanceof Expr\FuncCall
+            && $expr->name instanceof Name
+            && $expr->name->toLowerString() === 'assert'
+            && ($expr->args[0] ?? null) instanceof Arg
+        ) {
+            $this->processNode($expr, $scope);
+
+            return $this->typeSpecifier->specify($expr->args[0]->value, $scope)->truthy;
+        }
+
         $doc = $node->getDocComment();
 
         if ($doc !== null
@@ -236,22 +251,36 @@ final class NodeScopeResolver
         $scope = $this->processNode($node->cond, $scope);
         $specified = $this->typeSpecifier->specify($node->cond, $scope);
 
+        // return / throw で終わる枝は合流に寄与しない。これが早期 return の絞り込みを生む:
+        // `if ($x === null) { return; }` を抜けた後、$x は非 null として続く。
         $endScopes = [];
-        $endScopes[] = $this->processStmts($node->stmts, $specified->truthy);
+        $thenScope = $this->processStmts($node->stmts, $specified->truthy);
+        if (!$this->alwaysTerminates($node->stmts)) {
+            $endScopes[] = $thenScope;
+        }
 
-        // それまでの条件がすべて偽だった世界線を運びながら elseif を辿る。
         $falsy = $specified->falsy;
         foreach ($node->elseifs as $elseif) {
             $falsy = $this->processNode($elseif->cond, $falsy);
             $branch = $this->typeSpecifier->specify($elseif->cond, $falsy);
-            $endScopes[] = $this->processStmts($elseif->stmts, $branch->truthy);
+            $branchScope = $this->processStmts($elseif->stmts, $branch->truthy);
+            if (!$this->alwaysTerminates($elseif->stmts)) {
+                $endScopes[] = $branchScope;
+            }
             $falsy = $branch->falsy;
         }
 
         if ($node->else !== null) {
-            $endScopes[] = $this->processStmts($node->else->stmts, $falsy);
+            $elseScope = $this->processStmts($node->else->stmts, $falsy);
+            if (!$this->alwaysTerminates($node->else->stmts)) {
+                $endScopes[] = $elseScope;
+            }
         } else {
             $endScopes[] = $falsy; // else が無ければ「全条件が偽」の経路がそのまま続く
+        }
+
+        if ($endScopes === []) {
+            return $falsy; // 全経路が終了
         }
 
         $result = array_shift($endScopes);
@@ -260,6 +289,67 @@ final class NodeScopeResolver
         }
 
         return $result;
+    }
+
+    /**
+     * 文の並びが必ず return / throw / exit で終わるか（＝後続コードに到達しないか）。
+     *
+     * @param Node[] $stmts
+     */
+    private function alwaysTerminates(array $stmts): bool
+    {
+        if ($stmts === []) {
+            return false;
+        }
+
+        $last = $stmts[array_key_last($stmts)];
+
+        if ($last instanceof Stmt\Return_) {
+            return true;
+        }
+        if ($last instanceof Stmt\Expression && $last->expr instanceof Expr\Throw_) {
+            return true;
+        }
+        if ($last instanceof Stmt\Expression && $last->expr instanceof Expr\Exit_) {
+            return true;
+        }
+
+        return false;
+    }
+
+    /**
+     * match の各腕を、絞り込まれたスコープで解析する。S2 で宿題にした
+     * 「match の腕での narrowing」をここで回収する。
+     */
+    private function processMatch(Expr\Match_ $node, Scope $scope): Scope
+    {
+        $scope = $this->processNode($node->cond, $scope);
+
+        // `match (true)` は腕の条件式そのものが真偽条件。`match ($x)` は $x === 腕の値。
+        $matchesTrue = $node->cond instanceof Expr\ConstFetch
+            && $node->cond->name->toLowerString() === 'true';
+
+        $remaining = $scope;
+        foreach ($node->arms as $arm) {
+            if ($arm->conds === null) {
+                $this->processNode($arm->body, $remaining); // default
+                continue;
+            }
+
+            $armScope = $remaining;
+            foreach ($arm->conds as $cond) {
+                $this->processNode($cond, $remaining);
+                $specified = $matchesTrue
+                    ? $this->typeSpecifier->specify($cond, $remaining)
+                    : $this->typeSpecifier->specifyEquality($node->cond, $cond, $remaining);
+                $armScope = $specified->truthy;
+                $remaining = $specified->falsy;
+            }
+
+            $this->processNode($arm->body, $armScope);
+        }
+
+        return $scope;
     }
 
     private function processTernary(Expr\Ternary $node, Scope $scope): Scope
