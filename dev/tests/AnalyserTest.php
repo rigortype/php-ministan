@@ -79,4 +79,15 @@ final class AnalyserTest extends TestCase
 
         self::assertSame([], $errors);
     }
+
+    /**
+     * Part 2 で積み残した「isset で守られた三項」の取りこぼしが、
+     * Part 5 の絞り込みで解消されたことの回帰テスト。
+     */
+    public function testIssetGuardedTernaryProducesNoFalsePositive(): void
+    {
+        $errors = $this->analyser()->analyseFile(__DIR__ . '/fixtures/isset-ternary.php');
+
+        self::assertSame([], $errors);
+    }
 }

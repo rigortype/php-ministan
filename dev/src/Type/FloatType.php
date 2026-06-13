@@ -18,7 +18,7 @@ final class FloatType implements Type
     public function isSuperTypeOf(Type $type): TrinaryLogic
     {
         // int → float の暗黙拡大は accepts の精密化として後の章で扱う。ここでは厳密。
-        return self::relateToTopAndBottom($type)
+        return $this->relateToSpecial($type)
             ?? ($type instanceof self ? TrinaryLogic::Yes : TrinaryLogic::No);
     }
 }

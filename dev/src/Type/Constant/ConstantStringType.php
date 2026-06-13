@@ -28,7 +28,7 @@ final class ConstantStringType implements Type
 
     public function isSuperTypeOf(Type $type): TrinaryLogic
     {
-        return self::relateToTopAndBottom($type)
+        return $this->relateToSpecial($type)
             ?? match (true) {
                 $type instanceof self => $this->value === $type->value
                     ? TrinaryLogic::Yes

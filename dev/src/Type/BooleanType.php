@@ -18,7 +18,7 @@ final class BooleanType implements Type
 
     public function isSuperTypeOf(Type $type): TrinaryLogic
     {
-        return self::relateToTopAndBottom($type)
+        return $this->relateToSpecial($type)
             ?? (($type instanceof self || $type instanceof ConstantBooleanType)
                 ? TrinaryLogic::Yes
                 : TrinaryLogic::No);

@@ -17,7 +17,7 @@ final class NullType implements Type
 
     public function isSuperTypeOf(Type $type): TrinaryLogic
     {
-        return self::relateToTopAndBottom($type)
+        return $this->relateToSpecial($type)
             ?? ($type instanceof self ? TrinaryLogic::Yes : TrinaryLogic::No);
     }
 }

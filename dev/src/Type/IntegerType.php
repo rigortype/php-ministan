@@ -18,7 +18,7 @@ final class IntegerType implements Type
 
     public function isSuperTypeOf(Type $type): TrinaryLogic
     {
-        return self::relateToTopAndBottom($type)
+        return $this->relateToSpecial($type)
             ?? (($type instanceof self || $type instanceof ConstantIntegerType)
                 ? TrinaryLogic::Yes   // int も、42 のような定数 int も、int の部分型
                 : TrinaryLogic::No);

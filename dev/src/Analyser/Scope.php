@@ -14,6 +14,7 @@ use Ministan\Type\MixedType;
 use Ministan\Type\NullType;
 use Ministan\Type\StringType;
 use Ministan\Type\Type;
+use Ministan\Type\TypeCombinator;
 use PhpParser\Node\Expr;
 use PhpParser\Node\Scalar;
 
@@ -73,19 +74,17 @@ final readonly class Scope
     }
 
     /**
-     * 2 つのスコープを合流する。両方で定義され型が食い違う変数は mixed に広げる
-     * （union 型はまだ無いため）。片方だけの変数は楽観的に残す（偽陽性を出さない）。
-     * 全経路で同じ型のときだけ型を保てる。精密な合流（union）は Part 5 で。
+     * 2 つのスコープを合流する。両方で定義された変数は型を **union** で合併する
+     * （then で int・else で string なら、合流後は int|string）。片方だけの変数は
+     * 楽観的に残し、偽陽性を出さない。
      */
     public function mergeWith(self $other): self
     {
         $merged = $this->variableTypes;
         foreach ($other->variableTypes as $name => $type) {
-            if (!isset($merged[$name])) {
-                $merged[$name] = $type;
-            } elseif (!$merged[$name]->equals($type)) {
-                $merged[$name] = new MixedType();
-            }
+            $merged[$name] = isset($merged[$name])
+                ? TypeCombinator::union($merged[$name], $type)
+                : $type;
         }
 
         return new self($merged);

@@ -32,12 +32,15 @@ final class NodeScopeResolver
     /** @var Closure(Node, Scope): void */
     private Closure $nodeCallback;
 
+    private TypeSpecifier $typeSpecifier;
+
     /**
      * @param callable(Node, Scope): void $nodeCallback
      */
     public function __construct(callable $nodeCallback)
     {
         $this->nodeCallback = Closure::fromCallable($nodeCallback);
+        $this->typeSpecifier = new TypeSpecifier();
     }
 
     /**
@@ -73,6 +76,8 @@ final class NodeScopeResolver
             $node instanceof Expr\Assign,
             $node instanceof Expr\AssignRef      => $this->processAssign($node, $scope),
             $node instanceof Expr\AssignOp       => $this->processAssignOp($node, $scope),
+            $node instanceof Stmt\If_            => $this->processIf($node, $scope),
+            $node instanceof Expr\Ternary        => $this->processTernary($node, $scope),
             $node instanceof Stmt\Foreach_       => $this->processForeach($node, $scope),
             $node instanceof Stmt\Catch_         => $this->processCatch($node, $scope),
             $node instanceof Stmt\Global_        => $this->processGlobal($node, $scope),
@@ -172,6 +177,54 @@ final class NodeScopeResolver
 
         // $arr[...] = ... で $arr は配列になるが、配列型は後章。ここでは mixed。
         return $this->processAssignTarget($node->var, new MixedType(), $scope);
+    }
+
+    // --- 条件分岐: 型の絞り込みを適用する ---
+
+    private function processIf(Stmt\If_ $node, Scope $scope): Scope
+    {
+        $scope = $this->processNode($node->cond, $scope);
+        $specified = $this->typeSpecifier->specify($node->cond, $scope);
+
+        $endScopes = [];
+        $endScopes[] = $this->processStmts($node->stmts, $specified->truthy);
+
+        // それまでの条件がすべて偽だった世界線を運びながら elseif を辿る。
+        $falsy = $specified->falsy;
+        foreach ($node->elseifs as $elseif) {
+            $falsy = $this->processNode($elseif->cond, $falsy);
+            $branch = $this->typeSpecifier->specify($elseif->cond, $falsy);
+            $endScopes[] = $this->processStmts($elseif->stmts, $branch->truthy);
+            $falsy = $branch->falsy;
+        }
+
+        if ($node->else !== null) {
+            $endScopes[] = $this->processStmts($node->else->stmts, $falsy);
+        } else {
+            $endScopes[] = $falsy; // else が無ければ「全条件が偽」の経路がそのまま続く
+        }
+
+        $result = array_shift($endScopes);
+        foreach ($endScopes as $branchScope) {
+            $result = $result->mergeWith($branchScope);
+        }
+
+        return $result;
+    }
+
+    private function processTernary(Expr\Ternary $node, Scope $scope): Scope
+    {
+        $scope = $this->processNode($node->cond, $scope);
+        $specified = $this->typeSpecifier->specify($node->cond, $scope);
+
+        // `$x ? $x->foo() : null` のように、各枝は絞り込まれたスコープで解析する。
+        // これにより `isset($y) ? $y : d` の $y も真の枝では定義済みになる。
+        if ($node->if !== null) {
+            $this->processNode($node->if, $specified->truthy);
+        }
+        $this->processNode($node->else, $specified->falsy);
+
+        return $scope;
     }
 
     // --- ループ・例外・宣言 ---
