@@ -48,7 +48,7 @@ final readonly class Scope
 }
 ```
 
-`assignVariable()` は自分を書き換えず、**新しい `Scope`** を返します。なぜ不変か——
+`assignVariable()` は自分を書き換えず、**新しい `Scope`** を返します。なぜ不変か ——
 分岐があるからです。`if` の then 節で得た事実は then 節だけのもの。可変オブジェクトを
 共有すると、then の代入が else にまで漏れてしまう。不変なら、枝ごとに別の `Scope` を
 持たせ、合流時に意図どおり混ぜられます。Part 0 で `Error` を `readonly` にしたのも、
@@ -98,6 +98,11 @@ private function processAssign(Expr\Assign $node, Scope $scope): Scope
 あとは `processChildren()` が子へ降りるだけ。降りた先で出会う `Variable` は読み取りなので、
 ルールに掛かります（子の辿り方は php-parser の `Node::getSubNodeNames()` —— 各ノードが
 持つ子の名前一覧 —— を使えば、ノード種別を知らずに機械的に降りられます）。
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="figures/02-scope-flow-dark.svg">
+  <img src="figures/02-scope-flow.svg" alt="Scope の伝播: 木を下りながら不変 Scope を運び、if で枝分かれし、合流（楽観的和集合）で 1 つに戻る">
+</picture>
 
 ## ルールは走査を知らない
 

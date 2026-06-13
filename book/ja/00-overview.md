@@ -39,15 +39,10 @@ PHP は型宣言を**実行時**に検査します（`int $x` に文字列を渡
 たどって —— 見つけることです。テストが踏まない経路でも、`$user->nmae` のタイポや型の
 取り違えを*出荷前*に捕まえる。これが「実行せずに」の値打ちです。
 
-```
-ソースコード
-   │  nikic/php-parser
-   ▼
-  AST  ──▶  NodeScopeResolver ──▶ Scope（各地点の変数→型）
-                                     │
-                                     ▼
-                                  Rule 群 ──▶ Error 群 ──▶ 整形・出力
-```
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="figures/00-pipeline-dark.svg">
+  <img src="figures/00-pipeline.svg" alt="ministan の解析パイプライン: ソースコード → AST → NodeScopeResolver → Scope → Rule 群 → Error 群 → 整形・出力">
+</picture>
 
 ministan もこの構造を最初から踏襲します。本章ではまだ Scope も Rule もありませんが、
 両端 —— **入力（パース）** と **出力（Error の整形）** —— を先に通しておきます。

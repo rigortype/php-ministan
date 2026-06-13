@@ -28,6 +28,11 @@ public function isAcceptable(Type $accepting, Type $accepted): bool
 > この「7」は ministan の簡略化した一つの閾値です。実 PHPStan は単一の数値ではなく、
 > explicit な `mixed` は level 9、union は 7、nullable は 8 …と段階的に厳しくします。
 
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="figures/08-levels-dark.svg">
+  <img src="figures/08-levels.svg" alt="レベルの正体: 三値の Maybe を、レベルの閾値を境に素通り（OK）か咎める（エラー）かで裁く">
+</picture>
+
 ## 型を使うルール
 
 引数の照合は関数とメソッドで共通なので

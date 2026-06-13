@@ -83,6 +83,11 @@ $falsy  = $scope->assignVariable($name, TypeCombinator::remove($current, $narrow
 > 要るため見送り。これらは **リフレクションを得る Part 6 で `ObjectType` を強化**して
 > 完成させます。non-rejecting なので、今は分からない分を狭めないだけです。
 
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="figures/05-narrowing-dark.svg">
+  <img src="figures/05-narrowing.svg" alt="型の絞り込み: if ($x === null) が $x を truthy（null）と falsy（int）に分け、早期 return した枝は合流に寄与しない">
+</picture>
+
 ## 分岐に織り込む
 
 `NodeScopeResolver` の `if` を専用処理にし、条件の絞り込みを各枝へ流します
