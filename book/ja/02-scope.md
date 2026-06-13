@@ -155,7 +155,8 @@ $ dev/bin/ministan analyse dev/tests/fixtures/undefined-variable.php
 ```
 
 良い静的解析器は **自分自身を通せる**べきです。ministan を ministan 自身のソースに当てると、
-クロージャ・アロー関数・`match`・分割代入を含む全ファイルが偽陽性ゼロで通ります:
+クロージャ・アロー関数・`match`・分割代入を含む全ファイルが、この時点では偽陽性なしで通ります
+（解析器が育つほど、自分自身が新たな宿題を出すこともあります ―― Part 8）:
 
 ```console
 $ for f in $(find dev/src -name '*.php'); do dev/bin/ministan analyse "$f"; done

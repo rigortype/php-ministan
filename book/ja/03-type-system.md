@@ -40,7 +40,7 @@ enum TrinaryLogic
 
 ## `Type` インターフェイス
 
-PHPStan の心臓がルールなら、型システムの心臓は
+ルールが PHPStan の心臓なら、型システムの中核は
 [`Type`](../../impls/03-type-system/src/Type/Type.php) です。3 つの問いに答えます:
 
 ```php

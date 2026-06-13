@@ -27,7 +27,7 @@ return (new NodeTraverser(new NameResolver()))->traverse($ast);
 
 ## `ReflectionProvider` —— シグネチャを引く窓口
 
-PHPStan の心臓のひとつ [`ReflectionProvider`](../../impls/06-reflection/src/Reflection/ReflectionProvider.php)。
+PHPStan の要のひとつ [`ReflectionProvider`](../../impls/06-reflection/src/Reflection/ReflectionProvider.php)。
 二段構えです:
 
 1. **解析対象コードの宣言** —— AST から事前に収集（`fromNodes()`）

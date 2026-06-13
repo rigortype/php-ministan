@@ -25,7 +25,7 @@ public function getVariableType(string $name): Type
 
 ## `getType()` —— 推論の本体
 
-`Scope::getType(Expr): Type` が PHPStan の心臓 `Scope::getType()` に当たります。
+`Scope::getType(Expr): Type` が PHPStan の中核 `Scope::getType()` に当たります。
 式の構造から型を組み立てます:
 
 > ここでの「推論」は、リテラル・宣言型・式の構造から型を**ボトムアップで組み立てる**
@@ -76,9 +76,9 @@ private function arithmeticType(Expr\BinaryOp $expr): Type
 }
 ```
 
-> 定数畳み込み（`42 + 1` を `43` と推論する）は ministan では**あえてしません**。
-> `$a + 1` の型は `int` に留めます。畳み込みは解析を重くする割に効用が限られる、という
-> 本書の判断です（実 PHPStan は `42 + 1` を `43` まで畳み込みます。ここは意図的な簡略化）。
+> 定数畳み込み（`42 + 1` を `43` と推論する）は ministan ではしません。`$a + 1` の型は
+> `int` に留めます ―― 解析を重くする割に効用が限られるからです（実 PHPStan は `43` まで
+> 畳み込みます）。
 
 ## 代入で型を結ぶ
 

@@ -66,8 +66,8 @@ $ dev/bin/ministan analyse --baseline=ministan-baseline.json src
 これで新しく入った指摘だけが赤くなります。
 
 > baseline はこの本がモデルにする PHPStan の専売ではありません。PHP では Psalm が先行し、
-> その設計には既存エラーを「grandfather（既得権益化）」する Erik Booij の提案が取り込まれて
-> います。「恐怖を取り除いて変更を再開する」という発想は、PHP 静的解析の共有財産です。
+> 既存エラーを「grandfather（既得権益化）」する発想を広めました。「恐怖を取り除いて変更を
+> 再開する」というこの考えは、PHP 静的解析の共有財産です。
 
 ## 終了コード
 
