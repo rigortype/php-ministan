@@ -7,13 +7,17 @@ namespace Ministan\Tests;
 use Ministan\Analyser\Analyser;
 use Ministan\Rules\Functions\NoVarDumpRule;
 use Ministan\Rules\RuleRegistry;
+use Ministan\Rules\Variables\UndefinedVariableRule;
 use PHPUnit\Framework\TestCase;
 
 final class AnalyserTest extends TestCase
 {
     private function analyser(): Analyser
     {
-        return new Analyser(new RuleRegistry([new NoVarDumpRule()]));
+        return new Analyser(new RuleRegistry([
+            new NoVarDumpRule(),
+            new UndefinedVariableRule(),
+        ]));
     }
 
     public function testCleanFileReportsNoErrors(): void
@@ -47,5 +51,32 @@ final class AnalyserTest extends TestCase
         self::assertCount(1, $errors);
         self::assertSame('Called var_dump().', $errors[0]->message);
         self::assertSame(7, $errors[0]->line);
+    }
+
+    public function testUndefinedVariableIsReported(): void
+    {
+        $errors = $this->analyser()->analyseFile(__DIR__ . '/fixtures/undefined-variable.php');
+
+        self::assertCount(1, $errors);
+        self::assertSame('Undefined variable: $greetnig', $errors[0]->message);
+        self::assertSame(9, $errors[0]->line);
+    }
+
+    /**
+     * パラメータ・代入・foreach・アロー関数・条件分岐をまたいで定義された変数は、
+     * 偽陽性を出してはならない（non-rejecting の回帰テスト）。
+     */
+    public function testScopedVariablesProduceNoFalsePositives(): void
+    {
+        $errors = $this->analyser()->analyseFile(__DIR__ . '/fixtures/scoped-variables.php');
+
+        self::assertSame([], $errors);
+    }
+
+    public function testSuperglobalsAndCoalesceAreSafe(): void
+    {
+        $errors = $this->analyser()->analyseFile(__DIR__ . '/fixtures/superglobals.php');
+
+        self::assertSame([], $errors);
     }
 }

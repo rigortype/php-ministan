@@ -6,14 +6,14 @@ namespace Ministan\Analyser;
 
 use Ministan\Rules\RuleRegistry;
 use PhpParser\Error as ParserError;
-use PhpParser\NodeTraverser;
 use PhpParser\ParserFactory;
 
 /**
  * 解析パイプラインの入口。
  *
  * Part 0: 構文エラーの翻訳。
- * Part 1: パース済み AST にルール群を適用する（← イマココ）。
+ * Part 1: パース済み AST にルール群を適用する。
+ * Part 2: スコープを伝播させながらルールを適用する（← イマココ）。
  */
 final class Analyser
 {
@@ -41,9 +41,8 @@ final class Analyser
             return [new Error($e->getRawMessage(), $file, $e->getStartLine())];
         }
 
-        $visitor = new RuleApplyingVisitor($this->registry, $file);
-        (new NodeTraverser($visitor))->traverse($ast);
+        $resolver = new NodeScopeResolver($this->registry, $file);
 
-        return $visitor->getErrors();
+        return $resolver->analyse($ast, Scope::createForFile());
     }
 }

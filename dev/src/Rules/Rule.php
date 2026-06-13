@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ministan\Rules;
 
+use Ministan\Analyser\Scope;
 use PhpParser\Node;
 
 /**
@@ -11,6 +12,10 @@ use PhpParser\Node;
  *
  * PHPStan の {@see \PHPStan\Rules\Rule} に対応する。`getNodeType()` が
  * 「どのノードに反応するか」を、`processNode()` が「何を報告するか」を決める。
+ *
+ * Part 2 で `processNode()` に {@see Scope} が加わった。これにより、ルールは
+ * 「このノードの地点で何が分かっているか（どの変数が定義済みか、Part 4 以降は
+ * 各式の型）」を踏まえて判断できる。
  *
  * @template TNodeType of Node
  */
@@ -29,5 +34,5 @@ interface Rule
      *
      * @return list<RuleError>
      */
-    public function processNode(Node $node): array;
+    public function processNode(Node $node, Scope $scope): array;
 }

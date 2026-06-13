@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ministan\Rules\Functions;
 
+use Ministan\Analyser\Scope;
 use Ministan\Rules\Rule;
 use Ministan\Rules\RuleError;
 use PhpParser\Node;
@@ -28,7 +29,7 @@ final class NoVarDumpRule implements Rule
         return FuncCall::class;
     }
 
-    public function processNode(Node $node): array
+    public function processNode(Node $node, Scope $scope): array
     {
         assert($node instanceof FuncCall);
 

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Ministan\Rules;
 
 use Ministan\Rules\Functions\NoVarDumpRule;
+use Ministan\Rules\Variables\UndefinedVariableRule;
 
 /**
  * 既定のルール一式を組み立てる。
@@ -18,6 +19,7 @@ final class RuleRegistryFactory
     {
         return new RuleRegistry([
             new NoVarDumpRule(),
+            new UndefinedVariableRule(),
         ]);
     }
 }
