@@ -8,8 +8,11 @@
 
 ## union は部分型を吸収する
 
-`int|0` は `int` であるべきです。`0` は `int` の部分型だからです。`TypeCombinator::union()`
-に**部分型の吸収**を入れます（[`TypeCombinator`](../../../impls/seasoned/07-precision/src/Type/TypeCombinator.php)）:
+`int|0` は `int` であるべきです。`0` は `int` の部分型だからです（`int->isSuperTypeOf(42)` は
+「int は 42 を含む」＝Yes ―― 広い方が上位型）。TypeScript なら union は型チェッカーが勝手に
+畳んでくれますが、ministan の `mergeWith` はこれまで**重複を除くだけ**で部分型は畳まなかったため、
+`int|0` のような冗長な union が残っていました。そこで `TypeCombinator::union()` に**部分型の吸収**を
+入れます（[`TypeCombinator`](../../../impls/seasoned/07-precision/src/Type/TypeCombinator.php)）:
 
 ```php
 // 既存メンバが $type の上位型なら、$type は不要（int があれば 0 は要らない）。
