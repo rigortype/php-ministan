@@ -1,0 +1,58 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 440" width="720" height="440" role="img" aria-label="ministan の解析パイプライン" style="font-family:&#39;Inter&#39;,system-ui,&#39;Hiragino Kaku Gothic ProN&#39;,&#39;Yu Gothic&#39;,&#39;Noto Sans JP&#39;,sans-serif;fill:#0E1116">
+  <defs>
+    <marker id="arr" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="context-stroke"></path>
+    </marker>
+  </defs>
+
+  <rect x="0" y="0" width="720" height="440" style="fill:#F6F4EE"></rect>
+
+  <text x="24" y="48" style="font-size:11.5px;font-weight:600;fill:#585F6B;letter-spacing:.04em">パース ／ スコープ解決</text>
+  <text x="24" y="282" style="font-size:11.5px;font-weight:600;fill:#585F6B;letter-spacing:.04em">ルール適用 ／ 報告</text>
+
+  
+  <rect x="24" y="70" width="120" height="60" rx="6" style="fill:#FFFFFF;stroke:#C9C4B7;stroke-width:1.5"></rect>
+  <text x="84" y="98" text-anchor="middle" style="font-size:16px;font-weight:500;fill:#0E1116">ソースコード</text>
+  <text x="84" y="118" text-anchor="middle" style="font-family:&#39;JetBrains Mono&#39;,ui-monospace,Menlo,Consolas,monospace;font-size:12px;fill:#585F6B">*.php</text>
+
+  <line x1="148" y1="100" x2="192" y2="100" marker-end="url(#arr)" style="fill:none;stroke:#585F6B;stroke-width:1.6"></line>
+  <text x="170" y="148" text-anchor="middle" style="font-family:&#39;JetBrains Mono&#39;,ui-monospace,Menlo,monospace;font-size:11.5px;fill:#585F6B">nikic/php-parser</text>
+
+  <rect x="196" y="70" width="92" height="60" rx="6" style="fill:#FFFFFF;stroke:#C9C4B7;stroke-width:1.5"></rect>
+  <text x="242" y="106" text-anchor="middle" style="font-size:16px;font-weight:500;fill:#0E1116">AST</text>
+
+  <line x1="292" y1="100" x2="336" y2="100" marker-end="url(#arr)" style="fill:none;stroke:#585F6B;stroke-width:1.6"></line>
+
+  <rect x="340" y="70" width="184" height="60" rx="6" style="fill:#FFFFFF;stroke:#C9C4B7;stroke-width:1.5"></rect>
+  <text x="432" y="97" text-anchor="middle" style="font-family:&#39;JetBrains Mono&#39;,ui-monospace,Menlo,Consolas,monospace;font-size:14px;font-weight:500;fill:#0E1116">NodeScopeResolver</text>
+  <text x="432" y="117" text-anchor="middle" style="font-size:12px;fill:#585F6B">木を下りスコープを伝播</text>
+
+  <line x1="528" y1="100" x2="568" y2="100" marker-end="url(#arr)" style="fill:none;stroke:#585F6B;stroke-width:1.6"></line>
+
+  <rect x="572" y="70" width="124" height="60" rx="6" style="fill:#E1ECF8;stroke:#2D5C9E;stroke-width:1.5"></rect>
+  <text x="634" y="97" text-anchor="middle" style="font-size:16px;font-weight:600;fill:#2D5C9E">Scope</text>
+  <text x="634" y="117" text-anchor="middle" style="font-size:12px;fill:#2D5C9E">変数 → 型</text>
+
+  
+  <path d="M634,130 L634,196 Q634,206 624,206 L89,206 Q79,206 79,216 L79,264" marker-end="url(#arr)" style="fill:none;stroke:#585F6B;stroke-width:1.6"></path>
+
+  
+  <rect x="24" y="268" width="110" height="60" rx="6" style="fill:#FFFFFF;stroke:#C9C4B7;stroke-width:1.5"></rect>
+  <text x="79" y="295" text-anchor="middle" style="font-size:16px;font-weight:500;fill:#0E1116">Rule 群</text>
+  <text x="79" y="315" text-anchor="middle" style="font-size:12px;fill:#585F6B">矛盾を照合</text>
+
+  <line x1="138" y1="298" x2="206" y2="298" marker-end="url(#arr)" style="fill:none;stroke:#585F6B;stroke-width:1.6"></line>
+
+  <rect x="210" y="268" width="110" height="60" rx="6" style="fill:#F8E5E2;stroke:#B5302B;stroke-width:1.5"></rect>
+  <text x="265" y="295" text-anchor="middle" style="font-size:16px;font-weight:500;fill:#B5302B">Error 群</text>
+  <text x="265" y="315" text-anchor="middle" style="font-family:&#39;JetBrains Mono&#39;,ui-monospace,Menlo,monospace;font-size:12px;fill:#B5302B">path:line</text>
+
+  <line x1="324" y1="298" x2="392" y2="298" marker-end="url(#arr)" style="fill:none;stroke:#585F6B;stroke-width:1.6"></line>
+
+  <rect x="396" y="268" width="150" height="60" rx="6" style="fill:#FFFFFF;stroke:#C9C4B7;stroke-width:1.5"></rect>
+  <text x="471" y="295" text-anchor="middle" style="font-size:16px;font-weight:500;fill:#0E1116">整形・出力</text>
+  <text x="471" y="315" text-anchor="middle" style="font-family:&#39;JetBrains Mono&#39;,ui-monospace,Menlo,monospace;font-size:12px;fill:#585F6B">[ERROR] Found …</text>
+
+  <text x="24" y="392" style="font-family:&#39;Source Serif 4&#39;,Georgia,serif;font-style:italic;font-size:13.5px;fill:#585F6B">ministan の骨格 —— コードを実行せず、AST を歩いて各地点の型を推論し、ルールに照らして報告する。</text>
+  <text x="24" y="414" style="font-size:11.5px;fill:#585F6B">以降の章は、この「真ん中」に機能を足していく。</text>
+</svg>

@@ -1,0 +1,82 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 700 560" width="700" height="560" role="img" aria-label="型の束" style="font-family:&#39;Inter&#39;,system-ui,&#39;Hiragino Kaku Gothic ProN&#39;,&#39;Yu Gothic&#39;,&#39;Noto Sans JP&#39;,sans-serif;fill:#0E1116">
+  <defs>
+    <marker id="up" viewBox="0 0 10 10" refX="5" refY="1.5" markerWidth="8" markerHeight="8" orient="auto">
+      <path d="M0,8 L5,0 L10,8 z" fill="context-stroke"></path>
+    </marker>
+  </defs>
+
+  <rect x="0" y="0" width="700" height="560" style="fill:#F6F4EE"></rect>
+
+  
+  <g style="fill:none;stroke:#C9C4B7;stroke-width:1.5">
+    <line x1="350" y1="94" x2="100" y2="180"></line>
+    <line x1="350" y1="94" x2="225" y2="180"></line>
+    <line x1="350" y1="94" x2="350" y2="180"></line>
+    <line x1="350" y1="94" x2="475" y2="180"></line>
+    <line x1="350" y1="94" x2="600" y2="180"></line>
+    <line x1="225" y1="220" x2="225" y2="312"></line>
+    <line x1="350" y1="220" x2="350" y2="312"></line>
+    <line x1="350" y1="440" x2="100" y2="348"></line>
+    <line x1="350" y1="440" x2="225" y2="348"></line>
+    <line x1="350" y1="440" x2="350" y2="348"></line>
+    <line x1="350" y1="440" x2="475" y2="220"></line>
+    <line x1="350" y1="440" x2="600" y2="220"></line>
+  </g>
+
+  
+  <line x1="100" y1="312" x2="100" y2="222" marker-end="url(#up)" style="stroke:#2E6F3F;stroke-width:2.4"></line>
+
+  
+  <rect x="275" y="50" width="150" height="44" rx="6" style="fill:#EFEBE0;stroke:#2A2F38;stroke-width:1.6"></rect>
+  <text x="350" y="78" text-anchor="middle" style="font-family:&#39;JetBrains Mono&#39;,ui-monospace,Menlo,Consolas,monospace;font-size:15px;font-weight:600;fill:#0E1116">mixed</text>
+  <text x="350" y="38" text-anchor="middle" style="font-size:11.5px;fill:#585F6B">最上位 —— すべての値</text>
+
+  
+  <g style="font-family:&#39;JetBrains Mono&#39;,ui-monospace,Menlo,Consolas,monospace;font-size:15px;font-weight:600;fill:#2D5C9E">
+    <rect x="58" y="180" width="84" height="40" rx="6" style="fill:#E1ECF8;stroke:#2D5C9E;stroke-width:1.5"></rect>
+    <text x="100" y="206" text-anchor="middle">int</text>
+    <rect x="183" y="180" width="84" height="40" rx="6" style="fill:#E1ECF8;stroke:#2D5C9E;stroke-width:1.5"></rect>
+    <text x="225" y="206" text-anchor="middle">string</text>
+    <rect x="308" y="180" width="84" height="40" rx="6" style="fill:#E1ECF8;stroke:#2D5C9E;stroke-width:1.5"></rect>
+    <text x="350" y="206" text-anchor="middle">bool</text>
+    <rect x="433" y="180" width="84" height="40" rx="6" style="fill:#E1ECF8;stroke:#2D5C9E;stroke-width:1.5"></rect>
+    <text x="475" y="206" text-anchor="middle">float</text>
+    <rect x="558" y="180" width="84" height="40" rx="6" style="fill:#E1ECF8;stroke:#2D5C9E;stroke-width:1.5"></rect>
+    <text x="600" y="206" text-anchor="middle">null</text>
+  </g>
+  <text x="650" y="206" style="font-size:10.5px;fill:#2D5C9E">原子型</text>
+
+  
+  <g style="font-family:&#39;JetBrains Mono&#39;,ui-monospace,Menlo,Consolas,monospace;font-size:14px;font-weight:600;fill:#7A2A2A">
+    <rect x="64" y="312" width="72" height="36" rx="6" style="fill:#F1E2DE;stroke:#7A2A2A;stroke-width:1.5"></rect>
+    <text x="100" y="336" text-anchor="middle">42</text>
+    <rect x="189" y="312" width="72" height="36" rx="6" style="fill:#F1E2DE;stroke:#7A2A2A;stroke-width:1.5"></rect>
+    <text x="225" y="336" text-anchor="middle">&#39;foo&#39;</text>
+    <rect x="314" y="312" width="72" height="36" rx="6" style="fill:#F1E2DE;stroke:#7A2A2A;stroke-width:1.5"></rect>
+    <text x="350" y="336" text-anchor="middle">true</text>
+  </g>
+  <text x="424" y="334" style="font-size:10.5px;fill:#7A2A2A">定数型</text>
+
+  
+  <rect x="275" y="440" width="150" height="44" rx="6" style="fill:#EFEBE0;stroke:#2A2F38;stroke-width:1.6"></rect>
+  <text x="350" y="468" text-anchor="middle" style="font-family:&#39;JetBrains Mono&#39;,ui-monospace,Menlo,Consolas,monospace;font-size:15px;font-weight:600;fill:#0E1116">never</text>
+  <text x="350" y="504" text-anchor="middle" style="font-size:11.5px;fill:#585F6B">最下位 —— 空集合（決して起こらない）</text>
+
+  
+  <path d="M120,432 Q92,400 100,352" style="fill:none;stroke:#2E6F3F;stroke-width:1.5;stroke-dasharray:3 3"></path>
+  <rect x="30" y="430" width="180" height="92" rx="7" style="fill:#FFFFFF;stroke:#C9C4B7;stroke-width:1.4"></rect>
+  <text x="44" y="452" style="font-size:12px;font-weight:600;fill:#0E1116">包含は非対称</text>
+  <text x="44" y="476" style="font-family:&#39;JetBrains Mono&#39;,ui-monospace,Menlo,monospace;font-size:12.5px;fill:#2E6F3F;font-weight:600">int ⊇ 42 = Yes</text>
+  <text x="44" y="492" style="font-size:10.5px;fill:#585F6B">42 は必ず int</text>
+  <text x="44" y="510" style="font-family:&#39;JetBrains Mono&#39;,ui-monospace,Menlo,monospace;font-size:12.5px;fill:#8A5F12;font-weight:600">42 ⊇ int = Maybe</text>
+
+  
+  <rect x="498" y="34" width="13" height="13" rx="2" style="fill:#E1EEDD;stroke:#2E6F3F"></rect>
+  <text x="517" y="45" style="font-size:12px;fill:#2A2F38">Yes —— 確実に含む</text>
+  <rect x="498" y="56" width="13" height="13" rx="2" style="fill:#F4E6C7;stroke:#8A5F12"></rect>
+  <text x="517" y="67" style="font-size:12px;fill:#2A2F38">Maybe —— たぶん含む</text>
+  <rect x="498" y="78" width="13" height="13" rx="2" style="fill:#F8E5E2;stroke:#B5302B"></rect>
+  <text x="517" y="89" style="font-size:12px;fill:#2A2F38">No —— 含まない</text>
+
+  <text x="36" y="546" style="font-family:&#39;Source Serif 4&#39;,Georgia,serif;font-style:italic;font-size:13.5px;fill:#585F6B">型は値の集合 —— <tspan style="font-family:&#39;JetBrains Mono&#39;,ui-monospace,Menlo,monospace;font-size:12px;font-style:normal">mixed</tspan> から <tspan style="font-family:&#39;JetBrains Mono&#39;,ui-monospace,Menlo,monospace;font-size:12px;font-style:normal">never</tspan> まで、包含関係が束をなす。</text>
+</svg>
