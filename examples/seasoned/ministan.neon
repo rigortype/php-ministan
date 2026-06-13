@@ -1,0 +1,6 @@
+parameters:
+    level: 0
+    paths:
+        - examples/reflection.php
+    ignoreErrors:
+        - '#Call to an undefined method#'

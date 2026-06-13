@@ -29,7 +29,10 @@ final class RuleRegistryFactory
         return $this->createForLevel(self::MAX_LEVEL);
     }
 
-    public function createForLevel(int $level): RuleRegistry
+    /**
+     * @param list<Rule<\PhpParser\Node>> $extraRules 設定で追加されたカスタムルール
+     */
+    public function createForLevel(int $level, array $extraRules = []): RuleRegistry
     {
         $helper = new RuleLevelHelper($level);
         $checker = new ArgumentTypeChecker($helper);
@@ -49,6 +52,10 @@ final class RuleRegistryFactory
             if ($ruleLevel <= $level) {
                 $active[] = $rule;
             }
+        }
+
+        foreach ($extraRules as $rule) {
+            $active[] = $rule;
         }
 
         return new RuleRegistry($active);
