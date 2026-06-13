@@ -5,3 +5,8 @@
 .ministan-cache/
 ministan-baseline.json
 .DS_Store
+
+# .claude はグローバル除外。共有対象のスキルだけ追跡し、ローカル設定は除外のまま。
+!.claude/
+.claude/*
+!.claude/skills/
