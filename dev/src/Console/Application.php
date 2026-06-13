@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Ministan\Console;
 
 use Ministan\Command\AnalyseCommand;
+use Ministan\Command\AnnotateCommand;
 
 /**
  * CLI のエントリポイント。サブコマンドを振り分けるだけの薄い層。
@@ -23,6 +24,7 @@ final class Application
 
         return match ($command) {
             'analyse', 'analyze' => (new AnalyseCommand())->run($args),
+            'annotate' => (new AnnotateCommand())->run($args),
             null, 'help', '--help', '-h' => $this->help(),
             default => $this->unknown($command),
         };
@@ -34,7 +36,8 @@ final class Application
             ministan {$this->versionLine()}
 
             Usage:
-              ministan analyse <file>   PHP ファイルを解析する
+              ministan analyse <file>    PHP ファイルを解析する
+              ministan annotate <file>   推論された型を表示する
 
             TXT;
 

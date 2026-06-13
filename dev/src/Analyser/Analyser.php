@@ -6,6 +6,7 @@ namespace Ministan\Analyser;
 
 use Ministan\Rules\RuleRegistry;
 use PhpParser\Error as ParserError;
+use PhpParser\Node;
 use PhpParser\ParserFactory;
 
 /**
@@ -13,7 +14,8 @@ use PhpParser\ParserFactory;
  *
  * Part 0: 構文エラーの翻訳。
  * Part 1: パース済み AST にルール群を適用する。
- * Part 2: スコープを伝播させながらルールを適用する（← イマココ）。
+ * Part 2: スコープを伝播させながらルールを適用する。
+ * Part 4: スコープが各式の型を推論する。ルール適用は走査へのコールバックとして渡す。
  */
 final class Analyser
 {
@@ -41,8 +43,19 @@ final class Analyser
             return [new Error($e->getRawMessage(), $file, $e->getStartLine())];
         }
 
-        $resolver = new NodeScopeResolver($this->registry, $file);
+        $errors = [];
+        $resolver = new NodeScopeResolver(
+            function (Node $node, Scope $scope) use (&$errors, $file): void {
+                foreach ($this->registry->getRulesFor($node) as $rule) {
+                    foreach ($rule->processNode($node, $scope) as $ruleError) {
+                        $errors[] = new Error($ruleError->message, $file, $ruleError->line);
+                    }
+                }
+            },
+        );
 
-        return $resolver->analyse($ast, Scope::createForFile());
+        $resolver->processNodes($ast, Scope::createForFile());
+
+        return $errors;
     }
 }

@@ -4,49 +4,48 @@ declare(strict_types=1);
 
 namespace Ministan\Analyser;
 
-use Ministan\Rules\RuleRegistry;
+use Closure;
+use Ministan\Type\BooleanType;
+use Ministan\Type\FloatType;
+use Ministan\Type\IntegerType;
+use Ministan\Type\MixedType;
+use Ministan\Type\NullType;
+use Ministan\Type\StringType;
+use Ministan\Type\Type;
 use PhpParser\Node;
 use PhpParser\Node\Expr;
 use PhpParser\Node\Stmt;
 
 /**
- * AST を下りながら {@see Scope} を運び、各ノードでルールを適用する。
+ * AST を下りながら {@see Scope} を運び、各ノードで**コールバック**を呼ぶ。
  *
- * PHPStan の {@see \PHPStan\Analyser\NodeScopeResolver} に対応する核。
- * Part 1 の RuleApplyingVisitor（ノードを訪れるだけ）を、ここで「スコープを
- * 伝播させる再帰下降」へと育てた。
+ * PHPStan の {@see \PHPStan\Analyser\NodeScopeResolver} に対応する核。Part 2 では
+ * ルール適用を直接抱えていたが、Part 4 で「各ノードで (node, scope) を渡して呼ぶ」
+ * 汎用コールバックに一般化した。これにより、ルールを走らせる解析（{@see Analyser}）も、
+ * 推論型を覗く `annotate` も、同じ走査を再利用できる。
  *
- * 設計の要は「読み取り文脈と書き込み文脈を区別する」こと。`$x = 1` の左辺 `$x` は
- * **定義**であって未定義チェックの対象ではない。`foreach (... as $v)` の `$v` も同様。
- * そうした束縛構文だけを個別に捌き、それ以外は {@see processChildren()} で機械的に
- * 子へ降りる。降りた先で出会う Variable は「読み取り」なのでルールに掛かる。
- *
- * 制御構文（if/while/for/try…）は専用処理を持たず、子を順に辿るだけにしている。
- * 代入は前方へ伝播し、合流は {@see Scope::mergeWith()} の楽観的和集合になるため、
- * 偽陽性を出さない。経路に敏感な精密化（「全経路で定義されたか」）は Part 5 で扱う。
+ * 走査の要は Part 2 と同じ「読み取り文脈と書き込み文脈の区別」。加えて Part 4 では、
+ * 代入のたびに右辺の型を {@see Scope::getType()} で推論し、変数に結びつける。
  */
 final class NodeScopeResolver
 {
-    /** @var list<Error> */
-    private array $errors = [];
+    /** @var Closure(Node, Scope): void */
+    private Closure $nodeCallback;
 
-    public function __construct(
-        private readonly RuleRegistry $registry,
-        private readonly string $file,
-    ) {
+    /**
+     * @param callable(Node, Scope): void $nodeCallback
+     */
+    public function __construct(callable $nodeCallback)
+    {
+        $this->nodeCallback = Closure::fromCallable($nodeCallback);
     }
 
     /**
      * @param Node[] $stmts
-     *
-     * @return list<Error>
      */
-    public function analyse(array $stmts, Scope $scope): array
+    public function processNodes(array $stmts, Scope $scope): void
     {
-        $this->errors = [];
         $this->processStmts($stmts, $scope);
-
-        return $this->errors;
     }
 
     /**
@@ -63,16 +62,14 @@ final class NodeScopeResolver
 
     private function processNode(Node $node, Scope $scope): Scope
     {
-        $this->applyRules($node, $scope);
+        ($this->nodeCallback)($node, $scope);
 
         return match (true) {
-            // --- スコープ境界を作る構文 ---
             $node instanceof Stmt\Function_,
             $node instanceof Stmt\ClassMethod    => $this->processFunctionLike($node, $scope),
             $node instanceof Expr\Closure        => $this->processClosure($node, $scope),
             $node instanceof Expr\ArrowFunction  => $this->processArrowFunction($node, $scope),
 
-            // --- 変数を束縛する構文 ---
             $node instanceof Expr\Assign,
             $node instanceof Expr\AssignRef      => $this->processAssign($node, $scope),
             $node instanceof Expr\AssignOp       => $this->processAssignOp($node, $scope),
@@ -81,16 +78,12 @@ final class NodeScopeResolver
             $node instanceof Stmt\Global_        => $this->processGlobal($node, $scope),
             $node instanceof Stmt\Static_        => $this->processStaticVars($node, $scope),
 
-            // --- 未定義変数を許容する読み取り文脈 ---
-            // isset($x) / empty($x) は未定義でも合法。中は未定義チェックしない。
             $node instanceof Expr\Isset_,
             $node instanceof Expr\Empty_         => $scope,
             $node instanceof Expr\BinaryOp\Coalesce => $this->processCoalesce($node, $scope),
 
-            // --- 変数そのもの（読み取り）。ルール適用済み、子はない ---
             $node instanceof Expr\Variable       => $scope,
 
-            // --- それ以外は子へ降り、スコープを順に伝播 ---
             default => $this->processChildren($node, $scope),
         };
     }
@@ -119,44 +112,36 @@ final class NodeScopeResolver
         return $scope;
     }
 
-    // --- 代入 ---
+    // --- 代入: 右辺の型を推論して変数に結びつける ---
 
     private function processAssign(Expr\Assign|Expr\AssignRef $node, Scope $scope): Scope
     {
-        // 右辺を先に解析する（右辺の変数は読み取りなので未定義チェックの対象）。
         $scope = $this->processNode($node->expr, $scope);
+        $type = $scope->getType($node->expr);
 
-        return $this->processAssignTarget($node->var, $scope);
+        return $this->processAssignTarget($node->var, $type, $scope);
     }
 
     private function processAssignOp(Expr\AssignOp $node, Scope $scope): Scope
     {
-        // 複合代入（+= など）の対象は読みも兼ねるが、ここでは定義として扱い
-        // 偽陽性を避ける（厳密な「未定義への +=」検出は後の章へ）。
         $scope = $this->processNode($node->expr, $scope);
 
-        return $this->processAssignTarget($node->var, $scope);
+        // 複合代入（+= 等）の結果型は後章で精密化。ここでは mixed に縮退して安全側に。
+        return $this->processAssignTarget($node->var, new MixedType(), $scope);
     }
 
-    /**
-     * 代入の**左辺**を処理し、束縛された変数をスコープに加える。
-     * 左辺の Variable は「定義」なので未定義チェックには掛けない。
-     */
-    private function processAssignTarget(Expr $target, Scope $scope): Scope
+    private function processAssignTarget(Expr $target, Type $type, Scope $scope): Scope
     {
         return match (true) {
             $target instanceof Expr\Variable => is_string($target->name)
-                ? $scope->assignVariable($target->name)
+                ? $scope->assignVariable($target->name, $type)
                 : $this->processNode($target, $scope),
 
-            // 分割代入: [$a, $b] = ... / list($a, $b) = ...
             $target instanceof Expr\List_,
             $target instanceof Expr\Array_ => $this->processListAssign($target, $scope),
 
-            // $arr[$i] = ... / $arr[] = ... : 添字は読み取り、根の変数は定義（自動生成）
             $target instanceof Expr\ArrayDimFetch => $this->processArrayDimAssign($target, $scope),
 
-            // $obj->p = ... / Foo::$p = ... : オブジェクト側は読み取り。新しい変数は生まれない
             default => $this->processNode($target, $scope),
         };
     }
@@ -165,14 +150,15 @@ final class NodeScopeResolver
     {
         foreach ($node->items as $item) {
             if ($item === null) {
-                continue; // [, $b] = ... の空き
+                continue;
             }
 
             if ($item->key !== null) {
-                $scope = $this->processNode($item->key, $scope); // キーは読み取り
+                $scope = $this->processNode($item->key, $scope);
             }
 
-            $scope = $this->processAssignTarget($item->value, $scope);
+            // 分割代入の要素型はまだ追えない → mixed
+            $scope = $this->processAssignTarget($item->value, new MixedType(), $scope);
         }
 
         return $scope;
@@ -181,27 +167,27 @@ final class NodeScopeResolver
     private function processArrayDimAssign(Expr\ArrayDimFetch $node, Scope $scope): Scope
     {
         if ($node->dim !== null) {
-            $scope = $this->processNode($node->dim, $scope); // 添字は読み取り
+            $scope = $this->processNode($node->dim, $scope);
         }
 
-        return $this->processAssignTarget($node->var, $scope); // 根を定義
+        // $arr[...] = ... で $arr は配列になるが、配列型は後章。ここでは mixed。
+        return $this->processAssignTarget($node->var, new MixedType(), $scope);
     }
 
     // --- ループ・例外・宣言 ---
 
     private function processForeach(Stmt\Foreach_ $node, Scope $scope): Scope
     {
-        $scope = $this->processNode($node->expr, $scope); // 反復対象は読み取り
+        $scope = $this->processNode($node->expr, $scope);
 
         $loopScope = $scope;
         if ($node->keyVar !== null) {
-            $loopScope = $this->processAssignTarget($node->keyVar, $loopScope);
+            $loopScope = $this->processAssignTarget($node->keyVar, new MixedType(), $loopScope);
         }
-        $loopScope = $this->processAssignTarget($node->valueVar, $loopScope);
+        $loopScope = $this->processAssignTarget($node->valueVar, new MixedType(), $loopScope);
 
         $bodyScope = $this->processStmts($node->stmts, $loopScope);
 
-        // ループは 0 回かもしれない。楽観的に合流して偽陽性を避ける（ループ変数は残る）。
         return $scope->mergeWith($bodyScope);
     }
 
@@ -209,7 +195,8 @@ final class NodeScopeResolver
     {
         $catchScope = $scope;
         if ($node->var !== null && is_string($node->var->name)) {
-            $catchScope = $catchScope->assignVariable($node->var->name);
+            // 例外の型は ObjectType を持つ Part 6 で精密化。
+            $catchScope = $catchScope->assignVariable($node->var->name, new MixedType());
         }
 
         $bodyScope = $this->processStmts($node->stmts, $catchScope);
@@ -221,7 +208,7 @@ final class NodeScopeResolver
     {
         foreach ($node->vars as $var) {
             if ($var instanceof Expr\Variable && is_string($var->name)) {
-                $scope = $scope->assignVariable($var->name);
+                $scope = $scope->assignVariable($var->name, new MixedType());
             }
         }
 
@@ -232,7 +219,7 @@ final class NodeScopeResolver
     {
         foreach ($node->vars as $staticVar) {
             if (is_string($staticVar->var->name)) {
-                $scope = $scope->assignVariable($staticVar->var->name);
+                $scope = $scope->assignVariable($staticVar->var->name, new MixedType());
             }
         }
 
@@ -241,16 +228,11 @@ final class NodeScopeResolver
 
     private function processCoalesce(Expr\BinaryOp\Coalesce $node, Scope $scope): Scope
     {
-        // `$x ?? d` は左辺が未定義でも安全（短絡）。左辺は未定義チェックせず辿る。
         $scope = $this->processSilently($node->left, $scope);
 
         return $this->processNode($node->right, $scope);
     }
 
-    /**
-     * スコープは伝播させつつ、配下の Variable 読み取りを未定義チェックに掛けない。
-     * isset() 相当の寛容な文脈で使う。
-     */
     private function processSilently(Node $node, Scope $scope): Scope
     {
         if ($node instanceof Expr\Variable) {
@@ -281,14 +263,14 @@ final class NodeScopeResolver
         $inner = $this->bindParams($node->params, $inner);
 
         if ($node instanceof Stmt\ClassMethod && !$node->isStatic()) {
-            $inner = $inner->assignVariable('this');
+            $inner = $inner->assignVariable('this', new MixedType());
         }
 
-        if ($node->stmts !== null) { // 抽象メソッド・インターフェイスは null
+        if ($node->stmts !== null) {
             $this->processStmts($node->stmts, $inner);
         }
 
-        return $outer; // 関数定義は外側の変数を増やさない
+        return $outer;
     }
 
     private function processClosure(Expr\Closure $node, Scope $outer): Scope
@@ -297,22 +279,26 @@ final class NodeScopeResolver
         $inner = $this->bindParams($node->params, $inner);
 
         foreach ($node->uses as $use) {
-            // 値渡しの use($x) は外側の読み取り。&付きは外側に変数を生む。
+            $name = is_string($use->var->name) ? $use->var->name : null;
+
             if ($use->byRef) {
-                if (is_string($use->var->name)) {
-                    $outer = $outer->assignVariable($use->var->name);
+                if ($name !== null) {
+                    $outer = $outer->assignVariable($name, new MixedType());
                 }
             } else {
-                $this->applyRules($use->var, $outer);
+                ($this->nodeCallback)($use->var, $outer); // 値渡し use は外側の読み取り
             }
 
-            if (is_string($use->var->name)) {
-                $inner = $inner->assignVariable($use->var->name);
+            if ($name !== null) {
+                $inner = $inner->assignVariable(
+                    $name,
+                    $use->byRef ? new MixedType() : $outer->getVariableType($name),
+                );
             }
         }
 
         if (!$node->static) {
-            $inner = $inner->assignVariable('this');
+            $inner = $inner->assignVariable('this', new MixedType());
         }
 
         $this->processStmts($node->stmts, $inner);
@@ -322,11 +308,10 @@ final class NodeScopeResolver
 
     private function processArrowFunction(Expr\ArrowFunction $node, Scope $outer): Scope
     {
-        // アロー関数は外側を値で自動キャプチャする。
-        $inner = $this->bindParams($node->params, $outer);
+        $inner = $this->bindParams($node->params, $outer); // 外側を値で自動キャプチャ
 
         if (!$node->static) {
-            $inner = $inner->assignVariable('this');
+            $inner = $inner->assignVariable('this', new MixedType());
         }
 
         $this->processNode($node->expr, $inner);
@@ -340,22 +325,33 @@ final class NodeScopeResolver
     private function bindParams(array $params, Scope $scope): Scope
     {
         foreach ($params as $param) {
-            $this->applyRules($param, $scope);
+            ($this->nodeCallback)($param, $scope);
 
             if ($param->var instanceof Expr\Variable && is_string($param->var->name)) {
-                $scope = $scope->assignVariable($param->var->name);
+                $scope = $scope->assignVariable($param->var->name, $this->typeFromHint($param->type));
             }
         }
 
         return $scope;
     }
 
-    private function applyRules(Node $node, Scope $scope): void
+    /**
+     * パラメータの型宣言を {@see Type} に写す最小版。クラス型・nullable・union は
+     * リフレクションと PHPDoc を扱う Part 6〜7 で精密化する。
+     */
+    private function typeFromHint(?Node $node): Type
     {
-        foreach ($this->registry->getRulesFor($node) as $rule) {
-            foreach ($rule->processNode($node, $scope) as $ruleError) {
-                $this->errors[] = new Error($ruleError->message, $this->file, $ruleError->line);
-            }
+        if ($node instanceof Node\Identifier) {
+            return match ($node->toLowerString()) {
+                'int' => new IntegerType(),
+                'string' => new StringType(),
+                'float' => new FloatType(),
+                'bool' => new BooleanType(),
+                'null' => new NullType(),
+                default => new MixedType(),
+            };
         }
+
+        return new MixedType();
     }
 }
