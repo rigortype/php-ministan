@@ -6,6 +6,7 @@ namespace Ministan\Command;
 
 use Ministan\Analyser\Analyser;
 use Ministan\Output\ErrorFormatter;
+use Ministan\Rules\RuleRegistryFactory;
 
 /**
  * `ministan analyse <file>` の実装。
@@ -26,7 +27,8 @@ final class AnalyseCommand
             return 1;
         }
 
-        $errors = (new Analyser())->analyseFile($args[0]);
+        $registry = (new RuleRegistryFactory())->create();
+        $errors = (new Analyser($registry))->analyseFile($args[0]);
 
         echo (new ErrorFormatter())->format($errors);
 

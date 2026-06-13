@@ -4,17 +4,24 @@ declare(strict_types=1);
 
 namespace Ministan\Analyser;
 
+use Ministan\Rules\RuleRegistry;
 use PhpParser\Error as ParserError;
+use PhpParser\NodeTraverser;
 use PhpParser\ParserFactory;
 
 /**
  * 解析パイプラインの入口。
  *
- * Part 0 では「構文を検証し、構文エラーを {@see Error} に変換する」だけ。
- * Part 1 以降、ここでパース済み AST にルール群を適用していく。
+ * Part 0: 構文エラーの翻訳。
+ * Part 1: パース済み AST にルール群を適用する（← イマココ）。
  */
 final class Analyser
 {
+    public function __construct(
+        private readonly RuleRegistry $registry,
+    ) {
+    }
+
     /**
      * @return list<Error>
      */
@@ -28,13 +35,15 @@ final class Analyser
         $parser = (new ParserFactory())->createForNewestSupportedVersion();
 
         try {
-            $parser->parse($code);
+            $ast = $parser->parse($code) ?? [];
         } catch (ParserError $e) {
-            // php-parser の構文エラーを ministan の診断に翻訳する。
+            // 構文エラーがある間はルールを走らせても意味がないので、ここで打ち切る。
             return [new Error($e->getRawMessage(), $file, $e->getStartLine())];
         }
 
-        // 構文が通れば、Part 0 では報告すべき問題はない。
-        return [];
+        $visitor = new RuleApplyingVisitor($this->registry, $file);
+        (new NodeTraverser($visitor))->traverse($ast);
+
+        return $visitor->getErrors();
     }
 }
