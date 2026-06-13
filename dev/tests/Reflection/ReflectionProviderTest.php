@@ -44,6 +44,16 @@ final class ReflectionProviderTest extends TestCase
         self::assertSame('int', $provider->getFunction('strlen')->returnType->describe());
     }
 
+    public function testStubOverridesNativeSignature(): void
+    {
+        $provider = $this->providerFor('');
+
+        // スタブが explode に精密な戻り値型を与える（ネイティブは array=mixed）。
+        self::assertSame('array<int, string>', $provider->getFunction('explode')->returnType->describe());
+        // preg_match の第 3 引数は参照渡し。
+        self::assertTrue($provider->getFunction('preg_match')->byRefParams[2] ?? false);
+    }
+
     public function testObjectTypeUsesHierarchyWhenProviderKnown(): void
     {
         $provider = $this->providerFor('class A {} class B extends A {}');

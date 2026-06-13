@@ -107,4 +107,12 @@ final class AnalyserTest extends TestCase
         self::assertCount(1, $errors);
         self::assertSame('Call to an undefined method Box::close().', $errors[0]->message);
     }
+
+    public function testByRefOutputParameterDefinesVariable(): void
+    {
+        // preg_match(..., $matches) の $matches は参照渡しの出力引数なので未定義にならない。
+        $errors = $this->analyser()->analyseFile(__DIR__ . '/fixtures/byref.php');
+
+        self::assertSame([], $errors);
+    }
 }

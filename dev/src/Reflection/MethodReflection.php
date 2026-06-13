@@ -19,11 +19,13 @@ final readonly class MethodReflection
 {
     /**
      * @param list<Type> $parameterTypes
+     * @param list<bool> $byRefParams   各パラメータが参照渡し（出力引数）か
      */
     public function __construct(
         public string $name,
         public Type $returnType,
         public array $parameterTypes,
+        public array $byRefParams = [],
     ) {
     }
 
@@ -35,17 +37,20 @@ final readonly class MethodReflection
         $doc = $phpDoc->parse($node->getDocComment()?->getText(), $classTemplateNames);
 
         $parameterTypes = [];
+        $byRefParams = [];
         foreach ($node->params as $param) {
             $name = $param->var instanceof Variable && is_string($param->var->name) ? $param->var->name : null;
             $parameterTypes[] = $name !== null && isset($doc->paramTypes[$name])
                 ? $doc->paramTypes[$name]
                 : $resolver->resolve($param->type);
+            $byRefParams[] = $param->byRef;
         }
 
         return new self(
             $node->name->toString(),
             $doc->returnType ?? $resolver->resolve($node->returnType),
             $parameterTypes,
+            $byRefParams,
         );
     }
 
@@ -56,6 +61,10 @@ final readonly class MethodReflection
             $resolver->resolveNative($method->getReturnType()),
             array_map(
                 static fn ($param): Type => $resolver->resolveNative($param->getType()),
+                $method->getParameters(),
+            ),
+            array_map(
+                static fn ($param): bool => $param->isPassedByReference(),
                 $method->getParameters(),
             ),
         );

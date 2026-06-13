@@ -6,14 +6,17 @@ namespace Ministan\Analyser;
 
 use Closure;
 use Ministan\Reflection\PhpDocTypeResolver;
+use Ministan\Reflection\ReflectionProviderStaticAccessor;
 use Ministan\Reflection\TypeNodeResolver;
 use Ministan\Type\ArrayType;
 use Ministan\Type\Constant\ConstantArrayType;
 use Ministan\Type\MixedType;
+use Ministan\Type\ObjectType;
 use Ministan\Type\Type;
 use PhpParser\Node;
 use PhpParser\Node\Arg;
 use PhpParser\Node\Expr;
+use PhpParser\Node\Identifier;
 use PhpParser\Node\Name;
 use PhpParser\Node\Stmt;
 
@@ -93,6 +96,9 @@ final class NodeScopeResolver
             $node instanceof Stmt\Catch_         => $this->processCatch($node, $scope),
             $node instanceof Stmt\Global_        => $this->processGlobal($node, $scope),
             $node instanceof Stmt\Static_        => $this->processStaticVars($node, $scope),
+
+            $node instanceof Expr\FuncCall       => $this->processFuncCall($node, $scope),
+            $node instanceof Expr\MethodCall     => $this->processMethodCall($node, $scope),
 
             $node instanceof Expr\Isset_,
             $node instanceof Expr\Empty_         => $scope,
@@ -442,6 +448,80 @@ final class NodeScopeResolver
         }
 
         return $scope;
+    }
+
+    // --- 呼び出し: 参照渡しの出力引数は変数を「定義」する ---
+
+    private function processFuncCall(Expr\FuncCall $node, Scope $scope): Scope
+    {
+        if (!$node->name instanceof Name) {
+            $scope = $this->processNode($node->name, $scope); // 動的呼び出し $fn()
+        }
+
+        return $this->processCallArgs($node->args, $this->byRefParamsOfFunction($node), $scope);
+    }
+
+    private function processMethodCall(Expr\MethodCall $node, Scope $scope): Scope
+    {
+        $scope = $this->processNode($node->var, $scope); // レシーバは読み取り
+
+        return $this->processCallArgs($node->args, $this->byRefParamsOfMethod($node, $scope), $scope);
+    }
+
+    /**
+     * @param array<Arg|Node\VariadicPlaceholder> $args
+     * @param list<bool> $byRef
+     */
+    private function processCallArgs(array $args, array $byRef, Scope $scope): Scope
+    {
+        foreach ($args as $position => $arg) {
+            if (!$arg instanceof Arg) {
+                continue;
+            }
+
+            if (($byRef[$position] ?? false) && $arg->value instanceof Expr\Variable && is_string($arg->value->name)) {
+                // 参照渡しの出力引数: preg_match(..., $m) の $m を「定義」する。
+                $scope = $scope->assignVariable($arg->value->name, new MixedType());
+            } else {
+                $scope = $this->processNode($arg->value, $scope);
+            }
+        }
+
+        return $scope;
+    }
+
+    /**
+     * @return list<bool>
+     */
+    private function byRefParamsOfFunction(Expr\FuncCall $node): array
+    {
+        $provider = ReflectionProviderStaticAccessor::getInstanceOrNull();
+        if ($node->name instanceof Name && $provider !== null && $provider->hasFunction($node->name->toString())) {
+            return $provider->getFunction($node->name->toString())->byRefParams;
+        }
+
+        return [];
+    }
+
+    /**
+     * @return list<bool>
+     */
+    private function byRefParamsOfMethod(Expr\MethodCall $node, Scope $scope): array
+    {
+        if (!$node->name instanceof Identifier) {
+            return [];
+        }
+
+        $objectType = $scope->getType($node->var);
+        $provider = ReflectionProviderStaticAccessor::getInstanceOrNull();
+        if ($objectType instanceof ObjectType && $provider !== null && $provider->hasClass($objectType->className)) {
+            $class = $provider->getClass($objectType->className);
+            if ($class->hasMethod($node->name->toString())) {
+                return $class->getMethod($node->name->toString())->byRefParams;
+            }
+        }
+
+        return [];
     }
 
     private function processCoalesce(Expr\BinaryOp\Coalesce $node, Scope $scope): Scope

@@ -16,12 +16,14 @@ final readonly class FunctionReflection
 {
     /**
      * @param list<Type>   $parameterTypes
+     * @param list<bool>   $byRefParams   各パラメータが参照渡し（出力引数）か
      * @param list<string> $templateNames この関数が宣言する型変数（@template）
      */
     public function __construct(
         public string $name,
         public Type $returnType,
         public array $parameterTypes,
+        public array $byRefParams = [],
         public array $templateNames = [],
     ) {
     }
@@ -31,17 +33,20 @@ final readonly class FunctionReflection
         $doc = $phpDoc->parse($node->getDocComment()?->getText());
 
         $parameterTypes = [];
+        $byRefParams = [];
         foreach ($node->params as $param) {
             $paramName = $param->var instanceof Variable && is_string($param->var->name) ? $param->var->name : null;
             $parameterTypes[] = $paramName !== null && isset($doc->paramTypes[$paramName])
                 ? $doc->paramTypes[$paramName]
                 : $resolver->resolve($param->type);
+            $byRefParams[] = $param->byRef;
         }
 
         return new self(
             $name,
             $doc->returnType ?? $resolver->resolve($node->returnType),
             $parameterTypes,
+            $byRefParams,
             $doc->templateNames,
         );
     }
@@ -53,6 +58,10 @@ final readonly class FunctionReflection
             $resolver->resolveNative($function->getReturnType()),
             array_map(
                 static fn ($param): Type => $resolver->resolveNative($param->getType()),
+                $function->getParameters(),
+            ),
+            array_map(
+                static fn ($param): bool => $param->isPassedByReference(),
                 $function->getParameters(),
             ),
         );
