@@ -6,6 +6,7 @@ namespace Ministan\Tests;
 
 use Ministan\Analyser\Analyser;
 use Ministan\Rules\Functions\NoVarDumpRule;
+use Ministan\Rules\Methods\CallToUndefinedMethodRule;
 use Ministan\Rules\RuleRegistry;
 use Ministan\Rules\Variables\UndefinedVariableRule;
 use PHPUnit\Framework\TestCase;
@@ -17,6 +18,7 @@ final class AnalyserTest extends TestCase
         return new Analyser(new RuleRegistry([
             new NoVarDumpRule(),
             new UndefinedVariableRule(),
+            new CallToUndefinedMethodRule(),
         ]));
     }
 
@@ -89,5 +91,20 @@ final class AnalyserTest extends TestCase
         $errors = $this->analyser()->analyseFile(__DIR__ . '/fixtures/isset-ternary.php');
 
         self::assertSame([], $errors);
+    }
+
+    public function testDefinedMethodCallIsAccepted(): void
+    {
+        $errors = $this->analyser()->analyseFile(__DIR__ . '/fixtures/method-call.php');
+
+        self::assertSame([], $errors);
+    }
+
+    public function testUndefinedMethodIsReported(): void
+    {
+        $errors = $this->analyser()->analyseFile(__DIR__ . '/fixtures/undefined-method.php');
+
+        self::assertCount(1, $errors);
+        self::assertSame('Call to an undefined method Box::close().', $errors[0]->message);
     }
 }

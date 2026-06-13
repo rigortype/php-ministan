@@ -12,10 +12,14 @@ use Ministan\Type\FloatType;
 use Ministan\Type\IntegerType;
 use Ministan\Type\MixedType;
 use Ministan\Type\NullType;
+use Ministan\Type\ObjectType;
 use Ministan\Type\StringType;
 use Ministan\Type\Type;
 use Ministan\Type\TypeCombinator;
+use Ministan\Reflection\ReflectionProviderStaticAccessor;
 use PhpParser\Node\Expr;
+use PhpParser\Node\Identifier;
+use PhpParser\Node\Name;
 use PhpParser\Node\Scalar;
 
 /**
@@ -112,6 +116,13 @@ final readonly class Scope
                 ? $this->getVariableType($expr->name)
                 : new MixedType(),
 
+            // --- オブジェクト生成・呼び出し（リフレクションを使う）---
+            $expr instanceof Expr\New_ => $expr->class instanceof Name
+                ? new ObjectType($expr->class->toString())
+                : new MixedType(),
+            $expr instanceof Expr\MethodCall => $this->methodCallType($expr),
+            $expr instanceof Expr\FuncCall => $this->funcCallType($expr),
+
             // --- 文字列連結は常に string ---
             $expr instanceof Expr\BinaryOp\Concat => new StringType(),
 
@@ -139,6 +150,36 @@ final readonly class Scope
             // --- 分からないものは mixed に縮退 ---
             default => new MixedType(),
         };
+    }
+
+    private function methodCallType(Expr\MethodCall $expr): Type
+    {
+        if (!$expr->name instanceof Identifier) {
+            return new MixedType();
+        }
+
+        $objectType = $this->getType($expr->var);
+        $provider = ReflectionProviderStaticAccessor::getInstanceOrNull();
+        if (!$objectType instanceof ObjectType || $provider === null || !$provider->hasClass($objectType->className)) {
+            return new MixedType();
+        }
+
+        $class = $provider->getClass($objectType->className);
+        if (!$class->hasMethod($expr->name->toString())) {
+            return new MixedType();
+        }
+
+        return $class->getMethod($expr->name->toString())->returnType;
+    }
+
+    private function funcCallType(Expr\FuncCall $expr): Type
+    {
+        $provider = ReflectionProviderStaticAccessor::getInstanceOrNull();
+        if (!$expr->name instanceof Name || $provider === null || !$provider->hasFunction($expr->name->toString())) {
+            return new MixedType();
+        }
+
+        return $provider->getFunction($expr->name->toString())->returnType;
     }
 
     private function constFetchType(Expr\ConstFetch $expr): Type

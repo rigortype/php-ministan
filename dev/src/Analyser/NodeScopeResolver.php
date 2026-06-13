@@ -5,12 +5,8 @@ declare(strict_types=1);
 namespace Ministan\Analyser;
 
 use Closure;
-use Ministan\Type\BooleanType;
-use Ministan\Type\FloatType;
-use Ministan\Type\IntegerType;
+use Ministan\Reflection\TypeNodeResolver;
 use Ministan\Type\MixedType;
-use Ministan\Type\NullType;
-use Ministan\Type\StringType;
 use Ministan\Type\Type;
 use PhpParser\Node;
 use PhpParser\Node\Expr;
@@ -34,6 +30,8 @@ final class NodeScopeResolver
 
     private TypeSpecifier $typeSpecifier;
 
+    private TypeNodeResolver $typeNodeResolver;
+
     /**
      * @param callable(Node, Scope): void $nodeCallback
      */
@@ -41,6 +39,7 @@ final class NodeScopeResolver
     {
         $this->nodeCallback = Closure::fromCallable($nodeCallback);
         $this->typeSpecifier = new TypeSpecifier();
+        $this->typeNodeResolver = new TypeNodeResolver();
     }
 
     /**
@@ -381,30 +380,10 @@ final class NodeScopeResolver
             ($this->nodeCallback)($param, $scope);
 
             if ($param->var instanceof Expr\Variable && is_string($param->var->name)) {
-                $scope = $scope->assignVariable($param->var->name, $this->typeFromHint($param->type));
+                $scope = $scope->assignVariable($param->var->name, $this->typeNodeResolver->resolve($param->type));
             }
         }
 
         return $scope;
-    }
-
-    /**
-     * パラメータの型宣言を {@see Type} に写す最小版。クラス型・nullable・union は
-     * リフレクションと PHPDoc を扱う Part 6〜7 で精密化する。
-     */
-    private function typeFromHint(?Node $node): Type
-    {
-        if ($node instanceof Node\Identifier) {
-            return match ($node->toLowerString()) {
-                'int' => new IntegerType(),
-                'string' => new StringType(),
-                'float' => new FloatType(),
-                'bool' => new BooleanType(),
-                'null' => new NullType(),
-                default => new MixedType(),
-            };
-        }
-
-        return new MixedType();
     }
 }

@@ -4,15 +4,15 @@ declare(strict_types=1);
 
 namespace Ministan\Type;
 
+use Ministan\Reflection\ReflectionProviderStaticAccessor;
 use Ministan\TrinaryLogic;
 
 /**
  * あるクラス／インターフェイスのインスタンスを表す型。
  *
- * Part 5 では「クラス名」しか知らない素朴な実装。同名なら Yes、別名なら
- * 継承関係が不明なので Maybe を返す（non-rejecting）。`$x instanceof Foo` の
- * 絞り込みで使う。継承を踏まえた厳密な部分型判定は、リフレクションを得る
- * Part 6 で本 ObjectType を強化して実現する。
+ * Part 6 で継承対応に強化。{@see ReflectionProviderStaticAccessor} 経由でクラス階層を
+ * 引き、`$child instanceof $parent` を正しく Yes/No 判定する。provider が無い、または
+ * クラスが未知のときは Maybe に縮退（non-rejecting）。
  */
 final class ObjectType implements Type
 {
@@ -32,11 +32,25 @@ final class ObjectType implements Type
     {
         return $this->relateToSpecial($type)
             ?? match (true) {
-                $type instanceof self => $this->className === $type->className
-                    ? TrinaryLogic::Yes
-                    : TrinaryLogic::Maybe, // 継承関係は Part 6 まで不明
+                $type instanceof self => $this->isSuperTypeOfClass($type->className),
                 default => TrinaryLogic::No,
             };
+    }
+
+    private function isSuperTypeOfClass(string $other): TrinaryLogic
+    {
+        if (strcasecmp($this->className, $other) === 0) {
+            return TrinaryLogic::Yes;
+        }
+
+        $provider = ReflectionProviderStaticAccessor::getInstanceOrNull();
+        if ($provider !== null && $provider->hasClass($other)) {
+            return $provider->getClass($other)->isSubclassOf($this->className)
+                ? TrinaryLogic::Yes
+                : TrinaryLogic::No;
+        }
+
+        return TrinaryLogic::Maybe; // 階層が分からなければ狭めも広げもしない
     }
 
     public function equals(Type $type): bool

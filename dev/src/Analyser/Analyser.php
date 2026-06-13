@@ -4,10 +4,11 @@ declare(strict_types=1);
 
 namespace Ministan\Analyser;
 
+use Ministan\Reflection\ReflectionProvider;
+use Ministan\Reflection\ReflectionProviderStaticAccessor;
 use Ministan\Rules\RuleRegistry;
 use PhpParser\Error as ParserError;
 use PhpParser\Node;
-use PhpParser\ParserFactory;
 
 /**
  * 解析パイプラインの入口。
@@ -34,14 +35,15 @@ final class Analyser
             return [new Error(sprintf('File "%s" was not found.', $file), $file, 0)];
         }
 
-        $parser = (new ParserFactory())->createForNewestSupportedVersion();
-
         try {
-            $ast = $parser->parse($code) ?? [];
+            $ast = Parsing::parse($code);
         } catch (ParserError $e) {
             // 構文エラーがある間はルールを走らせても意味がないので、ここで打ち切る。
             return [new Error($e->getRawMessage(), $file, $e->getStartLine())];
         }
+
+        // 解析対象の宣言からリフレクションを組み、型オブジェクトから引けるようにする。
+        ReflectionProviderStaticAccessor::set(ReflectionProvider::fromNodes($ast));
 
         $errors = [];
         $resolver = new NodeScopeResolver(

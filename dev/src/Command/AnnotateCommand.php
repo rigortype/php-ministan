@@ -5,12 +5,14 @@ declare(strict_types=1);
 namespace Ministan\Command;
 
 use Ministan\Analyser\NodeScopeResolver;
+use Ministan\Analyser\Parsing;
 use Ministan\Analyser\Scope;
+use Ministan\Reflection\ReflectionProvider;
+use Ministan\Reflection\ReflectionProviderStaticAccessor;
 use PhpParser\Error as ParserError;
 use PhpParser\Node;
 use PhpParser\Node\Expr;
 use PhpParser\Node\Stmt;
-use PhpParser\ParserFactory;
 
 /**
  * `ministan annotate <file>` の実装。
@@ -42,15 +44,15 @@ final class AnnotateCommand
             return 1;
         }
 
-        $parser = (new ParserFactory())->createForNewestSupportedVersion();
-
         try {
-            $ast = $parser->parse($code) ?? [];
+            $ast = Parsing::parse($code);
         } catch (ParserError $e) {
             fwrite(STDERR, sprintf("%s on line %d\n", $e->getRawMessage(), $e->getStartLine()));
 
             return 1;
         }
+
+        ReflectionProviderStaticAccessor::set(ReflectionProvider::fromNodes($ast));
 
         /** @var list<array{int, string, string}> $rows */
         $rows = [];
