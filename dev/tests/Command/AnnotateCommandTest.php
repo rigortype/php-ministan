@@ -40,6 +40,19 @@ final class AnnotateCommandTest extends TestCase
         self::assertMatchesRegularExpression("/\\\$name\s+:\s+'ada'$/m", $output);
     }
 
+    public function testGenericsInference(): void
+    {
+        ob_start();
+        $exitCode = (new AnnotateCommand())->run([__DIR__ . '/../fixtures/generics.php']);
+        $output = ob_get_clean();
+
+        self::assertSame(0, $exitCode);
+        self::assertMatchesRegularExpression('/\$a\s+:\s+42$/m', $output);          // 汎関数の置換
+        self::assertMatchesRegularExpression("/\\\$b\s+:\s+'hello'$/m", $output);
+        self::assertMatchesRegularExpression('/\$box\s+:\s+Box<int>$/m', $output);   // @var ジェネリック
+        self::assertMatchesRegularExpression('/\$value\s+:\s+int$/m', $output);      // メソッド戻り値の置換
+    }
+
     public function testPhpDocDrivesInference(): void
     {
         ob_start();

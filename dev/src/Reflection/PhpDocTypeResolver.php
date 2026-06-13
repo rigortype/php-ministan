@@ -8,12 +8,14 @@ use Ministan\Type\ArrayType;
 use Ministan\Type\BooleanType;
 use Ministan\Type\Constant\ConstantBooleanType;
 use Ministan\Type\FloatType;
+use Ministan\Type\GenericObjectType;
 use Ministan\Type\IntegerType;
 use Ministan\Type\MixedType;
 use Ministan\Type\NeverType;
 use Ministan\Type\NullType;
 use Ministan\Type\ObjectType;
 use Ministan\Type\StringType;
+use Ministan\Type\TemplateType;
 use Ministan\Type\Type;
 use Ministan\Type\TypeCombinator;
 use PHPStan\PhpDocParser\Ast\Type\ArrayTypeNode;
@@ -30,11 +32,11 @@ use PHPStan\PhpDocParser\Parser\TypeParser;
 use PHPStan\PhpDocParser\ParserConfig;
 
 /**
- * docblock を解析し、`@return`/`@param`/`@var` の型を {@see Type} に写す。
+ * docblock を解析し、`@return`/`@param`/`@var`/`@template` の型を {@see Type} に写す。
  *
- * phpstan/phpdoc-parser で文字列をパースし、その型 AST を ministan の型へ変換する。
- * PHPStan の `TypeNodeResolver` に対応。クラス名の名前空間解決（use の解釈）までは
- * 追わない——そこは応用編で。
+ * 型変数を扱うのが S3 での拡張点。`@template T` を集め、その名前の識別子は
+ * {@see TemplateType} に、`Collection<int>` のような識別子付きジェネリックは
+ * {@see GenericObjectType} に解決する。
  */
 final class PhpDocTypeResolver
 {
@@ -52,7 +54,10 @@ final class PhpDocTypeResolver
         $this->parser = new PhpDocParser($config, $typeParser, $constExpr);
     }
 
-    public function parse(?string $docComment): ParsedPhpDoc
+    /**
+     * @param list<string> $outerTemplateNames 外側（クラス）から見えている型変数名
+     */
+    public function parse(?string $docComment, array $outerTemplateNames = []): ParsedPhpDoc
     {
         if ($docComment === null || trim($docComment) === '') {
             return ParsedPhpDoc::empty();
@@ -61,39 +66,57 @@ final class PhpDocTypeResolver
         $tokens = new TokenIterator($this->lexer->tokenize($docComment));
         $doc = $this->parser->parse($tokens);
 
+        $ownTemplates = [];
+        foreach ($doc->getTemplateTagValues() as $tag) {
+            $ownTemplates[] = $tag->name;
+        }
+        $active = [...$outerTemplateNames, ...$ownTemplates];
+
         $returnType = null;
         foreach ($doc->getReturnTagValues() as $tag) {
-            $returnType = $this->toType($tag->type);
+            $returnType = $this->toType($tag->type, $active);
             break;
         }
 
         $paramTypes = [];
         foreach ($doc->getParamTagValues() as $tag) {
-            $paramTypes[ltrim($tag->parameterName, '$')] = $this->toType($tag->type);
+            $paramTypes[ltrim($tag->parameterName, '$')] = $this->toType($tag->type, $active);
         }
 
         $varTypes = [];
         foreach ($doc->getVarTagValues() as $tag) {
-            $varTypes[ltrim($tag->variableName, '$')] = $this->toType($tag->type);
+            $varTypes[ltrim($tag->variableName, '$')] = $this->toType($tag->type, $active);
         }
 
-        return new ParsedPhpDoc($returnType, $paramTypes, $varTypes);
+        return new ParsedPhpDoc($returnType, $paramTypes, $varTypes, $ownTemplates);
     }
 
-    private function toType(TypeNode $node): Type
+    /**
+     * @param list<string> $templateNames
+     */
+    private function toType(TypeNode $node, array $templateNames): Type
     {
         return match (true) {
-            $node instanceof IdentifierTypeNode => $this->fromIdentifier($node->name),
-            $node instanceof NullableTypeNode => TypeCombinator::union($this->toType($node->type), new NullType()),
-            $node instanceof UnionTypeNode => TypeCombinator::union(...array_map($this->toType(...), $node->types)),
-            $node instanceof GenericTypeNode => $this->fromGeneric($node),
-            $node instanceof ArrayTypeNode => new ArrayType(new MixedType(), $this->toType($node->type)),
+            $node instanceof IdentifierTypeNode => $this->fromIdentifier($node->name, $templateNames),
+            $node instanceof NullableTypeNode => TypeCombinator::union($this->toType($node->type, $templateNames), new NullType()),
+            $node instanceof UnionTypeNode => TypeCombinator::union(
+                ...array_map(fn (TypeNode $t): Type => $this->toType($t, $templateNames), $node->types),
+            ),
+            $node instanceof GenericTypeNode => $this->fromGeneric($node, $templateNames),
+            $node instanceof ArrayTypeNode => new ArrayType(new MixedType(), $this->toType($node->type, $templateNames)),
             default => new MixedType(),
         };
     }
 
-    private function fromIdentifier(string $name): Type
+    /**
+     * @param list<string> $templateNames
+     */
+    private function fromIdentifier(string $name, array $templateNames): Type
     {
+        if (in_array($name, $templateNames, true)) {
+            return new TemplateType($name, new MixedType());
+        }
+
         return match (strtolower($name)) {
             'int', 'integer' => new IntegerType(),
             'string' => new StringType(),
@@ -110,17 +133,21 @@ final class PhpDocTypeResolver
         };
     }
 
-    private function fromGeneric(GenericTypeNode $node): Type
+    /**
+     * @param list<string> $templateNames
+     */
+    private function fromGeneric(GenericTypeNode $node, array $templateNames): Type
     {
         $base = strtolower($node->type->name);
-        $args = array_map($this->toType(...), $node->genericTypes);
+        $args = array_map(fn (TypeNode $t): Type => $this->toType($t, $templateNames), $node->genericTypes);
 
         return match (true) {
             $base === 'array' && count($args) === 2 => new ArrayType($args[0], $args[1]),
             $base === 'array' && count($args) === 1 => new ArrayType(new MixedType(), $args[0]),
             ($base === 'list' || $base === 'non-empty-list') && count($args) >= 1
                 => new ArrayType(new IntegerType(), $args[0]),
-            default => new MixedType(),
+            // それ以外の `Foo<…>` はジェネリッククラス。
+            default => new GenericObjectType(ltrim($node->type->name, '\\'), array_values($args)),
         };
     }
 }

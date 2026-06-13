@@ -14,7 +14,7 @@ use Ministan\TrinaryLogic;
  * 引き、`$child instanceof $parent` を正しく Yes/No 判定する。provider が無い、または
  * クラスが未知のときは Maybe に縮退（non-rejecting）。
  */
-final class ObjectType implements Type
+class ObjectType implements Type
 {
     use SimpleTypeTrait;
 

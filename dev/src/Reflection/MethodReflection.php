@@ -27,9 +27,12 @@ final readonly class MethodReflection
     ) {
     }
 
-    public static function fromNode(ClassMethod $node, TypeNodeResolver $resolver, PhpDocTypeResolver $phpDoc): self
+    /**
+     * @param list<string> $classTemplateNames クラスが宣言する型変数（メソッドの @return T 等が参照する）
+     */
+    public static function fromNode(ClassMethod $node, TypeNodeResolver $resolver, PhpDocTypeResolver $phpDoc, array $classTemplateNames = []): self
     {
-        $doc = $phpDoc->parse($node->getDocComment()?->getText());
+        $doc = $phpDoc->parse($node->getDocComment()?->getText(), $classTemplateNames);
 
         $parameterTypes = [];
         foreach ($node->params as $param) {

@@ -391,7 +391,7 @@ final class NodeScopeResolver
         $returnType = $doc->returnType ?? $this->typeNodeResolver->resolve($node->returnType);
 
         $inner = Scope::createForFunction()->withFunctionReturnType($returnType);
-        $inner = $this->bindParams($node->params, $inner);
+        $inner = $this->bindParams($node->params, $inner, $doc->paramTypes);
 
         if ($node instanceof Stmt\ClassMethod && !$node->isStatic()) {
             $inner = $inner->assignVariable('this', new MixedType());
@@ -451,15 +451,18 @@ final class NodeScopeResolver
     }
 
     /**
-     * @param Node\Param[] $params
+     * @param Node\Param[]        $params
+     * @param array<string, Type> $docParamTypes @param で宣言された型（ネイティブ宣言より優先）
      */
-    private function bindParams(array $params, Scope $scope): Scope
+    private function bindParams(array $params, Scope $scope, array $docParamTypes = []): Scope
     {
         foreach ($params as $param) {
             ($this->nodeCallback)($param, $scope);
 
             if ($param->var instanceof Expr\Variable && is_string($param->var->name)) {
-                $scope = $scope->assignVariable($param->var->name, $this->typeNodeResolver->resolve($param->type));
+                $name = $param->var->name;
+                $type = $docParamTypes[$name] ?? $this->typeNodeResolver->resolve($param->type);
+                $scope = $scope->assignVariable($name, $type);
             }
         }
 

@@ -11,14 +11,18 @@ use Ministan\Type\Constant\ConstantBooleanType;
 use Ministan\Type\Constant\ConstantIntegerType;
 use Ministan\Type\Constant\ConstantStringType;
 use Ministan\Type\FloatType;
+use Ministan\Type\GenericObjectType;
 use Ministan\Type\IntegerType;
 use Ministan\Type\MixedType;
 use Ministan\Type\NullType;
 use Ministan\Type\ObjectType;
 use Ministan\Type\StringType;
+use Ministan\Type\TemplateType;
+use Ministan\Type\TemplateTypeMap;
 use Ministan\Type\Type;
 use Ministan\Type\TypeCombinator;
 use Ministan\Reflection\ReflectionProviderStaticAccessor;
+use PhpParser\Node\Arg;
 use PhpParser\Node\ArrayItem;
 use PhpParser\Node\Expr;
 use PhpParser\Node\Identifier;
@@ -248,7 +252,21 @@ final readonly class Scope
             return new MixedType();
         }
 
-        return $class->getMethod($expr->name->toString())->returnType;
+        $returnType = $class->getMethod($expr->name->toString())->returnType;
+
+        // ジェネリッククラスなら、型引数で戻り値の型変数を置換する（Collection<int>::get(): T → int）。
+        if ($objectType instanceof GenericObjectType && $class->templateNames !== []) {
+            $map = [];
+            foreach ($class->templateNames as $i => $templateName) {
+                if (isset($objectType->typeArguments[$i])) {
+                    $map[$templateName] = $objectType->typeArguments[$i];
+                }
+            }
+
+            return (new TemplateTypeMap($map))->resolve($returnType);
+        }
+
+        return $returnType;
     }
 
     private function funcCallType(Expr\FuncCall $expr): Type
@@ -258,7 +276,24 @@ final readonly class Scope
             return new MixedType();
         }
 
-        return $provider->getFunction($expr->name->toString())->returnType;
+        $function = $provider->getFunction($expr->name->toString());
+        if ($function->templateNames === []) {
+            return $function->returnType;
+        }
+
+        // 実引数から型変数を推論し（identity(42) なら T → 42）、戻り値型を置換する。
+        $map = [];
+        foreach ($expr->args as $position => $arg) {
+            if (!$arg instanceof Arg) {
+                continue;
+            }
+            $paramType = $function->parameterTypes[$position] ?? null;
+            if ($paramType instanceof TemplateType && in_array($paramType->name, $function->templateNames, true)) {
+                $map[$paramType->name] = $this->getType($arg->value);
+            }
+        }
+
+        return (new TemplateTypeMap($map))->resolve($function->returnType);
     }
 
     private function constFetchType(Expr\ConstFetch $expr): Type

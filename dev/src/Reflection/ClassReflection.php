@@ -23,6 +23,7 @@ final class ClassReflection
     /**
      * @param list<string> $parentNames extends / implements の上位クラス名（FQN）
      * @param array<string, MethodReflection> $methods 小文字名 → メソッド（直接宣言分）
+     * @param list<string> $templateNames このクラスが宣言する型変数（@template）
      */
     public function __construct(
         public readonly string $name,
@@ -30,6 +31,7 @@ final class ClassReflection
         private readonly array $methods,
         private readonly ReflectionProvider $provider,
         private readonly ?ReflectionClass $native = null,
+        public readonly array $templateNames = [],
     ) {
     }
 
@@ -53,12 +55,14 @@ final class ClassReflection
             }
         }
 
+        $templateNames = $phpDoc->parse($node->getDocComment()?->getText())->templateNames;
+
         $methods = [];
         foreach ($node->getMethods() as $method) {
-            $methods[strtolower($method->name->toString())] = MethodReflection::fromNode($method, $resolver, $phpDoc);
+            $methods[strtolower($method->name->toString())] = MethodReflection::fromNode($method, $resolver, $phpDoc, $templateNames);
         }
 
-        return new self($name, $parents, $methods, $provider);
+        return new self($name, $parents, $methods, $provider, null, $templateNames);
     }
 
     /**

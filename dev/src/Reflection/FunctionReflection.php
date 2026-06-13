@@ -15,12 +15,14 @@ use ReflectionFunction;
 final readonly class FunctionReflection
 {
     /**
-     * @param list<Type> $parameterTypes
+     * @param list<Type>   $parameterTypes
+     * @param list<string> $templateNames この関数が宣言する型変数（@template）
      */
     public function __construct(
         public string $name,
         public Type $returnType,
         public array $parameterTypes,
+        public array $templateNames = [],
     ) {
     }
 
@@ -40,6 +42,7 @@ final readonly class FunctionReflection
             $name,
             $doc->returnType ?? $resolver->resolve($node->returnType),
             $parameterTypes,
+            $doc->templateNames,
         );
     }
 
