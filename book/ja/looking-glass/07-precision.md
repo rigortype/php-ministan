@@ -1,4 +1,4 @@
-# ministan Through PHP's Looking-Glass — S7: 推論と検査の精度向上
+# S7: 推論と検査の精度向上
 
 > ＊この章のコードはスナップショット [`impls/looking-glass/07-precision`](../../../impls/looking-glass/07-precision) にあります（この章の到達点は `git tag seasoned-07`）。
 

@@ -1,4 +1,4 @@
-# ministan Through PHP's Looking-Glass — S2: 配列を深める
+# S2: 配列を深める
 
 > ＊この章のコードはスナップショット [`impls/looking-glass/02-arrays`](../../../impls/looking-glass/02-arrays) にあります（この章の到達点は `git tag seasoned-02`）。
 

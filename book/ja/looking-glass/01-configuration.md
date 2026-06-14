@@ -1,4 +1,4 @@
-# ministan Through PHP's Looking-Glass — S1: 設定と拡張
+# S1: 設定と拡張
 
 > ＊この章のコードはスナップショット [`impls/looking-glass/01-configuration`](../../../impls/looking-glass/01-configuration) にあります（この章の到達点は `git tag seasoned-01`）。
 

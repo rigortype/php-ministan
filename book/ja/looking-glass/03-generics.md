@@ -1,4 +1,4 @@
-# ministan Through PHP's Looking-Glass — S3: ジェネリクス
+# S3: ジェネリクス
 
 > ＊この章のコードはスナップショット [`impls/looking-glass/03-generics`](../../../impls/looking-glass/03-generics) にあります（この章の到達点は `git tag seasoned-03`）。
 

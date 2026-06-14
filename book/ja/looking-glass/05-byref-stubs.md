@@ -1,4 +1,4 @@
-# ministan Through PHP's Looking-Glass — S5: 参照渡しとスタブ
+# S5: 参照渡しとスタブ
 
 > ＊この章のコードはスナップショット [`impls/looking-glass/05-byref-stubs`](../../../impls/looking-glass/05-byref-stubs) にあります（この章の到達点は `git tag seasoned-05`）。
 

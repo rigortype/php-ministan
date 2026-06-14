@@ -1,4 +1,4 @@
-# ministan Through PHP's Looking-Glass — S4: 制御フローと高度な narrowing
+# S4: 制御フローと高度な narrowing
 
 > ＊この章のコードはスナップショット [`impls/looking-glass/04-control-flow`](../../../impls/looking-glass/04-control-flow) にあります（この章の到達点は `git tag seasoned-04`）。
 

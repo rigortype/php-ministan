@@ -1,4 +1,4 @@
-# ministan Through PHP's Looking-Glass — S6: パフォーマンス（結果キャッシュ）
+# S6: パフォーマンス（結果キャッシュ）
 
 > ＊この章のコードはスナップショット [`impls/looking-glass/06-performance`](../../../impls/looking-glass/06-performance) にあります（この章の到達点は `git tag seasoned-06`）。
 
