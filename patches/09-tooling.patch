@@ -1,0 +1,492 @@
+diff --git a/dev/src/Analyser/Analyser.php b/dev/src/Analyser/Analyser.php
+index 63dd1ac..a1a4c7c 100644
+--- a/dev/src/Analyser/Analyser.php
++++ b/dev/src/Analyser/Analyser.php
+@@ -25,6 +25,25 @@ final class Analyser
+     ) {
+     }
+ 
++    /**
++     * 複数ファイルを解析し、エラーをまとめて返す。
++     *
++     * @param list<string> $files
++     *
++     * @return list<Error>
++     */
++    public function analyse(array $files): array
++    {
++        $errors = [];
++        foreach ($files as $file) {
++            foreach ($this->analyseFile($file) as $error) {
++                $errors[] = $error;
++            }
++        }
++
++        return $errors;
++    }
++
+     /**
+      * @return list<Error>
+      */
+diff --git a/dev/src/Analyser/FileFinder.php b/dev/src/Analyser/FileFinder.php
+new file mode 100644
+index 0000000..59d7799
+--- /dev/null
++++ b/dev/src/Analyser/FileFinder.php
+@@ -0,0 +1,59 @@
++<?php
++
++declare(strict_types=1);
++
++namespace Ministan\Analyser;
++
++use FilesystemIterator;
++use RecursiveDirectoryIterator;
++use RecursiveIteratorIterator;
++use SplFileInfo;
++
++/**
++ * 解析対象のパス（ファイルまたはディレクトリ）から .php ファイルを集める。
++ */
++final class FileFinder
++{
++    /**
++     * @param list<string> $paths
++     *
++     * @return list<string>
++     */
++    public function find(array $paths): array
++    {
++        $files = [];
++        foreach ($paths as $path) {
++            if (is_file($path)) {
++                $files[] = $path;
++            } elseif (is_dir($path)) {
++                foreach ($this->phpFilesIn($path) as $file) {
++                    $files[] = $file;
++                }
++            }
++        }
++
++        sort($files); // 出力を安定させる
++
++        return $files;
++    }
++
++    /**
++     * @return list<string>
++     */
++    private function phpFilesIn(string $directory): array
++    {
++        $iterator = new RecursiveIteratorIterator(
++            new RecursiveDirectoryIterator($directory, FilesystemIterator::SKIP_DOTS),
++        );
++
++        $files = [];
++        /** @var SplFileInfo $info */
++        foreach ($iterator as $info) {
++            if ($info->isFile() && $info->getExtension() === 'php') {
++                $files[] = $info->getPathname();
++            }
++        }
++
++        return $files;
++    }
++}
+diff --git a/dev/src/Command/AnalyseCommand.php b/dev/src/Command/AnalyseCommand.php
+index 9863a13..6fe8055 100644
+--- a/dev/src/Command/AnalyseCommand.php
++++ b/dev/src/Command/AnalyseCommand.php
+@@ -5,43 +5,81 @@ declare(strict_types=1);
+ namespace Ministan\Command;
+ 
+ use Ministan\Analyser\Analyser;
++use Ministan\Analyser\FileFinder;
++use Ministan\Output\Baseline;
+ use Ministan\Output\ErrorFormatter;
++use Ministan\Output\JsonErrorFormatter;
++use Ministan\Output\TableErrorFormatter;
+ use Ministan\Rules\RuleRegistryFactory;
+ 
+ /**
+- * `ministan analyse [--level=N] <file>` の実装。
++ * `ministan analyse [options] <paths...>` の実装。
+  *
+- * PHPStan の AnalyseCommand に対応する最小版。Part 9 で複数ファイル・複数フォーマットや
+- * baseline へ拡張する。
++ * オプション:
++ *   --level=N              ルールレベル（0..9, 既定 5）
++ *   --error-format=json    JSON で出力する（既定は表）
++ *   --baseline=FILE        FILE に載った既知の指摘を無視する
++ *   --generate-baseline[=FILE]  現在の指摘を baseline として書き出す
+  */
+ final class AnalyseCommand
+ {
++    private const string DEFAULT_BASELINE = 'ministan-baseline.json';
++
+     /**
+      * @param list<string> $args
+      */
+     public function run(array $args): int
+     {
+         $level = RuleRegistryFactory::DEFAULT_LEVEL;
+-        $files = [];
++        $format = 'table';
++        $baselineToApply = null;
++        $baselineToGenerate = null;
++        $paths = [];
++
+         foreach ($args as $arg) {
+             if (str_starts_with($arg, '--level=')) {
+                 $level = min((int) substr($arg, strlen('--level=')), RuleRegistryFactory::MAX_LEVEL);
++            } elseif (str_starts_with($arg, '--error-format=')) {
++                $format = substr($arg, strlen('--error-format='));
++            } elseif (str_starts_with($arg, '--baseline=')) {
++                $baselineToApply = substr($arg, strlen('--baseline='));
++            } elseif ($arg === '--generate-baseline') {
++                $baselineToGenerate = self::DEFAULT_BASELINE;
++            } elseif (str_starts_with($arg, '--generate-baseline=')) {
++                $baselineToGenerate = substr($arg, strlen('--generate-baseline='));
+             } else {
+-                $files[] = $arg;
++                $paths[] = $arg;
+             }
+         }
+ 
+-        if ($files === []) {
+-            fwrite(STDERR, "Usage: ministan analyse [--level=N] <file>\n");
++        if ($paths === []) {
++            fwrite(STDERR, "Usage: ministan analyse [--level=N] [--error-format=json] <paths...>\n");
+ 
+             return 1;
+         }
+ 
++        $files = (new FileFinder())->find($paths);
+         $registry = (new RuleRegistryFactory())->createForLevel($level);
+-        $errors = (new Analyser($registry))->analyseFile($files[0]);
++        $errors = (new Analyser($registry))->analyse($files);
++
++        if ($baselineToGenerate !== null) {
++            file_put_contents($baselineToGenerate, Baseline::generate($errors));
++            fwrite(STDERR, sprintf("Baseline written to %s (%d errors).\n", $baselineToGenerate, count($errors)));
++
++            return 0;
++        }
+ 
+-        echo (new ErrorFormatter())->format($errors);
++        if ($baselineToApply !== null && is_file($baselineToApply)) {
++            $errors = Baseline::filter($errors, (string) file_get_contents($baselineToApply));
++        }
++
++        echo $this->formatter($format)->format($errors);
+ 
+         return $errors === [] ? 0 : 1;
+     }
++
++    private function formatter(string $format): ErrorFormatter
++    {
++        return $format === 'json' ? new JsonErrorFormatter() : new TableErrorFormatter();
++    }
+ }
+diff --git a/dev/src/Console/Application.php b/dev/src/Console/Application.php
+index ae7bb5a..9eb6034 100644
+--- a/dev/src/Console/Application.php
++++ b/dev/src/Console/Application.php
+@@ -36,8 +36,14 @@ final class Application
+             ministan {$this->versionLine()}
+ 
+             Usage:
+-              ministan analyse [--level=N] <file>   PHP ファイルを解析する（N=0..9, 既定 5）
+-              ministan annotate <file>              推論された型を表示する
++              ministan analyse [options] <paths...>   ファイル／ディレクトリを解析する
++              ministan annotate <file>                推論された型を表示する
++
++            analyse options:
++              --level=N                 ルールレベル（0..9, 既定 5）
++              --error-format=json       JSON で出力する
++              --baseline=FILE           既知の指摘を無視する
++              --generate-baseline[=FILE]  現在の指摘を baseline に書き出す
+ 
+             TXT;
+ 
+diff --git a/dev/src/Output/Baseline.php b/dev/src/Output/Baseline.php
+new file mode 100644
+index 0000000..9bea39b
+--- /dev/null
++++ b/dev/src/Output/Baseline.php
+@@ -0,0 +1,56 @@
++<?php
++
++declare(strict_types=1);
++
++namespace Ministan\Output;
++
++use Ministan\Analyser\Error;
++
++/**
++ * 既存の指摘を「許容済み」として記録し、次回以降は無視する仕組み。
++ *
++ * レガシーコードに PHPStan を導入する第一歩。今あるエラーを baseline に固め、
++ * 「これ以上増やさない」運用を可能にする。本実装は (ファイル, メッセージ) の組で
++ * 突き合わせる簡略版（PHPStan は件数まで見る）。フォーマットは JSON。
++ */
++final class Baseline
++{
++    /**
++     * @param list<Error> $errors
++     */
++    public static function generate(array $errors): string
++    {
++        $entries = array_map(
++            static fn (Error $error): array => ['message' => $error->message, 'file' => $error->file],
++            $errors,
++        );
++
++        return json_encode(['errors' => $entries], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE) . "\n";
++    }
++
++    /**
++     * baseline に載っている指摘を取り除く。
++     *
++     * @param list<Error> $errors
++     *
++     * @return list<Error>
++     */
++    public static function filter(array $errors, string $baselineJson): array
++    {
++        $decoded = json_decode($baselineJson, true);
++        $ignored = [];
++        foreach ($decoded['errors'] ?? [] as $entry) {
++            $ignored[self::key($entry['file'] ?? '', $entry['message'] ?? '')] = true;
++        }
++
++        return array_values(array_filter(
++            $errors,
++            static fn (Error $error): bool => !isset($ignored[self::key($error->file, $error->message)]),
++        ));
++    }
++
++    private static function key(string $file, string $message): string
++    {
++        return $file . "\0" . $message;
++    }
++}
+diff --git a/dev/src/Output/ErrorFormatter.php b/dev/src/Output/ErrorFormatter.php
+index 951d0d2..cc20ba6 100644
+--- a/dev/src/Output/ErrorFormatter.php
++++ b/dev/src/Output/ErrorFormatter.php
+@@ -7,32 +7,13 @@ namespace Ministan\Output;
+ use Ministan\Analyser\Error;
+ 
+ /**
+- * 解析結果を人間向けに整形する。
+- *
++ * 解析結果を出力テキストに整形する。表・JSON など複数の表現を差し替えられる。
+  * PHPStan の {@see \PHPStan\Command\ErrorFormatter\ErrorFormatter} に対応。
+- * Part 9 で JSON など複数フォーマットに拡張する。
+  */
+-final class ErrorFormatter
++interface ErrorFormatter
+ {
+     /**
+      * @param list<Error> $errors
+      */
+-    public function format(array $errors): string
+-    {
+-        if ($errors === []) {
+-            return "[OK] No errors\n";
+-        }
+-
+-        $lines = [];
+-        foreach ($errors as $error) {
+-            $lines[] = sprintf(' %s:%d', $error->file, $error->line);
+-            $lines[] = sprintf('   %s', $error->message);
+-        }
+-
+-        $count = count($errors);
+-        $lines[] = '';
+-        $lines[] = sprintf('[ERROR] Found %d error%s', $count, $count === 1 ? '' : 's');
+-
+-        return implode("\n", $lines) . "\n";
+-    }
++    public function format(array $errors): string;
+ }
+diff --git a/dev/src/Output/JsonErrorFormatter.php b/dev/src/Output/JsonErrorFormatter.php
+new file mode 100644
+index 0000000..a3b2319
+--- /dev/null
++++ b/dev/src/Output/JsonErrorFormatter.php
+@@ -0,0 +1,32 @@
++<?php
++
++declare(strict_types=1);
++
++namespace Ministan\Output;
++
++/**
++ * 機械可読な JSON フォーマット。CI やエディタ連携で使う。
++ * PHPStan の JSON 出力を簡略化した形。
++ */
++final class JsonErrorFormatter implements ErrorFormatter
++{
++    public function format(array $errors): string
++    {
++        $files = [];
++        foreach ($errors as $error) {
++            $files[$error->file]['errors'] ??= 0;
++            $files[$error->file]['errors']++;
++            $files[$error->file]['messages'][] = [
++                'message' => $error->message,
++                'line' => $error->line,
++            ];
++        }
++
++        $payload = [
++            'totals' => ['file_errors' => count($errors)],
++            'files' => $files,
++        ];
++
++        return json_encode($payload, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE) . "\n";
++    }
++}
+diff --git a/dev/src/Output/TableErrorFormatter.php b/dev/src/Output/TableErrorFormatter.php
+new file mode 100644
+index 0000000..453cd3e
+--- /dev/null
++++ b/dev/src/Output/TableErrorFormatter.php
+@@ -0,0 +1,40 @@
++<?php
++
++declare(strict_types=1);
++
++namespace Ministan\Output;
++
++use Ministan\Analyser\Error;
++
++/**
++ * 人間向けの既定フォーマット。ファイルごとにまとめて表示する。
++ */
++final class TableErrorFormatter implements ErrorFormatter
++{
++    public function format(array $errors): string
++    {
++        if ($errors === []) {
++            return "[OK] No errors\n";
++        }
++
++        /** @var array<string, list<Error>> $byFile */
++        $byFile = [];
++        foreach ($errors as $error) {
++            $byFile[$error->file][] = $error;
++        }
++
++        $lines = [];
++        foreach ($byFile as $file => $fileErrors) {
++            $lines[] = $file;
++            foreach ($fileErrors as $error) {
++                $lines[] = sprintf('  %4d  %s', $error->line, $error->message);
++            }
++            $lines[] = '';
++        }
++
++        $count = count($errors);
++        $lines[] = sprintf('[ERROR] Found %d error%s', $count, $count === 1 ? '' : 's');
++
++        return implode("\n", $lines) . "\n";
++    }
++}
+diff --git a/dev/tests/Analyser/FileFinderTest.php b/dev/tests/Analyser/FileFinderTest.php
+new file mode 100644
+index 0000000..3da024c
+--- /dev/null
++++ b/dev/tests/Analyser/FileFinderTest.php
+@@ -0,0 +1,29 @@
++<?php
++
++declare(strict_types=1);
++
++namespace Ministan\Tests\Analyser;
++
++use Ministan\Analyser\FileFinder;
++use PHPUnit\Framework\TestCase;
++
++final class FileFinderTest extends TestCase
++{
++    public function testReturnsSingleFileAsIs(): void
++    {
++        $file = __DIR__ . '/../fixtures/valid.php';
++
++        self::assertSame([$file], (new FileFinder())->find([$file]));
++    }
++
++    public function testRecursesDirectoriesForPhpFilesOnly(): void
++    {
++        $found = (new FileFinder())->find([__DIR__ . '/../fixtures']);
++
++        self::assertNotEmpty($found);
++        foreach ($found as $file) {
++            self::assertStringEndsWith('.php', $file);
++        }
++        self::assertContains(realpath(__DIR__ . '/../fixtures/valid.php'), array_map('realpath', $found));
++    }
++}
+diff --git a/dev/tests/Output/OutputTest.php b/dev/tests/Output/OutputTest.php
+new file mode 100644
+index 0000000..c5bd4d5
+--- /dev/null
++++ b/dev/tests/Output/OutputTest.php
+@@ -0,0 +1,54 @@
++<?php
++
++declare(strict_types=1);
++
++namespace Ministan\Tests\Output;
++
++use Ministan\Analyser\Error;
++use Ministan\Output\Baseline;
++use Ministan\Output\JsonErrorFormatter;
++use Ministan\Output\TableErrorFormatter;
++use PHPUnit\Framework\TestCase;
++
++final class OutputTest extends TestCase
++{
++    public function testTableFormatterOnNoErrors(): void
++    {
++        self::assertSame("[OK] No errors\n", (new TableErrorFormatter())->format([]));
++    }
++
++    public function testTableFormatterGroupsByFile(): void
++    {
++        $output = (new TableErrorFormatter())->format([
++            new Error('first', 'a.php', 3),
++            new Error('second', 'a.php', 9),
++        ]);
++
++        self::assertStringContainsString('a.php', $output);
++        self::assertStringContainsString('first', $output);
++        self::assertStringContainsString('[ERROR] Found 2 errors', $output);
++    }
++
++    public function testJsonFormatter(): void
++    {
++        $output = (new JsonErrorFormatter())->format([new Error('boom', 'a.php', 1)]);
++        $decoded = json_decode($output, true);
++
++        self::assertSame(1, $decoded['totals']['file_errors']);
++        self::assertSame('boom', $decoded['files']['a.php']['messages'][0]['message']);
++    }
++
++    public function testBaselineRoundTrip(): void
++    {
++        $errors = [
++            new Error('known', 'a.php', 1),
++            new Error('new', 'b.php', 2),
++        ];
++
++        $baseline = Baseline::generate([$errors[0]]);
++        $remaining = Baseline::filter($errors, $baseline);
++
++        self::assertCount(1, $remaining);
++        self::assertSame('new', $remaining[0]->message);
++    }
++}

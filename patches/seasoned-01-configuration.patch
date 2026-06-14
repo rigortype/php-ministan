@@ -1,0 +1,411 @@
+diff --git a/dev/composer.json b/dev/composer.json
+index b535a2b..6f43a06 100644
+--- a/dev/composer.json
++++ b/dev/composer.json
+@@ -5,6 +5,7 @@
+     "license": "MIT",
+     "require": {
+         "php": ">=8.3",
++        "nette/neon": "^3.4",
+         "nikic/php-parser": "^5.0",
+         "phpstan/phpdoc-parser": "^2.3"
+     },
+diff --git a/dev/src/Command/AnalyseCommand.php b/dev/src/Command/AnalyseCommand.php
+index 6fe8055..89f29f0 100644
+--- a/dev/src/Command/AnalyseCommand.php
++++ b/dev/src/Command/AnalyseCommand.php
+@@ -6,39 +6,51 @@ namespace Ministan\Command;
+ 
+ use Ministan\Analyser\Analyser;
+ use Ministan\Analyser\FileFinder;
++use Ministan\Configuration\Configuration;
++use Ministan\Configuration\ConfigurationLoader;
++use Ministan\Configuration\IgnoredErrorHelper;
+ use Ministan\Output\Baseline;
+ use Ministan\Output\ErrorFormatter;
+ use Ministan\Output\JsonErrorFormatter;
+ use Ministan\Output\TableErrorFormatter;
++use Ministan\Rules\Rule;
+ use Ministan\Rules\RuleRegistryFactory;
+ 
+ /**
+- * `ministan analyse [options] <paths...>` の実装。
++ * `ministan analyse [options] [paths...]` の実装。
++ *
++ * 設定は NEON（既定 `ministan.neon`）と CLI から組み立てる。CLI が NEON を上書きする。
+  *
+  * オプション:
+- *   --level=N              ルールレベル（0..9, 既定 5）
+- *   --error-format=json    JSON で出力する（既定は表）
+- *   --baseline=FILE        FILE に載った既知の指摘を無視する
+- *   --generate-baseline[=FILE]  現在の指摘を baseline として書き出す
++ *   --configuration=FILE   設定ファイル（既定 ministan.neon）
++ *   --level=N              ルールレベル（NEON より優先）
++ *   --error-format=json    JSON で出力する
++ *   --baseline=FILE        既知の指摘を無視する
++ *   --generate-baseline[=FILE]  現在の指摘を baseline に書き出す
+  */
+ final class AnalyseCommand
+ {
+     private const string DEFAULT_BASELINE = 'ministan-baseline.json';
+ 
++    private const string DEFAULT_CONFIG = 'ministan.neon';
++
+     /**
+      * @param list<string> $args
+      */
+     public function run(array $args): int
+     {
+-        $level = RuleRegistryFactory::DEFAULT_LEVEL;
++        $cliLevel = null;
+         $format = 'table';
++        $configFile = null;
+         $baselineToApply = null;
+         $baselineToGenerate = null;
+-        $paths = [];
++        $cliPaths = [];
+ 
+         foreach ($args as $arg) {
+             if (str_starts_with($arg, '--level=')) {
+-                $level = min((int) substr($arg, strlen('--level=')), RuleRegistryFactory::MAX_LEVEL);
++                $cliLevel = min((int) substr($arg, strlen('--level=')), RuleRegistryFactory::MAX_LEVEL);
++            } elseif (str_starts_with($arg, '--configuration=')) {
++                $configFile = substr($arg, strlen('--configuration='));
+             } elseif (str_starts_with($arg, '--error-format=')) {
+                 $format = substr($arg, strlen('--error-format='));
+             } elseif (str_starts_with($arg, '--baseline=')) {
+@@ -48,20 +60,27 @@ final class AnalyseCommand
+             } elseif (str_starts_with($arg, '--generate-baseline=')) {
+                 $baselineToGenerate = substr($arg, strlen('--generate-baseline='));
+             } else {
+-                $paths[] = $arg;
++                $cliPaths[] = $arg;
+             }
+         }
+ 
++        $config = $this->loadConfiguration($configFile);
++
++        $level = $cliLevel ?? $config->level;
++        $paths = $cliPaths !== [] ? $cliPaths : $config->paths;
++
+         if ($paths === []) {
+-            fwrite(STDERR, "Usage: ministan analyse [--level=N] [--error-format=json] <paths...>\n");
++            fwrite(STDERR, "Usage: ministan analyse [--level=N] [paths...]  (or set paths in ministan.neon)\n");
+ 
+             return 1;
+         }
+ 
+         $files = (new FileFinder())->find($paths);
+-        $registry = (new RuleRegistryFactory())->createForLevel($level);
++        $registry = (new RuleRegistryFactory())->createForLevel($level, $this->instantiateRules($config));
+         $errors = (new Analyser($registry))->analyse($files);
+ 
++        $errors = (new IgnoredErrorHelper($config->ignoreErrors))->filter($errors);
++
+         if ($baselineToGenerate !== null) {
+             file_put_contents($baselineToGenerate, Baseline::generate($errors));
+             fwrite(STDERR, sprintf("Baseline written to %s (%d errors).\n", $baselineToGenerate, count($errors)));
+@@ -78,6 +97,34 @@ final class AnalyseCommand
+         return $errors === [] ? 0 : 1;
+     }
+ 
++    private function loadConfiguration(?string $configFile): Configuration
++    {
++        $configFile ??= is_file(self::DEFAULT_CONFIG) ? self::DEFAULT_CONFIG : null;
++
++        if ($configFile !== null && is_file($configFile)) {
++            return (new ConfigurationLoader())->load($configFile);
++        }
++
++        return new Configuration(RuleRegistryFactory::DEFAULT_LEVEL, [], [], []);
++    }
++
++    /**
++     * @return list<Rule<\PhpParser\Node>>
++     */
++    private function instantiateRules(Configuration $config): array
++    {
++        $rules = [];
++        foreach ($config->ruleClasses as $class) {
++            if (class_exists($class) && is_subclass_of($class, Rule::class)) {
++                /** @var Rule<\PhpParser\Node> $rule */
++                $rule = new $class();
++                $rules[] = $rule;
++            }
++        }
++
++        return $rules;
++    }
++
+     private function formatter(string $format): ErrorFormatter
+     {
+         return $format === 'json' ? new JsonErrorFormatter() : new TableErrorFormatter();
+diff --git a/dev/src/Configuration/Configuration.php b/dev/src/Configuration/Configuration.php
+new file mode 100644
+index 0000000..b4c3bf8
+--- /dev/null
++++ b/dev/src/Configuration/Configuration.php
+@@ -0,0 +1,26 @@
++<?php
++
++declare(strict_types=1);
++
++namespace Ministan\Configuration;
++
++/**
++ * 解析の設定。NEON ファイルと CLI から組み立てられる不変オブジェクト。
++ *
++ * @phpstan-type RuleClass class-string<\Ministan\Rules\Rule<\PhpParser\Node>>
++ */
++final readonly class Configuration
++{
++    /**
++     * @param list<string> $paths        解析対象のパス
++     * @param list<string> $ignoreErrors メッセージにマッチしたら無視する正規表現
++     * @param list<string> $ruleClasses  追加で登録するルールのクラス名
++     */
++    public function __construct(
++        public int $level,
++        public array $paths,
++        public array $ignoreErrors,
++        public array $ruleClasses,
++    ) {
++    }
++}
+diff --git a/dev/src/Configuration/ConfigurationLoader.php b/dev/src/Configuration/ConfigurationLoader.php
+new file mode 100644
+index 0000000..1dd996d
+--- /dev/null
++++ b/dev/src/Configuration/ConfigurationLoader.php
+@@ -0,0 +1,50 @@
++<?php
++
++declare(strict_types=1);
++
++namespace Ministan\Configuration;
++
++use Ministan\Rules\RuleRegistryFactory;
++use Nette\Neon\Neon;
++
++/**
++ * NEON 設定ファイルを {@see Configuration} に読み込む。
++ *
++ * PHPStan が `phpstan.neon` を読むのと同じ位置づけ。本物に倣い NEON を採用する。
++ *
++ * ```neon
++ * parameters:
++ *     level: 6
++ *     paths:
++ *         - src
++ *     ignoreErrors:
++ *         - '#Call to an undefined method#'
++ * rules:
++ *     - App\Rules\MyRule
++ * ```
++ */
++final class ConfigurationLoader
++{
++    public function load(string $file): Configuration
++    {
++        $data = Neon::decode((string) file_get_contents($file));
++        $data = is_array($data) ? $data : [];
++
++        $parameters = (array) ($data['parameters'] ?? []);
++
++        return new Configuration(
++            (int) ($parameters['level'] ?? RuleRegistryFactory::DEFAULT_LEVEL),
++            $this->stringList($parameters['paths'] ?? []),
++            $this->stringList($parameters['ignoreErrors'] ?? []),
++            $this->stringList($data['rules'] ?? []),
++        );
++    }
++
++    /**
++     * @return list<string>
++     */
++    private function stringList(mixed $value): array
++    {
++        return array_values(array_map(strval(...), (array) $value));
++    }
++}
+diff --git a/dev/src/Configuration/IgnoredErrorHelper.php b/dev/src/Configuration/IgnoredErrorHelper.php
+new file mode 100644
+index 0000000..f7c477d
+--- /dev/null
++++ b/dev/src/Configuration/IgnoredErrorHelper.php
+@@ -0,0 +1,52 @@
++<?php
++
++declare(strict_types=1);
++
++namespace Ministan\Configuration;
++
++use Ministan\Analyser\Error;
++
++/**
++ * `ignoreErrors` の正規表現にマッチした指摘を取り除く。
++ *
++ * baseline が「この具体的な箇所」を無視するのに対し、ignoreErrors は「この種の
++ * メッセージ」をパターンで無視する。PHPStan の同名機能に対応。
++ */
++final readonly class IgnoredErrorHelper
++{
++    /**
++     * @param list<string> $patterns デリミタ付き正規表現
++     */
++    public function __construct(
++        private array $patterns,
++    ) {
++    }
++
++    /**
++     * @param list<Error> $errors
++     *
++     * @return list<Error>
++     */
++    public function filter(array $errors): array
++    {
++        if ($this->patterns === []) {
++            return $errors;
++        }
++
++        return array_values(array_filter(
++            $errors,
++            fn (Error $error): bool => !$this->isIgnored($error->message),
++        ));
++    }
++
++    private function isIgnored(string $message): bool
++    {
++        foreach ($this->patterns as $pattern) {
++            if (@preg_match($pattern, $message) === 1) {
++                return true;
++            }
++        }
++
++        return false;
++    }
++}
+diff --git a/dev/src/Rules/RuleRegistryFactory.php b/dev/src/Rules/RuleRegistryFactory.php
+index 6655789..e756035 100644
+--- a/dev/src/Rules/RuleRegistryFactory.php
++++ b/dev/src/Rules/RuleRegistryFactory.php
+@@ -29,7 +29,10 @@ final class RuleRegistryFactory
+         return $this->createForLevel(self::MAX_LEVEL);
+     }
+ 
+-    public function createForLevel(int $level): RuleRegistry
++    /**
++     * @param list<Rule<\PhpParser\Node>> $extraRules 設定で追加されたカスタムルール
++     */
++    public function createForLevel(int $level, array $extraRules = []): RuleRegistry
+     {
+         $helper = new RuleLevelHelper($level);
+         $checker = new ArgumentTypeChecker($helper);
+@@ -51,6 +54,10 @@ final class RuleRegistryFactory
+             }
+         }
+ 
++        foreach ($extraRules as $rule) {
++            $active[] = $rule;
++        }
++
+         return new RuleRegistry($active);
+     }
+ }
+diff --git a/dev/tests/Configuration/ConfigurationTest.php b/dev/tests/Configuration/ConfigurationTest.php
+new file mode 100644
+index 0000000..577ea7e
+--- /dev/null
++++ b/dev/tests/Configuration/ConfigurationTest.php
+@@ -0,0 +1,63 @@
++<?php
++
++declare(strict_types=1);
++
++namespace Ministan\Tests\Configuration;
++
++use Ministan\Analyser\Analyser;
++use Ministan\Analyser\Scope;
++use Ministan\Configuration\ConfigurationLoader;
++use Ministan\Configuration\IgnoredErrorHelper;
++use Ministan\Analyser\Error;
++use Ministan\Rules\Rule;
++use Ministan\Rules\RuleError;
++use Ministan\Rules\RuleRegistryFactory;
++use PhpParser\Node;
++use PhpParser\Node\Stmt\Echo_;
++use PHPUnit\Framework\TestCase;
++
++final class ConfigurationTest extends TestCase
++{
++    public function testLoadsNeon(): void
++    {
++        $config = (new ConfigurationLoader())->load(__DIR__ . '/../fixtures/config.neon');
++
++        self::assertSame(7, $config->level);
++        self::assertSame(['src', 'tests'], $config->paths);
++        self::assertSame(['#boom#'], $config->ignoreErrors);
++        self::assertSame(['Ministan\Rules\Functions\NoVarDumpRule'], $config->ruleClasses);
++    }
++
++    public function testIgnoredErrorHelperFiltersByPattern(): void
++    {
++        $helper = new IgnoredErrorHelper(['#undefined#i']);
++        $remaining = $helper->filter([
++            new Error('Undefined variable: $x', 'a.php', 1),
++            new Error('Called var_dump().', 'a.php', 2),
++        ]);
++
++        self::assertCount(1, $remaining);
++        self::assertSame('Called var_dump().', $remaining[0]->message);
++    }
++
++    public function testCustomRuleCanBeRegistered(): void
++    {
++        $customRule = new class implements Rule {
++            public function getNodeType(): string
++            {
++                return Echo_::class;
++            }
++
++            public function processNode(Node $node, Scope $scope): array
++            {
++                return [new RuleError('echo is discouraged.', $node->getStartLine())];
++            }
++        };
++
++        $registry = (new RuleRegistryFactory())->createForLevel(0, [$customRule]);
++        $errors = (new Analyser($registry))->analyseFile(__DIR__ . '/../fixtures/valid.php');
++
++        self::assertCount(1, $errors);
++        self::assertSame('echo is discouraged.', $errors[0]->message);
++    }
++}
+diff --git a/dev/tests/fixtures/config.neon b/dev/tests/fixtures/config.neon
+new file mode 100644
+index 0000000..17e8c70
+--- /dev/null
++++ b/dev/tests/fixtures/config.neon
+@@ -0,0 +1,9 @@
++parameters:
++    level: 7
++    paths:
++        - src
++        - tests
++    ignoreErrors:
++        - '#boom#'
++rules:
++    - Ministan\Rules\Functions\NoVarDumpRule
+diff --git a/examples/seasoned/ministan.neon b/examples/seasoned/ministan.neon
+new file mode 100644
+index 0000000..e3e5c59
+--- /dev/null
++++ b/examples/seasoned/ministan.neon
+@@ -0,0 +1,6 @@
++parameters:
++    level: 0
++    paths:
++        - examples/reflection.php
++    ignoreErrors:
++        - '#Call to an undefined method#'

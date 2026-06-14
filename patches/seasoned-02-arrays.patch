@@ -1,0 +1,420 @@
+diff --git a/dev/src/Analyser/NodeScopeResolver.php b/dev/src/Analyser/NodeScopeResolver.php
+index c5c5d65..649c4c9 100644
+--- a/dev/src/Analyser/NodeScopeResolver.php
++++ b/dev/src/Analyser/NodeScopeResolver.php
+@@ -7,6 +7,8 @@ namespace Ministan\Analyser;
+ use Closure;
+ use Ministan\Reflection\PhpDocTypeResolver;
+ use Ministan\Reflection\TypeNodeResolver;
++use Ministan\Type\ArrayType;
++use Ministan\Type\Constant\ConstantArrayType;
+ use Ministan\Type\MixedType;
+ use Ministan\Type\Type;
+ use PhpParser\Node;
+@@ -280,18 +282,43 @@ final class NodeScopeResolver
+     private function processForeach(Stmt\Foreach_ $node, Scope $scope): Scope
+     {
+         $scope = $this->processNode($node->expr, $scope);
++        $iterableType = $scope->getType($node->expr);
+ 
+         $loopScope = $scope;
+         if ($node->keyVar !== null) {
+-            $loopScope = $this->processAssignTarget($node->keyVar, new MixedType(), $loopScope);
++            $loopScope = $this->processAssignTarget($node->keyVar, $this->iterableKeyType($iterableType), $loopScope);
+         }
+-        $loopScope = $this->processAssignTarget($node->valueVar, new MixedType(), $loopScope);
++        $loopScope = $this->processAssignTarget($node->valueVar, $this->iterableValueType($iterableType), $loopScope);
+ 
+         $bodyScope = $this->processStmts($node->stmts, $loopScope);
+ 
+         return $scope->mergeWith($bodyScope);
+     }
+ 
++    private function iterableKeyType(Type $type): Type
++    {
++        if ($type instanceof ConstantArrayType) {
++            return $type->getIterableKeyType();
++        }
++        if ($type instanceof ArrayType) {
++            return $type->getIterableKeyType();
++        }
++
++        return new MixedType();
++    }
++
++    private function iterableValueType(Type $type): Type
++    {
++        if ($type instanceof ConstantArrayType) {
++            return $type->getIterableValueType();
++        }
++        if ($type instanceof ArrayType) {
++            return $type->getIterableValueType();
++        }
++
++        return new MixedType();
++    }
++
+     private function processCatch(Stmt\Catch_ $node, Scope $scope): Scope
+     {
+         $catchScope = $scope;
+diff --git a/dev/src/Analyser/Scope.php b/dev/src/Analyser/Scope.php
+index 75d3b0a..6a72d76 100644
+--- a/dev/src/Analyser/Scope.php
++++ b/dev/src/Analyser/Scope.php
+@@ -4,7 +4,9 @@ declare(strict_types=1);
+ 
+ namespace Ministan\Analyser;
+ 
++use Ministan\Type\ArrayType;
+ use Ministan\Type\BooleanType;
++use Ministan\Type\Constant\ConstantArrayType;
+ use Ministan\Type\Constant\ConstantBooleanType;
+ use Ministan\Type\Constant\ConstantIntegerType;
+ use Ministan\Type\Constant\ConstantStringType;
+@@ -17,6 +19,7 @@ use Ministan\Type\StringType;
+ use Ministan\Type\Type;
+ use Ministan\Type\TypeCombinator;
+ use Ministan\Reflection\ReflectionProviderStaticAccessor;
++use PhpParser\Node\ArrayItem;
+ use PhpParser\Node\Expr;
+ use PhpParser\Node\Identifier;
+ use PhpParser\Node\Name;
+@@ -129,6 +132,10 @@ final readonly class Scope
+                 ? $this->getVariableType($expr->name)
+                 : new MixedType(),
+ 
++            // --- 配列リテラルとアクセス ---
++            $expr instanceof Expr\Array_ => $this->arrayLiteralType($expr),
++            $expr instanceof Expr\ArrayDimFetch => $this->arrayDimType($expr),
++
+             // --- オブジェクト生成・呼び出し（リフレクションを使う）---
+             $expr instanceof Expr\New_ => $expr->class instanceof Name
+                 ? new ObjectType($expr->class->toString())
+@@ -165,6 +172,65 @@ final readonly class Scope
+         };
+     }
+ 
++    private function arrayLiteralType(Expr\Array_ $expr): Type
++    {
++        $keyTypes = [];
++        $valueTypes = [];
++        $nextInt = 0;
++        $isConstant = true;
++
++        foreach ($expr->items as $item) {
++            if (!$item instanceof ArrayItem || $item->unpack) {
++                $isConstant = false; // スプレッド ...$a は静的に分からない
++                continue;
++            }
++
++            $valueType = $this->getType($item->value);
++
++            if ($item->key === null) {
++                $keyType = new ConstantIntegerType($nextInt);
++                $nextInt++;
++            } else {
++                $keyType = $this->getType($item->key);
++                if ($keyType instanceof ConstantIntegerType) {
++                    $nextInt = max($nextInt, $keyType->value + 1);
++                } elseif (!$keyType instanceof ConstantStringType) {
++                    $isConstant = false; // キーが定数でなければ shape にできない
++                }
++            }
++
++            $keyTypes[] = $keyType;
++            $valueTypes[] = $valueType;
++        }
++
++        if ($isConstant) {
++            return new ConstantArrayType($keyTypes, $valueTypes);
++        }
++
++        return new ArrayType(
++            $keyTypes === [] ? new MixedType() : TypeCombinator::union(...$keyTypes),
++            $valueTypes === [] ? new MixedType() : TypeCombinator::union(...$valueTypes),
++        );
++    }
++
++    private function arrayDimType(Expr\ArrayDimFetch $expr): Type
++    {
++        if ($expr->dim === null) {
++            return new MixedType(); // $arr[] は書き込み専用構文
++        }
++
++        $arrayType = $this->getType($expr->var);
++
++        if ($arrayType instanceof ConstantArrayType) {
++            return $arrayType->getOffsetValueType($this->getType($expr->dim));
++        }
++        if ($arrayType instanceof ArrayType) {
++            return $arrayType->itemType;
++        }
++
++        return new MixedType();
++    }
++
+     private function methodCallType(Expr\MethodCall $expr): Type
+     {
+         if (!$expr->name instanceof Identifier) {
+diff --git a/dev/src/Type/ArrayType.php b/dev/src/Type/ArrayType.php
+index c2909ae..76d7ccf 100644
+--- a/dev/src/Type/ArrayType.php
++++ b/dev/src/Type/ArrayType.php
+@@ -5,12 +5,13 @@ declare(strict_types=1);
+ namespace Ministan\Type;
+ 
+ use Ministan\TrinaryLogic;
++use Ministan\Type\Constant\ConstantArrayType;
+ 
+ /**
+  * 配列型。キーと要素の型を持つ。`array<int, string>` や `list<Foo>`（= array<int, Foo>）。
+  *
+- * PHPDoc から生まれる最初の「複合型」。要素型を保つことで `foreach` の要素や配列アクセスの
+- * 型推論につながる（本格化は応用編）。PHPStan の配列型を大きく簡略化したもの。
++ * 要素型を保つことで `foreach` の要素や配列アクセスの型推論につながる。キーごとに値型が
++ * 分かる形は {@see ConstantArrayType}。PHPStan の配列型を大きく簡略化したもの。
+  */
+ final class ArrayType implements Type
+ {
+@@ -27,14 +28,35 @@ final class ArrayType implements Type
+         return sprintf('array<%s, %s>', $this->keyType->describe(), $this->itemType->describe());
+     }
+ 
++    public function getIterableKeyType(): Type
++    {
++        return $this->keyType;
++    }
++
++    public function getIterableValueType(): Type
++    {
++        return $this->itemType;
++    }
++
+     public function isSuperTypeOf(Type $type): TrinaryLogic
+     {
+-        return $this->relateToSpecial($type)
+-            ?? match (true) {
+-                $type instanceof self => $this->keyType->isSuperTypeOf($type->keyType)
+-                    ->and($this->itemType->isSuperTypeOf($type->itemType)),
+-                default => TrinaryLogic::No,
+-            };
++        $special = $this->relateToSpecial($type);
++        if ($special !== null) {
++            return $special;
++        }
++
++        if ($type instanceof self) {
++            return $this->keyType->isSuperTypeOf($type->keyType)
++                ->and($this->itemType->isSuperTypeOf($type->itemType));
++        }
++
++        // 定数配列は、キー/値の union が適合すれば一般配列の部分型。
++        if ($type instanceof ConstantArrayType) {
++            return $this->keyType->isSuperTypeOf($type->getIterableKeyType())
++                ->and($this->itemType->isSuperTypeOf($type->getIterableValueType()));
++        }
++
++        return TrinaryLogic::No;
+     }
+ 
+     public function equals(Type $type): bool
+diff --git a/dev/src/Type/Constant/ConstantArrayType.php b/dev/src/Type/Constant/ConstantArrayType.php
+new file mode 100644
+index 0000000..3cadb56
+--- /dev/null
++++ b/dev/src/Type/Constant/ConstantArrayType.php
+@@ -0,0 +1,104 @@
++<?php
++
++declare(strict_types=1);
++
++namespace Ministan\Type\Constant;
++
++use Ministan\TrinaryLogic;
++use Ministan\Type\ArrayType;
++use Ministan\Type\MixedType;
++use Ministan\Type\SimpleTypeTrait;
++use Ministan\Type\Type;
++use Ministan\Type\TypeCombinator;
++
++/**
++ * キーごとに値の型が分かっている配列。`array{a: 1, b: 'x'}`。
++ *
++ * 配列リテラルから生まれる。`['id' => 42]` の型は `array<string, int>` ではなく
++ * `array{id: 42}`。だから `$row['id']` がちょうど `42` だと分かる——定数型が配列にも
++ * 効く、PHPStan の切れ味の核。
++ */
++final class ConstantArrayType implements Type
++{
++    /**
++     * @param list<Type> $keyTypes   各要素のキー型（定数）
++     * @param list<Type> $valueTypes 各要素の値型（$keyTypes と同じ並び）
++     */
++    public function __construct(
++        private readonly array $keyTypes,
++        private readonly array $valueTypes,
++    ) {
++    }
++
++    use SimpleTypeTrait;
++
++    public function describe(): string
++    {
++        if ($this->keyTypes === []) {
++            return 'array{}';
++        }
++
++        $parts = [];
++        foreach ($this->keyTypes as $i => $keyType) {
++            $parts[] = sprintf('%s: %s', $this->keyLabel($keyType), $this->valueTypes[$i]->describe());
++        }
++
++        return 'array{' . implode(', ', $parts) . '}';
++    }
++
++    /** 指定オフセットの値型。定数キーが一致すればその値型、不明なら全値型の union。 */
++    public function getOffsetValueType(Type $offset): Type
++    {
++        foreach ($this->keyTypes as $i => $keyType) {
++            if ($keyType->equals($offset)) {
++                return $this->valueTypes[$i];
++            }
++        }
++
++        return $this->getIterableValueType();
++    }
++
++    public function getIterableKeyType(): Type
++    {
++        return $this->keyTypes === [] ? new MixedType() : TypeCombinator::union(...$this->keyTypes);
++    }
++
++    public function getIterableValueType(): Type
++    {
++        return $this->valueTypes === [] ? new MixedType() : TypeCombinator::union(...$this->valueTypes);
++    }
++
++    public function isSuperTypeOf(Type $type): TrinaryLogic
++    {
++        return $this->relateToSpecial($type)
++            ?? match (true) {
++                $type instanceof self => $this->equals($type) ? TrinaryLogic::Yes : TrinaryLogic::Maybe,
++                $type instanceof ArrayType => TrinaryLogic::Maybe,
++                default => TrinaryLogic::No,
++            };
++    }
++
++    public function equals(Type $type): bool
++    {
++        if (!$type instanceof self || count($this->keyTypes) !== count($type->keyTypes)) {
++            return false;
++        }
++
++        foreach ($this->keyTypes as $i => $keyType) {
++            if (!$keyType->equals($type->keyTypes[$i]) || !$this->valueTypes[$i]->equals($type->valueTypes[$i])) {
++                return false;
++            }
++        }
++
++        return true;
++    }
++
++    private function keyLabel(Type $keyType): string
++    {
++        return match (true) {
++            $keyType instanceof ConstantStringType => $keyType->value,
++            $keyType instanceof ConstantIntegerType => (string) $keyType->value,
++            default => $keyType->describe(),
++        };
++    }
++}
+diff --git a/dev/tests/Command/AnnotateCommandTest.php b/dev/tests/Command/AnnotateCommandTest.php
+index 36826e7..23e59f3 100644
+--- a/dev/tests/Command/AnnotateCommandTest.php
++++ b/dev/tests/Command/AnnotateCommandTest.php
+@@ -28,6 +28,18 @@ final class AnnotateCommandTest extends TestCase
+         self::assertMatchesRegularExpression('/return\s+:\s+string$/m', $output);
+     }
+ 
++    public function testArrayShapeInference(): void
++    {
++        ob_start();
++        $exitCode = (new AnnotateCommand())->run([__DIR__ . '/../fixtures/array-shape.php']);
++        $output = ob_get_clean();
++
++        self::assertSame(0, $exitCode);
++        self::assertMatchesRegularExpression("/\\\$row\s+:\s+array\{id: 42, name: 'ada'\}$/m", $output);
++        self::assertMatchesRegularExpression('/\$id\s+:\s+42$/m', $output);
++        self::assertMatchesRegularExpression("/\\\$name\s+:\s+'ada'$/m", $output);
++    }
++
+     public function testPhpDocDrivesInference(): void
+     {
+         ob_start();
+diff --git a/dev/tests/Type/ConstantArrayTypeTest.php b/dev/tests/Type/ConstantArrayTypeTest.php
+new file mode 100644
+index 0000000..95bb5fc
+--- /dev/null
++++ b/dev/tests/Type/ConstantArrayTypeTest.php
+@@ -0,0 +1,48 @@
++<?php
++
++declare(strict_types=1);
++
++namespace Ministan\Tests\Type;
++
++use Ministan\Type\Constant\ConstantArrayType;
++use Ministan\Type\Constant\ConstantIntegerType;
++use Ministan\Type\Constant\ConstantStringType;
++use PHPUnit\Framework\TestCase;
++
++final class ConstantArrayTypeTest extends TestCase
++{
++    public function testDescribe(): void
++    {
++        $array = new ConstantArrayType(
++            [new ConstantStringType('id'), new ConstantStringType('name')],
++            [new ConstantIntegerType(42), new ConstantStringType('ada')],
++        );
++
++        self::assertSame("array{id: 42, name: 'ada'}", $array->describe());
++    }
++
++    public function testEmptyArray(): void
++    {
++        self::assertSame('array{}', (new ConstantArrayType([], []))->describe());
++    }
++
++    public function testOffsetValueByConstantKey(): void
++    {
++        $array = new ConstantArrayType(
++            [new ConstantStringType('id')],
++            [new ConstantIntegerType(42)],
++        );
++
++        self::assertSame('42', $array->getOffsetValueType(new ConstantStringType('id'))->describe());
++    }
++
++    public function testIterableValueIsUnionOfValues(): void
++    {
++        $array = new ConstantArrayType(
++            [new ConstantIntegerType(0), new ConstantIntegerType(1)],
++            [new ConstantIntegerType(1), new ConstantStringType('x')],
++        );
++
++        self::assertSame("'x'|1", $array->getIterableValueType()->describe());
++    }
++}
+diff --git a/dev/tests/fixtures/array-shape.php b/dev/tests/fixtures/array-shape.php
+new file mode 100644
+index 0000000..19d3dbf
+--- /dev/null
++++ b/dev/tests/fixtures/array-shape.php
+@@ -0,0 +1,7 @@
++<?php
++
++declare(strict_types=1);
++
++$row = ['id' => 42, 'name' => 'ada'];
++$id = $row['id'];
++$name = $row['name'];

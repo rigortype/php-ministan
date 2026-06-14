@@ -1,0 +1,982 @@
+diff --git a/dev/src/Analyser/NodeScopeResolver.php b/dev/src/Analyser/NodeScopeResolver.php
+index 4241a9a..7564608 100644
+--- a/dev/src/Analyser/NodeScopeResolver.php
++++ b/dev/src/Analyser/NodeScopeResolver.php
+@@ -32,12 +32,15 @@ final class NodeScopeResolver
+     /** @var Closure(Node, Scope): void */
+     private Closure $nodeCallback;
+ 
++    private TypeSpecifier $typeSpecifier;
++
+     /**
+      * @param callable(Node, Scope): void $nodeCallback
+      */
+     public function __construct(callable $nodeCallback)
+     {
+         $this->nodeCallback = Closure::fromCallable($nodeCallback);
++        $this->typeSpecifier = new TypeSpecifier();
+     }
+ 
+     /**
+@@ -73,6 +76,8 @@ final class NodeScopeResolver
+             $node instanceof Expr\Assign,
+             $node instanceof Expr\AssignRef      => $this->processAssign($node, $scope),
+             $node instanceof Expr\AssignOp       => $this->processAssignOp($node, $scope),
++            $node instanceof Stmt\If_            => $this->processIf($node, $scope),
++            $node instanceof Expr\Ternary        => $this->processTernary($node, $scope),
+             $node instanceof Stmt\Foreach_       => $this->processForeach($node, $scope),
+             $node instanceof Stmt\Catch_         => $this->processCatch($node, $scope),
+             $node instanceof Stmt\Global_        => $this->processGlobal($node, $scope),
+@@ -174,6 +179,54 @@ final class NodeScopeResolver
+         return $this->processAssignTarget($node->var, new MixedType(), $scope);
+     }
+ 
++    // --- 条件分岐: 型の絞り込みを適用する ---
++
++    private function processIf(Stmt\If_ $node, Scope $scope): Scope
++    {
++        $scope = $this->processNode($node->cond, $scope);
++        $specified = $this->typeSpecifier->specify($node->cond, $scope);
++
++        $endScopes = [];
++        $endScopes[] = $this->processStmts($node->stmts, $specified->truthy);
++
++        // それまでの条件がすべて偽だった世界線を運びながら elseif を辿る。
++        $falsy = $specified->falsy;
++        foreach ($node->elseifs as $elseif) {
++            $falsy = $this->processNode($elseif->cond, $falsy);
++            $branch = $this->typeSpecifier->specify($elseif->cond, $falsy);
++            $endScopes[] = $this->processStmts($elseif->stmts, $branch->truthy);
++            $falsy = $branch->falsy;
++        }
++
++        if ($node->else !== null) {
++            $endScopes[] = $this->processStmts($node->else->stmts, $falsy);
++        } else {
++            $endScopes[] = $falsy; // else が無ければ「全条件が偽」の経路がそのまま続く
++        }
++
++        $result = array_shift($endScopes);
++        foreach ($endScopes as $branchScope) {
++            $result = $result->mergeWith($branchScope);
++        }
++
++        return $result;
++    }
++
++    private function processTernary(Expr\Ternary $node, Scope $scope): Scope
++    {
++        $scope = $this->processNode($node->cond, $scope);
++        $specified = $this->typeSpecifier->specify($node->cond, $scope);
++
++        // `$x ? $x->foo() : null` のように、各枝は絞り込まれたスコープで解析する。
++        // これにより `isset($y) ? $y : d` の $y も真の枝では定義済みになる。
++        if ($node->if !== null) {
++            $this->processNode($node->if, $specified->truthy);
++        }
++        $this->processNode($node->else, $specified->falsy);
++
++        return $scope;
++    }
++
+     // --- ループ・例外・宣言 ---
+ 
+     private function processForeach(Stmt\Foreach_ $node, Scope $scope): Scope
+diff --git a/dev/src/Analyser/Scope.php b/dev/src/Analyser/Scope.php
+index 23a0acf..a7a49ba 100644
+--- a/dev/src/Analyser/Scope.php
++++ b/dev/src/Analyser/Scope.php
+@@ -14,6 +14,7 @@ use Ministan\Type\MixedType;
+ use Ministan\Type\NullType;
+ use Ministan\Type\StringType;
+ use Ministan\Type\Type;
++use Ministan\Type\TypeCombinator;
+ use PhpParser\Node\Expr;
+ use PhpParser\Node\Scalar;
+ 
+@@ -73,19 +74,17 @@ final readonly class Scope
+     }
+ 
+     /**
+-     * 2 つのスコープを合流する。両方で定義され型が食い違う変数は mixed に広げる
+-     * （union 型はまだ無いため）。片方だけの変数は楽観的に残す（偽陽性を出さない）。
+-     * 全経路で同じ型のときだけ型を保てる。精密な合流（union）は Part 5 で。
++     * 2 つのスコープを合流する。両方で定義された変数は型を **union** で合併する
++     * （then で int・else で string なら、合流後は int|string）。片方だけの変数は
++     * 楽観的に残し、偽陽性を出さない。
+      */
+     public function mergeWith(self $other): self
+     {
+         $merged = $this->variableTypes;
+         foreach ($other->variableTypes as $name => $type) {
+-            if (!isset($merged[$name])) {
+-                $merged[$name] = $type;
+-            } elseif (!$merged[$name]->equals($type)) {
+-                $merged[$name] = new MixedType();
+-            }
++            $merged[$name] = isset($merged[$name])
++                ? TypeCombinator::union($merged[$name], $type)
++                : $type;
+         }
+ 
+         return new self($merged);
+diff --git a/dev/src/Analyser/SpecifiedTypes.php b/dev/src/Analyser/SpecifiedTypes.php
+new file mode 100644
+index 0000000..784a673
+--- /dev/null
++++ b/dev/src/Analyser/SpecifiedTypes.php
+@@ -0,0 +1,26 @@
++<?php
++
++declare(strict_types=1);
++
++namespace Ministan\Analyser;
++
++/**
++ * ある条件式が真／偽だったとき、それぞれで成り立つスコープの組。
++ *
++ * `if ($x instanceof Foo)` なら truthy では $x: Foo、falsy では元のまま、というふうに、
++ * 条件が分岐の両側で型をどう狭めるかを表す。PHPStan の `SpecifiedTypes` に相当。
++ */
++final readonly class SpecifiedTypes
++{
++    public function __construct(
++        public Scope $truthy,
++        public Scope $falsy,
++    ) {
++    }
++
++    /** 否定（`!`）は真偽を入れ替えるだけ。 */
++    public function negate(): self
++    {
++        return new self($this->falsy, $this->truthy);
++    }
++}
+diff --git a/dev/src/Analyser/TypeSpecifier.php b/dev/src/Analyser/TypeSpecifier.php
+new file mode 100644
+index 0000000..581297a
+--- /dev/null
++++ b/dev/src/Analyser/TypeSpecifier.php
+@@ -0,0 +1,185 @@
++<?php
++
++declare(strict_types=1);
++
++namespace Ministan\Analyser;
++
++use Ministan\Type\BooleanType;
++use Ministan\Type\FloatType;
++use Ministan\Type\IntegerType;
++use Ministan\Type\NullType;
++use Ministan\Type\ObjectType;
++use Ministan\Type\StringType;
++use Ministan\Type\Type;
++use Ministan\Type\TypeCombinator;
++use PhpParser\Node;
++use PhpParser\Node\Expr;
++use PhpParser\Node\Name;
++
++/**
++ * 条件式から、真／偽それぞれの分岐で成り立つ型の絞り込みを導く。
++ *
++ * PHPStan の {@see \PHPStan\Analyser\TypeSpecifier} に対応する核。`instanceof`、
++ * `is_int()` 等の型述語、`=== null`、`isset()`、`!`・`&&`・`||` を扱う。
++ */
++final class TypeSpecifier
++{
++    public function specify(Expr $condition, Scope $scope): SpecifiedTypes
++    {
++        return match (true) {
++            $condition instanceof Expr\BooleanNot
++                => $this->specify($condition->expr, $scope)->negate(),
++
++            $condition instanceof Expr\BinaryOp\BooleanAnd,
++            $condition instanceof Expr\BinaryOp\LogicalAnd
++                => $this->specifyAnd($condition, $scope),
++
++            $condition instanceof Expr\BinaryOp\BooleanOr,
++            $condition instanceof Expr\BinaryOp\LogicalOr
++                => $this->specifyOr($condition, $scope),
++
++            $condition instanceof Expr\Instanceof_
++                => $this->specifyInstanceof($condition, $scope),
++
++            $condition instanceof Expr\FuncCall
++                => $this->specifyTypePredicate($condition, $scope),
++
++            $condition instanceof Expr\Isset_
++                => $this->specifyIsset($condition, $scope),
++
++            $condition instanceof Expr\BinaryOp\Identical,
++            $condition instanceof Expr\BinaryOp\Equal
++                => $this->specifyEquality($condition->left, $condition->right, $scope),
++
++            $condition instanceof Expr\BinaryOp\NotIdentical,
++            $condition instanceof Expr\BinaryOp\NotEqual
++                => $this->specifyEquality($condition->left, $condition->right, $scope)->negate(),
++
++            default => new SpecifiedTypes($scope, $scope),
++        };
++    }
++
++    private function specifyAnd(Expr\BinaryOp $condition, Scope $scope): SpecifiedTypes
++    {
++        // 真: 両条件が真。偽: どちらかが偽（精密化は見送り、元のスコープ）。
++        $left = $this->specify($condition->left, $scope);
++        $right = $this->specify($condition->right, $left->truthy);
++
++        return new SpecifiedTypes($right->truthy, $scope);
++    }
++
++    private function specifyOr(Expr\BinaryOp $condition, Scope $scope): SpecifiedTypes
++    {
++        // 偽: 両条件が偽。真: どちらかが真（精密化は見送り）。
++        $left = $this->specify($condition->left, $scope);
++        $right = $this->specify($condition->right, $left->falsy);
++
++        return new SpecifiedTypes($scope, $right->falsy);
++    }
++
++    private function specifyInstanceof(Expr\Instanceof_ $condition, Scope $scope): SpecifiedTypes
++    {
++        if ($condition->expr instanceof Expr\Variable
++            && is_string($condition->expr->name)
++            && $condition->class instanceof Name
++        ) {
++            $truthy = $scope->assignVariable($condition->expr->name, new ObjectType($condition->class->toString()));
++
++            // falsy 側の引き算は継承関係が要るので Part 6 まで見送り。
++            return new SpecifiedTypes($truthy, $scope);
++        }
++
++        return new SpecifiedTypes($scope, $scope);
++    }
++
++    private function specifyTypePredicate(Expr\FuncCall $condition, Scope $scope): SpecifiedTypes
++    {
++        if (!$condition->name instanceof Name) {
++            return new SpecifiedTypes($scope, $scope);
++        }
++
++        $narrowed = $this->typeForPredicate($condition->name->toLowerString());
++        if ($narrowed === null) {
++            return new SpecifiedTypes($scope, $scope);
++        }
++
++        $arg = $condition->args[0] ?? null;
++        if (!$arg instanceof Node\Arg
++            || !$arg->value instanceof Expr\Variable
++            || !is_string($arg->value->name)
++        ) {
++            return new SpecifiedTypes($scope, $scope);
++        }
++
++        $name = $arg->value->name;
++        $current = $scope->getVariableType($name);
++
++        $truthy = $scope->assignVariable($name, $narrowed);
++        $falsy = $scope->assignVariable($name, TypeCombinator::remove($current, $narrowed));
++
++        return new SpecifiedTypes($truthy, $falsy);
++    }
++
++    private function typeForPredicate(string $function): ?Type
++    {
++        return match ($function) {
++            'is_int', 'is_integer', 'is_long' => new IntegerType(),
++            'is_string' => new StringType(),
++            'is_bool' => new BooleanType(),
++            'is_float', 'is_double' => new FloatType(),
++            'is_null' => new NullType(),
++            default => null,
++        };
++    }
++
++    private function specifyIsset(Expr\Isset_ $condition, Scope $scope): SpecifiedTypes
++    {
++        $truthy = $scope;
++        foreach ($condition->vars as $var) {
++            if ($var instanceof Expr\Variable && is_string($var->name)) {
++                // 真の枝では「定義済みかつ非 null」。未定義なら mixed として定義される。
++                $current = $scope->getVariableType($var->name);
++                $truthy = $truthy->assignVariable($var->name, TypeCombinator::remove($current, new NullType()));
++            }
++        }
++
++        return new SpecifiedTypes($truthy, $scope);
++    }
++
++    private function specifyEquality(Expr $left, Expr $right, Scope $scope): SpecifiedTypes
++    {
++        [$variable, $value] = $this->orientVariableAndValue($left, $right);
++        if ($variable === null || $value === null) {
++            return new SpecifiedTypes($scope, $scope);
++        }
++
++        $name = $variable->name;
++        assert(is_string($name));
++
++        $valueType = $scope->getType($value);
++        $current = $scope->getVariableType($name);
++
++        $truthy = $scope->assignVariable($name, $valueType);
++        $falsy = $scope->assignVariable($name, TypeCombinator::remove($current, $valueType));
++
++        return new SpecifiedTypes($truthy, $falsy);
++    }
++
++    /**
++     * 等価比較の片側が「変数」、もう片側が「値の式」になるよう並べ替える。
++     *
++     * @return array{Expr\Variable, Expr}|array{null, null}
++     */
++    private function orientVariableAndValue(Expr $left, Expr $right): array
++    {
++        if ($left instanceof Expr\Variable && is_string($left->name)) {
++            return [$left, $right];
++        }
++
++        if ($right instanceof Expr\Variable && is_string($right->name)) {
++            return [$right, $left];
++        }
++
++        return [null, null];
++    }
++}
+diff --git a/dev/src/TrinaryLogic.php b/dev/src/TrinaryLogic.php
+index b2d6650..6e0ad5d 100644
+--- a/dev/src/TrinaryLogic.php
++++ b/dev/src/TrinaryLogic.php
+@@ -63,6 +63,28 @@ enum TrinaryLogic
+         };
+     }
+ 
++    /**
++     * 全 operand が一致すればその値、1 つでも異なれば Maybe。
++     *
++     * union との関係に使う —— ある型が union の「全メンバに対して Yes」なら Yes、
++     * 「全メンバに対して No」なら No、混在すれば部分一致なので Maybe。`and`（min）で
++     * 畳むと部分一致が No に潰れ、union の一部不適合を低レベルで誤検出してしまう。
++     * PHPStan の {@see \PHPStan\TrinaryLogic::extremeIdentity} に対応。
++     *
++     * @param non-empty-list<self> $operands
++     */
++    public static function extremeIdentity(array $operands): self
++    {
++        $first = $operands[0];
++        foreach ($operands as $operand) {
++            if ($operand !== $first) {
++                return self::Maybe;
++            }
++        }
++
++        return $first;
++    }
++
+     public function describe(): string
+     {
+         return match ($this) {
+diff --git a/dev/src/Type/BooleanType.php b/dev/src/Type/BooleanType.php
+index 257c975..b6993a4 100644
+--- a/dev/src/Type/BooleanType.php
++++ b/dev/src/Type/BooleanType.php
+@@ -18,7 +18,7 @@ final class BooleanType implements Type
+ 
+     public function isSuperTypeOf(Type $type): TrinaryLogic
+     {
+-        return self::relateToTopAndBottom($type)
++        return $this->relateToSpecial($type)
+             ?? (($type instanceof self || $type instanceof ConstantBooleanType)
+                 ? TrinaryLogic::Yes
+                 : TrinaryLogic::No);
+diff --git a/dev/src/Type/Constant/ConstantBooleanType.php b/dev/src/Type/Constant/ConstantBooleanType.php
+index 89f273c..c507e5e 100644
+--- a/dev/src/Type/Constant/ConstantBooleanType.php
++++ b/dev/src/Type/Constant/ConstantBooleanType.php
+@@ -28,7 +28,7 @@ final class ConstantBooleanType implements Type
+ 
+     public function isSuperTypeOf(Type $type): TrinaryLogic
+     {
+-        return self::relateToTopAndBottom($type)
++        return $this->relateToSpecial($type)
+             ?? match (true) {
+                 $type instanceof self => $this->value === $type->value
+                     ? TrinaryLogic::Yes
+diff --git a/dev/src/Type/Constant/ConstantIntegerType.php b/dev/src/Type/Constant/ConstantIntegerType.php
+index bf9d261..28b0825 100644
+--- a/dev/src/Type/Constant/ConstantIntegerType.php
++++ b/dev/src/Type/Constant/ConstantIntegerType.php
+@@ -31,7 +31,7 @@ final class ConstantIntegerType implements Type
+ 
+     public function isSuperTypeOf(Type $type): TrinaryLogic
+     {
+-        return self::relateToTopAndBottom($type)
++        return $this->relateToSpecial($type)
+             ?? match (true) {
+                 $type instanceof self => $this->value === $type->value
+                     ? TrinaryLogic::Yes
+diff --git a/dev/src/Type/Constant/ConstantStringType.php b/dev/src/Type/Constant/ConstantStringType.php
+index a37b9cf..8a14eb1 100644
+--- a/dev/src/Type/Constant/ConstantStringType.php
++++ b/dev/src/Type/Constant/ConstantStringType.php
+@@ -28,7 +28,7 @@ final class ConstantStringType implements Type
+ 
+     public function isSuperTypeOf(Type $type): TrinaryLogic
+     {
+-        return self::relateToTopAndBottom($type)
++        return $this->relateToSpecial($type)
+             ?? match (true) {
+                 $type instanceof self => $this->value === $type->value
+                     ? TrinaryLogic::Yes
+diff --git a/dev/src/Type/FloatType.php b/dev/src/Type/FloatType.php
+index 5d31e64..04c21aa 100644
+--- a/dev/src/Type/FloatType.php
++++ b/dev/src/Type/FloatType.php
+@@ -18,7 +18,7 @@ final class FloatType implements Type
+     public function isSuperTypeOf(Type $type): TrinaryLogic
+     {
+         // int → float の暗黙拡大は accepts の精密化として後の章で扱う。ここでは厳密。
+-        return self::relateToTopAndBottom($type)
++        return $this->relateToSpecial($type)
+             ?? ($type instanceof self ? TrinaryLogic::Yes : TrinaryLogic::No);
+     }
+ }
+diff --git a/dev/src/Type/IntegerType.php b/dev/src/Type/IntegerType.php
+index 0cc5d52..963e59a 100644
+--- a/dev/src/Type/IntegerType.php
++++ b/dev/src/Type/IntegerType.php
+@@ -18,7 +18,7 @@ final class IntegerType implements Type
+ 
+     public function isSuperTypeOf(Type $type): TrinaryLogic
+     {
+-        return self::relateToTopAndBottom($type)
++        return $this->relateToSpecial($type)
+             ?? (($type instanceof self || $type instanceof ConstantIntegerType)
+                 ? TrinaryLogic::Yes   // int も、42 のような定数 int も、int の部分型
+                 : TrinaryLogic::No);
+diff --git a/dev/src/Type/NullType.php b/dev/src/Type/NullType.php
+index ae0dc27..0797fe8 100644
+--- a/dev/src/Type/NullType.php
++++ b/dev/src/Type/NullType.php
+@@ -17,7 +17,7 @@ final class NullType implements Type
+ 
+     public function isSuperTypeOf(Type $type): TrinaryLogic
+     {
+-        return self::relateToTopAndBottom($type)
++        return $this->relateToSpecial($type)
+             ?? ($type instanceof self ? TrinaryLogic::Yes : TrinaryLogic::No);
+     }
+ }
+diff --git a/dev/src/Type/ObjectType.php b/dev/src/Type/ObjectType.php
+new file mode 100644
+index 0000000..1c6a105
+--- /dev/null
++++ b/dev/src/Type/ObjectType.php
+@@ -0,0 +1,46 @@
++<?php
++
++declare(strict_types=1);
++
++namespace Ministan\Type;
++
++use Ministan\TrinaryLogic;
++
++/**
++ * あるクラス／インターフェイスのインスタンスを表す型。
++ *
++ * Part 5 では「クラス名」しか知らない素朴な実装。同名なら Yes、別名なら
++ * 継承関係が不明なので Maybe を返す（non-rejecting）。`$x instanceof Foo` の
++ * 絞り込みで使う。継承を踏まえた厳密な部分型判定は、リフレクションを得る
++ * Part 6 で本 ObjectType を強化して実現する。
++ */
++final class ObjectType implements Type
++{
++    use SimpleTypeTrait;
++
++    public function __construct(
++        public readonly string $className,
++    ) {
++    }
++
++    public function describe(): string
++    {
++        return $this->className;
++    }
++
++    public function isSuperTypeOf(Type $type): TrinaryLogic
++    {
++        return $this->relateToSpecial($type)
++            ?? match (true) {
++                $type instanceof self => $this->className === $type->className
++                    ? TrinaryLogic::Yes
++                    : TrinaryLogic::Maybe, // 継承関係は Part 6 まで不明
++                default => TrinaryLogic::No,
++            };
++    }
++
++    public function equals(Type $type): bool
++    {
++        return $type instanceof self && $type->className === $this->className;
++    }
++}
+diff --git a/dev/src/Type/SimpleTypeTrait.php b/dev/src/Type/SimpleTypeTrait.php
+index 167557d..a041776 100644
+--- a/dev/src/Type/SimpleTypeTrait.php
++++ b/dev/src/Type/SimpleTypeTrait.php
+@@ -10,9 +10,8 @@ use Ministan\TrinaryLogic;
+  * 単純な値型（int, string, null …）が共有する定型処理。
+  *
+  * - `accepts` は `isSuperTypeOf` に委譲する（これらの型では代入可能性＝部分型関係）。
+- *   float が int を受け入れる、といった暗黙変換は後の章の精密化に回す。
+  * - `equals` は同じクラスかどうか。定数型は値も比べるので個別に上書きする。
+- * - `relateToTopAndBottom` は、どの型にも共通の「上端 mixed・下端 never」との関係を返す。
++ * - `relateToSpecial` は、どの型にも共通の「上端 mixed・下端 never・union」との関係を返す。
+  */
+ trait SimpleTypeTrait
+ {
+@@ -27,10 +26,14 @@ trait SimpleTypeTrait
+     }
+ 
+     /**
+-     * never はあらゆる型の部分型（= 常に Yes）。mixed はどの型でもありうる（= Maybe）。
+-     * どちらでもなければ null を返し、呼び出し側の固有判定に委ねる。
++     * 全型に共通する相手との関係:
++     * - never はあらゆる型の部分型（= Yes）
++     * - mixed はどの型でもありうる（= Maybe）
++     * - union は各メンバとの関係の extreme-identity（全 Yes→Yes・全 No→No・混在→Maybe）
++     *
++     * いずれでもなければ null を返し、呼び出し側の固有判定に委ねる。
+      */
+-    protected static function relateToTopAndBottom(Type $type): ?TrinaryLogic
++    protected function relateToSpecial(Type $type): ?TrinaryLogic
+     {
+         if ($type instanceof NeverType) {
+             return TrinaryLogic::Yes;
+@@ -40,6 +43,17 @@ trait SimpleTypeTrait
+             return TrinaryLogic::Maybe;
+         }
+ 
++        if ($type instanceof UnionType) {
++            // 部分一致（一部メンバだけ適合）は No に潰さず Maybe にする。さもないと
++            // union の一部不適合を低レベルで誤検出してしまう（高レベルでのみ咎める）。
++            $results = [];
++            foreach ($type->getTypes() as $member) {
++                $results[] = $this->isSuperTypeOf($member);
++            }
++
++            return TrinaryLogic::extremeIdentity($results);
++        }
++
+         return null;
+     }
+ }
+diff --git a/dev/src/Type/StringType.php b/dev/src/Type/StringType.php
+index dc933cf..873c275 100644
+--- a/dev/src/Type/StringType.php
++++ b/dev/src/Type/StringType.php
+@@ -18,7 +18,7 @@ final class StringType implements Type
+ 
+     public function isSuperTypeOf(Type $type): TrinaryLogic
+     {
+-        return self::relateToTopAndBottom($type)
++        return $this->relateToSpecial($type)
+             ?? (($type instanceof self || $type instanceof ConstantStringType)
+                 ? TrinaryLogic::Yes
+                 : TrinaryLogic::No);
+diff --git a/dev/src/Type/TypeCombinator.php b/dev/src/Type/TypeCombinator.php
+new file mode 100644
+index 0000000..ca00927
+--- /dev/null
++++ b/dev/src/Type/TypeCombinator.php
+@@ -0,0 +1,79 @@
++<?php
++
++declare(strict_types=1);
++
++namespace Ministan\Type;
++
++/**
++ * 型を合成・分解する操作の置き場。PHPStan の {@see \PHPStan\Type\TypeCombinator}。
++ *
++ * 型クラス自身ではなくここに集約するのは、`union`/`remove` が「複数の型をまたいで
++ * 正規化する」横断的な操作だから。各型は自分の関係だけ知っていればよい。
++ */
++final class TypeCombinator
++{
++    /**
++     * 複数の型を合併し、正規化する。
++     * フラット化 → never 除去 → mixed 吸収 → 重複除去 → 0個は never・1個は単型。
++     */
++    public static function union(Type ...$types): Type
++    {
++        $flattened = [];
++        foreach ($types as $type) {
++            if ($type instanceof UnionType) {
++                foreach ($type->getTypes() as $member) {
++                    $flattened[] = $member;
++                }
++            } else {
++                $flattened[] = $type;
++            }
++        }
++
++        $result = [];
++        foreach ($flattened as $type) {
++            if ($type instanceof NeverType) {
++                continue; // never は合併に寄与しない
++            }
++            if ($type instanceof MixedType) {
++                return new MixedType(); // mixed は全てを吸収する
++            }
++
++            foreach ($result as $existing) {
++                if ($existing->equals($type)) {
++                    continue 2; // 重複は捨てる
++                }
++            }
++            $result[] = $type;
++        }
++
++        return match (count($result)) {
++            0 => new NeverType(),
++            1 => $result[0],
++            default => new UnionType(array_values($result)),
++        };
++    }
++
++    /**
++     * $from から $typeToRemove に含まれる部分を取り除く。
++     * 例: remove(int|null, null) = int。else 分岐の絞り込みで使う。
++     */
++    public static function remove(Type $from, Type $typeToRemove): Type
++    {
++        if ($from instanceof UnionType) {
++            $kept = [];
++            foreach ($from->getTypes() as $member) {
++                if (!$typeToRemove->isSuperTypeOf($member)->yes()) {
++                    $kept[] = $member;
++                }
++            }
++
++            return self::union(...$kept);
++        }
++
++        if ($typeToRemove->isSuperTypeOf($from)->yes()) {
++            return new NeverType();
++        }
++
++        return $from;
++    }
++}
+diff --git a/dev/src/Type/UnionType.php b/dev/src/Type/UnionType.php
+new file mode 100644
+index 0000000..7f9dcbf
+--- /dev/null
++++ b/dev/src/Type/UnionType.php
+@@ -0,0 +1,107 @@
++<?php
++
++declare(strict_types=1);
++
++namespace Ministan\Type;
++
++use Ministan\TrinaryLogic;
++
++/**
++ * 「いずれかの型」を表す合併型。`int|string`, `Foo|null` など。
++ *
++ * 絞り込み（narrowing）の合流で生まれる。`if` の then で int、else で string に
++ * なった変数は、合流後に `int|string` になる。PHPStan の {@see \PHPStan\Type\UnionType}。
++ *
++ * 正規化（フラット化・重複除去・never 除去・1 個なら単型へ）は生成側の
++ * {@see TypeCombinator::union()} が担う。ここでは正規化済みの構成要素を前提とする。
++ */
++final class UnionType implements Type
++{
++    /** @var list<Type> */
++    private array $types;
++
++    /**
++     * @param list<Type> $types 2 個以上の構成要素（正規化済み）
++     */
++    public function __construct(array $types)
++    {
++        $this->types = $types;
++    }
++
++    /**
++     * @return list<Type>
++     */
++    public function getTypes(): array
++    {
++        return $this->types;
++    }
++
++    public function describe(): string
++    {
++        $parts = array_map(static fn (Type $t): string => $t->describe(), $this->types);
++        sort($parts); // 安定した表示のため整列
++
++        return implode('|', $parts);
++    }
++
++    public function isSuperTypeOf(Type $type): TrinaryLogic
++    {
++        // 相手が union なら、各メンバとの関係を集めて extreme-identity で畳む
++        // （全 Yes→Yes・全 No→No・混在は部分一致で Maybe）。
++        if ($type instanceof UnionType) {
++            $results = [];
++            foreach ($type->types as $member) {
++                $results[] = $this->isSuperTypeOf($member);
++            }
++
++            return TrinaryLogic::extremeIdentity($results);
++        }
++
++        // 単型なら、どれか 1 つのメンバが受け入れればよい（OR）。
++        $result = TrinaryLogic::No;
++        foreach ($this->types as $member) {
++            $result = $result->or($member->isSuperTypeOf($type));
++        }
++
++        return $result;
++    }
++
++    public function accepts(Type $type): TrinaryLogic
++    {
++        if ($type instanceof UnionType) {
++            $results = [];
++            foreach ($type->types as $member) {
++                $results[] = $this->accepts($member);
++            }
++
++            return TrinaryLogic::extremeIdentity($results);
++        }
++
++        $result = TrinaryLogic::No;
++        foreach ($this->types as $member) {
++            $result = $result->or($member->accepts($type));
++        }
++
++        return $result;
++    }
++
++    public function equals(Type $type): bool
++    {
++        if (!$type instanceof self || count($this->types) !== count($type->types)) {
++            return false;
++        }
++
++        // 順序非依存で照合する。
++        foreach ($this->types as $a) {
++            foreach ($type->types as $b) {
++                if ($b->equals($a)) {
++                    continue 2;
++                }
++            }
++
++            return false;
++        }
++
++        return true;
++    }
++}
+diff --git a/dev/tests/Analyser/TypeSpecifierTest.php b/dev/tests/Analyser/TypeSpecifierTest.php
+new file mode 100644
+index 0000000..570233a
+--- /dev/null
++++ b/dev/tests/Analyser/TypeSpecifierTest.php
+@@ -0,0 +1,82 @@
++<?php
++
++declare(strict_types=1);
++
++namespace Ministan\Tests\Analyser;
++
++use Ministan\Analyser\Scope;
++use Ministan\Analyser\TypeSpecifier;
++use Ministan\Type\MixedType;
++use Ministan\Type\TypeCombinator;
++use Ministan\Type\IntegerType;
++use Ministan\Type\NullType;
++use Ministan\Type\StringType;
++use PhpParser\ParserFactory;
++use PHPUnit\Framework\TestCase;
++
++final class TypeSpecifierTest extends TestCase
++{
++    /**
++     * 与えた条件式 1 つを含む小さなコードをパースし、その条件ノードを取り出す。
++     */
++    private function conditionOf(string $expr): \PhpParser\Node\Expr
++    {
++        $parser = (new ParserFactory())->createForNewestSupportedVersion();
++        $ast = $parser->parse("<?php if ($expr) {}");
++        $if = $ast[0];
++        assert($if instanceof \PhpParser\Node\Stmt\If_);
++
++        return $if->cond;
++    }
++
++    public function testIsIntNarrowsBothBranches(): void
++    {
++        $scope = Scope::createForFile()->assignVariable('x', new MixedType());
++        $specified = (new TypeSpecifier())->specify($this->conditionOf('is_int($x)'), $scope);
++
++        self::assertSame('int', $specified->truthy->getVariableType('x')->describe());
++        // mixed から int を引いても mixed のまま（mixed は分解できない）。
++        self::assertSame('mixed', $specified->falsy->getVariableType('x')->describe());
++    }
++
++    public function testIsStringNarrowsFromUnion(): void
++    {
++        $intOrString = TypeCombinator::union(new IntegerType(), new StringType());
++        $scope = Scope::createForFile()->assignVariable('x', $intOrString);
++
++        $specified = (new TypeSpecifier())->specify($this->conditionOf('is_string($x)'), $scope);
++
++        self::assertSame('string', $specified->truthy->getVariableType('x')->describe());
++        self::assertSame('int', $specified->falsy->getVariableType('x')->describe());
++    }
++
++    public function testIdenticalNullNarrows(): void
++    {
++        $intOrNull = TypeCombinator::union(new IntegerType(), new NullType());
++        $scope = Scope::createForFile()->assignVariable('x', $intOrNull);
++
++        $specified = (new TypeSpecifier())->specify($this->conditionOf('$x === null'), $scope);
++
++        self::assertSame('null', $specified->truthy->getVariableType('x')->describe());
++        self::assertSame('int', $specified->falsy->getVariableType('x')->describe());
++    }
++
++    public function testNotNullNarrowsViaNegation(): void
++    {
++        $intOrNull = TypeCombinator::union(new IntegerType(), new NullType());
++        $scope = Scope::createForFile()->assignVariable('x', $intOrNull);
++
++        $specified = (new TypeSpecifier())->specify($this->conditionOf('$x !== null'), $scope);
++
++        self::assertSame('int', $specified->truthy->getVariableType('x')->describe());
++        self::assertSame('null', $specified->falsy->getVariableType('x')->describe());
++    }
++
++    public function testInstanceofNarrowsTruthy(): void
++    {
++        $scope = Scope::createForFile()->assignVariable('x', new MixedType());
++        $specified = (new TypeSpecifier())->specify($this->conditionOf('$x instanceof Foo'), $scope);
++
++        self::assertSame('Foo', $specified->truthy->getVariableType('x')->describe());
++    }
++}
+diff --git a/dev/tests/AnalyserTest.php b/dev/tests/AnalyserTest.php
+index e3a3703..c94b7b1 100644
+--- a/dev/tests/AnalyserTest.php
++++ b/dev/tests/AnalyserTest.php
+@@ -79,4 +79,15 @@ final class AnalyserTest extends TestCase
+ 
+         self::assertSame([], $errors);
+     }
++
++    /**
++     * Part 2 で積み残した「isset で守られた三項」の取りこぼしが、
++     * Part 5 の絞り込みで解消されたことの回帰テスト。
++     */
++    public function testIssetGuardedTernaryProducesNoFalsePositive(): void
++    {
++        $errors = $this->analyser()->analyseFile(__DIR__ . '/fixtures/isset-ternary.php');
++
++        self::assertSame([], $errors);
++    }
+ }
+diff --git a/dev/tests/Type/TypeCombinatorTest.php b/dev/tests/Type/TypeCombinatorTest.php
+new file mode 100644
+index 0000000..5821dd3
+--- /dev/null
++++ b/dev/tests/Type/TypeCombinatorTest.php
+@@ -0,0 +1,70 @@
++<?php
++
++declare(strict_types=1);
++
++namespace Ministan\Tests\Type;
++
++use Ministan\TrinaryLogic;
++use Ministan\Type\IntegerType;
++use Ministan\Type\MixedType;
++use Ministan\Type\NeverType;
++use Ministan\Type\NullType;
++use Ministan\Type\StringType;
++use Ministan\Type\TypeCombinator;
++use Ministan\Type\UnionType;
++use PHPUnit\Framework\TestCase;
++
++final class TypeCombinatorTest extends TestCase
++{
++    public function testUnionOfTwoAtomsDescribesSorted(): void
++    {
++        $union = TypeCombinator::union(new StringType(), new IntegerType());
++
++        self::assertInstanceOf(UnionType::class, $union);
++        self::assertSame('int|string', $union->describe());
++    }
++
++    public function testUnionDeduplicatesAndCollapses(): void
++    {
++        self::assertSame('int', TypeCombinator::union(new IntegerType(), new IntegerType())->describe());
++    }
++
++    public function testUnionFlattensNestedAndDropsNever(): void
++    {
++        $inner = TypeCombinator::union(new IntegerType(), new StringType());
++        $union = TypeCombinator::union($inner, new NullType(), new NeverType());
++
++        self::assertSame('int|null|string', $union->describe());
++    }
++
++    public function testMixedAbsorbs(): void
++    {
++        self::assertInstanceOf(
++            MixedType::class,
++            TypeCombinator::union(new IntegerType(), new MixedType()),
++        );
++    }
++
++    public function testRemoveFromUnion(): void
++    {
++        $intOrNull = TypeCombinator::union(new IntegerType(), new NullType());
++
++        self::assertSame('int', TypeCombinator::remove($intOrNull, new NullType())->describe());
++    }
++
++    public function testRemoveEntireAtomYieldsNever(): void
++    {
++        self::assertInstanceOf(
++            NeverType::class,
++            TypeCombinator::remove(new NullType(), new NullType()),
++        );
++    }
++
++    public function testUnionIsSuperTypeOfMembers(): void
++    {
++        $intOrString = TypeCombinator::union(new IntegerType(), new StringType());
++
++        self::assertSame(TrinaryLogic::Yes, $intOrString->isSuperTypeOf(new IntegerType()));
++        self::assertSame(TrinaryLogic::No, $intOrString->isSuperTypeOf(new NullType()));
++    }
++}
+diff --git a/dev/tests/fixtures/isset-ternary.php b/dev/tests/fixtures/isset-ternary.php
+new file mode 100644
+index 0000000..588d535
+--- /dev/null
++++ b/dev/tests/fixtures/isset-ternary.php
+@@ -0,0 +1,9 @@
++<?php
++
++declare(strict_types=1);
++
++function pick(): string
++{
++    // $name は一度も代入されないが、isset で守られた三項なら参照は安全。
++    return isset($name) ? $name : 'anon';
++}

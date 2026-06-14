@@ -1,0 +1,631 @@
+diff --git a/dev/composer.json b/dev/composer.json
+index f1cbcf2..b535a2b 100644
+--- a/dev/composer.json
++++ b/dev/composer.json
+@@ -5,7 +5,8 @@
+     "license": "MIT",
+     "require": {
+         "php": ">=8.3",
+-        "nikic/php-parser": "^5.0"
++        "nikic/php-parser": "^5.0",
++        "phpstan/phpdoc-parser": "^2.3"
+     },
+     "require-dev": {
+         "phpunit/phpunit": "^11.0"
+diff --git a/dev/src/Analyser/NodeScopeResolver.php b/dev/src/Analyser/NodeScopeResolver.php
+index 4ec08bc..14b60ae 100644
+--- a/dev/src/Analyser/NodeScopeResolver.php
++++ b/dev/src/Analyser/NodeScopeResolver.php
+@@ -5,6 +5,7 @@ declare(strict_types=1);
+ namespace Ministan\Analyser;
+ 
+ use Closure;
++use Ministan\Reflection\PhpDocTypeResolver;
+ use Ministan\Reflection\TypeNodeResolver;
+ use Ministan\Type\MixedType;
+ use Ministan\Type\Type;
+@@ -32,6 +33,8 @@ final class NodeScopeResolver
+ 
+     private TypeNodeResolver $typeNodeResolver;
+ 
++    private PhpDocTypeResolver $phpDocTypeResolver;
++
+     /**
+      * @param callable(Node, Scope): void $nodeCallback
+      */
+@@ -40,6 +43,7 @@ final class NodeScopeResolver
+         $this->nodeCallback = Closure::fromCallable($nodeCallback);
+         $this->typeSpecifier = new TypeSpecifier();
+         $this->typeNodeResolver = new TypeNodeResolver();
++        $this->phpDocTypeResolver = new PhpDocTypeResolver();
+     }
+ 
+     /**
+@@ -75,6 +79,7 @@ final class NodeScopeResolver
+             $node instanceof Expr\Assign,
+             $node instanceof Expr\AssignRef      => $this->processAssign($node, $scope),
+             $node instanceof Expr\AssignOp       => $this->processAssignOp($node, $scope),
++            $node instanceof Stmt\Expression     => $this->processExpressionStmt($node, $scope),
+             $node instanceof Stmt\If_            => $this->processIf($node, $scope),
+             $node instanceof Expr\Ternary        => $this->processTernary($node, $scope),
+             $node instanceof Stmt\Foreach_       => $this->processForeach($node, $scope),
+@@ -178,6 +183,32 @@ final class NodeScopeResolver
+         return $this->processAssignTarget($node->var, new MixedType(), $scope);
+     }
+ 
++    // --- 文と @var ---
++
++    private function processExpressionStmt(Stmt\Expression $node, Scope $scope): Scope
++    {
++        $expr = $node->expr;
++        $doc = $node->getDocComment();
++
++        if ($doc !== null
++            && $expr instanceof Expr\Assign
++            && $expr->var instanceof Expr\Variable
++            && is_string($expr->var->name)
++        ) {
++            $parsed = $this->phpDocTypeResolver->parse($doc->getText());
++            $varType = $parsed->varTypes[$expr->var->name] ?? $parsed->varTypes[''] ?? null;
++
++            if ($varType !== null) {
++                // 通常どおり代入を処理（ルール適用・右辺読み取り）した上で、@var で型を上書きする。
++                $scope = $this->processNode($expr, $scope);
++
++                return $scope->assignVariable($expr->var->name, $varType);
++            }
++        }
++
++        return $this->processChildren($node, $scope);
++    }
++
+     // --- 条件分岐: 型の絞り込みを適用する ---
+ 
+     private function processIf(Stmt\If_ $node, Scope $scope): Scope
+diff --git a/dev/src/Command/AnnotateCommand.php b/dev/src/Command/AnnotateCommand.php
+index 570dc28..fbcbf57 100644
+--- a/dev/src/Command/AnnotateCommand.php
++++ b/dev/src/Command/AnnotateCommand.php
+@@ -7,6 +7,7 @@ namespace Ministan\Command;
+ use Ministan\Analyser\NodeScopeResolver;
+ use Ministan\Analyser\Parsing;
+ use Ministan\Analyser\Scope;
++use Ministan\Reflection\PhpDocTypeResolver;
+ use Ministan\Reflection\ReflectionProvider;
+ use Ministan\Reflection\ReflectionProviderStaticAccessor;
+ use PhpParser\Error as ParserError;
+@@ -56,18 +57,26 @@ final class AnnotateCommand
+ 
+         /** @var list<array{int, string, string}> $rows */
+         $rows = [];
++        $phpDoc = new PhpDocTypeResolver();
+         $resolver = new NodeScopeResolver(
+-            static function (Node $node, Scope $scope) use (&$rows): void {
+-                if ($node instanceof Expr\Assign
+-                    && $node->var instanceof Expr\Variable
+-                    && is_string($node->var->name)
++            static function (Node $node, Scope $scope) use (&$rows, $phpDoc): void {
++                if ($node instanceof Stmt\Expression
++                    && $node->expr instanceof Expr\Assign
++                    && $node->expr->var instanceof Expr\Variable
++                    && is_string($node->expr->var->name)
+                 ) {
+-                    // コールバックは代入の処理前に呼ばれるので、右辺は現在のスコープで推論できる。
+-                    $rows[] = [
+-                        $node->getStartLine(),
+-                        '$' . $node->var->name,
+-                        $scope->getType($node->expr)->describe(),
+-                    ];
++                    $name = $node->expr->var->name;
++
++                    // @var があればそれを、無ければ右辺の推論型を表示する。
++                    $type = null;
++                    $doc = $node->getDocComment();
++                    if ($doc !== null) {
++                        $parsed = $phpDoc->parse($doc->getText());
++                        $type = $parsed->varTypes[$name] ?? $parsed->varTypes[''] ?? null;
++                    }
++                    $type ??= $scope->getType($node->expr->expr);
++
++                    $rows[] = [$node->getStartLine(), '$' . $name, $type->describe()];
+                 } elseif ($node instanceof Stmt\Return_ && $node->expr !== null) {
+                     $rows[] = [
+                         $node->getStartLine(),
+diff --git a/dev/src/Reflection/ClassReflection.php b/dev/src/Reflection/ClassReflection.php
+index 93a2907..14542af 100644
+--- a/dev/src/Reflection/ClassReflection.php
++++ b/dev/src/Reflection/ClassReflection.php
+@@ -33,7 +33,7 @@ final class ClassReflection
+     ) {
+     }
+ 
+-    public static function fromNode(string $name, ClassLike $node, TypeNodeResolver $resolver, ReflectionProvider $provider): self
++    public static function fromNode(string $name, ClassLike $node, TypeNodeResolver $resolver, PhpDocTypeResolver $phpDoc, ReflectionProvider $provider): self
+     {
+         $parents = [];
+         if ($node instanceof Class_) {
+@@ -55,7 +55,7 @@ final class ClassReflection
+ 
+         $methods = [];
+         foreach ($node->getMethods() as $method) {
+-            $methods[strtolower($method->name->toString())] = MethodReflection::fromNode($method, $resolver);
++            $methods[strtolower($method->name->toString())] = MethodReflection::fromNode($method, $resolver, $phpDoc);
+         }
+ 
+         return new self($name, $parents, $methods, $provider);
+diff --git a/dev/src/Reflection/FunctionReflection.php b/dev/src/Reflection/FunctionReflection.php
+index cbb4bd6..6f1ac83 100644
+--- a/dev/src/Reflection/FunctionReflection.php
++++ b/dev/src/Reflection/FunctionReflection.php
+@@ -5,11 +5,12 @@ declare(strict_types=1);
+ namespace Ministan\Reflection;
+ 
+ use Ministan\Type\Type;
++use PhpParser\Node\Expr\Variable;
+ use PhpParser\Node\Stmt\Function_;
+ use ReflectionFunction;
+ 
+ /**
+- * 関数 1 つのシグネチャ。
++ * 関数 1 つのシグネチャ。PHPDoc を上位、ネイティブ宣言を下位に置く。
+  */
+ final readonly class FunctionReflection
+ {
+@@ -23,12 +24,22 @@ final readonly class FunctionReflection
+     ) {
+     }
+ 
+-    public static function fromNode(string $name, Function_ $node, TypeNodeResolver $resolver): self
++    public static function fromNode(string $name, Function_ $node, TypeNodeResolver $resolver, PhpDocTypeResolver $phpDoc): self
+     {
++        $doc = $phpDoc->parse($node->getDocComment()?->getText());
++
++        $parameterTypes = [];
++        foreach ($node->params as $param) {
++            $paramName = $param->var instanceof Variable && is_string($param->var->name) ? $param->var->name : null;
++            $parameterTypes[] = $paramName !== null && isset($doc->paramTypes[$paramName])
++                ? $doc->paramTypes[$paramName]
++                : $resolver->resolve($param->type);
++        }
++
+         return new self(
+             $name,
+-            $resolver->resolve($node->returnType),
+-            array_map(static fn ($param): Type => $resolver->resolve($param->type), $node->params),
++            $doc->returnType ?? $resolver->resolve($node->returnType),
++            $parameterTypes,
+         );
+     }
+ 
+diff --git a/dev/src/Reflection/MethodReflection.php b/dev/src/Reflection/MethodReflection.php
+index 94a7743..984c3ab 100644
+--- a/dev/src/Reflection/MethodReflection.php
++++ b/dev/src/Reflection/MethodReflection.php
+@@ -5,11 +5,15 @@ declare(strict_types=1);
+ namespace Ministan\Reflection;
+ 
+ use Ministan\Type\Type;
++use PhpParser\Node\Expr\Variable;
+ use PhpParser\Node\Stmt\ClassMethod;
+ use ReflectionMethod;
+ 
+ /**
+  * メソッド 1 つのシグネチャ。名前・パラメータ型・戻り値型。
++ *
++ * 型は「PHPDoc があれば PHPDoc、無ければネイティブ宣言」で決める。PHPStan と同じく
++ * PHPDoc を上位に置くのは、`array<int, string>` のようにネイティブより精密に書けるから。
+  */
+ final readonly class MethodReflection
+ {
+@@ -23,12 +27,22 @@ final readonly class MethodReflection
+     ) {
+     }
+ 
+-    public static function fromNode(ClassMethod $node, TypeNodeResolver $resolver): self
++    public static function fromNode(ClassMethod $node, TypeNodeResolver $resolver, PhpDocTypeResolver $phpDoc): self
+     {
++        $doc = $phpDoc->parse($node->getDocComment()?->getText());
++
++        $parameterTypes = [];
++        foreach ($node->params as $param) {
++            $name = $param->var instanceof Variable && is_string($param->var->name) ? $param->var->name : null;
++            $parameterTypes[] = $name !== null && isset($doc->paramTypes[$name])
++                ? $doc->paramTypes[$name]
++                : $resolver->resolve($param->type);
++        }
++
+         return new self(
+             $node->name->toString(),
+-            $resolver->resolve($node->returnType),
+-            array_map(static fn ($param): Type => $resolver->resolve($param->type), $node->params),
++            $doc->returnType ?? $resolver->resolve($node->returnType),
++            $parameterTypes,
+         );
+     }
+ 
+diff --git a/dev/src/Reflection/ParsedPhpDoc.php b/dev/src/Reflection/ParsedPhpDoc.php
+new file mode 100644
+index 0000000..aea1fd7
+--- /dev/null
++++ b/dev/src/Reflection/ParsedPhpDoc.php
+@@ -0,0 +1,29 @@
++<?php
++
++declare(strict_types=1);
++
++namespace Ministan\Reflection;
++
++use Ministan\Type\Type;
++
++/**
++ * 1 つの docblock から取り出した型情報。`@return`・`@param`・`@var`。
++ */
++final readonly class ParsedPhpDoc
++{
++    /**
++     * @param array<string, Type> $paramTypes パラメータ名（$ なし）→ 型
++     * @param array<string, Type> $varTypes   変数名（$ なし、無名は ''）→ 型
++     */
++    public function __construct(
++        public ?Type $returnType,
++        public array $paramTypes,
++        public array $varTypes,
++    ) {
++    }
++
++    public static function empty(): self
++    {
++        return new self(null, [], []);
++    }
++}
+diff --git a/dev/src/Reflection/PhpDocTypeResolver.php b/dev/src/Reflection/PhpDocTypeResolver.php
+new file mode 100644
+index 0000000..718a15c
+--- /dev/null
++++ b/dev/src/Reflection/PhpDocTypeResolver.php
+@@ -0,0 +1,126 @@
++<?php
++
++declare(strict_types=1);
++
++namespace Ministan\Reflection;
++
++use Ministan\Type\ArrayType;
++use Ministan\Type\BooleanType;
++use Ministan\Type\Constant\ConstantBooleanType;
++use Ministan\Type\FloatType;
++use Ministan\Type\IntegerType;
++use Ministan\Type\MixedType;
++use Ministan\Type\NeverType;
++use Ministan\Type\NullType;
++use Ministan\Type\ObjectType;
++use Ministan\Type\StringType;
++use Ministan\Type\Type;
++use Ministan\Type\TypeCombinator;
++use PHPStan\PhpDocParser\Ast\Type\ArrayTypeNode;
++use PHPStan\PhpDocParser\Ast\Type\GenericTypeNode;
++use PHPStan\PhpDocParser\Ast\Type\IdentifierTypeNode;
++use PHPStan\PhpDocParser\Ast\Type\NullableTypeNode;
++use PHPStan\PhpDocParser\Ast\Type\TypeNode;
++use PHPStan\PhpDocParser\Ast\Type\UnionTypeNode;
++use PHPStan\PhpDocParser\Lexer\Lexer;
++use PHPStan\PhpDocParser\Parser\ConstExprParser;
++use PHPStan\PhpDocParser\Parser\PhpDocParser;
++use PHPStan\PhpDocParser\Parser\TokenIterator;
++use PHPStan\PhpDocParser\Parser\TypeParser;
++use PHPStan\PhpDocParser\ParserConfig;
++
++/**
++ * docblock を解析し、`@return`/`@param`/`@var` の型を {@see Type} に写す。
++ *
++ * phpstan/phpdoc-parser で文字列をパースし、その型 AST を ministan の型へ変換する。
++ * PHPStan の `TypeNodeResolver` に対応。クラス名の名前空間解決（use の解釈）までは
++ * 追わない——そこは応用編で。
++ */
++final class PhpDocTypeResolver
++{
++    private Lexer $lexer;
++
++    private PhpDocParser $parser;
++
++    public function __construct()
++    {
++        $config = new ParserConfig([]);
++        $constExpr = new ConstExprParser($config);
++        $typeParser = new TypeParser($config, $constExpr);
++
++        $this->lexer = new Lexer($config);
++        $this->parser = new PhpDocParser($config, $typeParser, $constExpr);
++    }
++
++    public function parse(?string $docComment): ParsedPhpDoc
++    {
++        if ($docComment === null || trim($docComment) === '') {
++            return ParsedPhpDoc::empty();
++        }
++
++        $tokens = new TokenIterator($this->lexer->tokenize($docComment));
++        $doc = $this->parser->parse($tokens);
++
++        $returnType = null;
++        foreach ($doc->getReturnTagValues() as $tag) {
++            $returnType = $this->toType($tag->type);
++            break;
++        }
++
++        $paramTypes = [];
++        foreach ($doc->getParamTagValues() as $tag) {
++            $paramTypes[ltrim($tag->parameterName, '$')] = $this->toType($tag->type);
++        }
++
++        $varTypes = [];
++        foreach ($doc->getVarTagValues() as $tag) {
++            $varTypes[ltrim($tag->variableName, '$')] = $this->toType($tag->type);
++        }
++
++        return new ParsedPhpDoc($returnType, $paramTypes, $varTypes);
++    }
++
++    private function toType(TypeNode $node): Type
++    {
++        return match (true) {
++            $node instanceof IdentifierTypeNode => $this->fromIdentifier($node->name),
++            $node instanceof NullableTypeNode => TypeCombinator::union($this->toType($node->type), new NullType()),
++            $node instanceof UnionTypeNode => TypeCombinator::union(...array_map($this->toType(...), $node->types)),
++            $node instanceof GenericTypeNode => $this->fromGeneric($node),
++            $node instanceof ArrayTypeNode => new ArrayType(new MixedType(), $this->toType($node->type)),
++            default => new MixedType(),
++        };
++    }
++
++    private function fromIdentifier(string $name): Type
++    {
++        return match (strtolower($name)) {
++            'int', 'integer' => new IntegerType(),
++            'string' => new StringType(),
++            'float', 'double' => new FloatType(),
++            'bool', 'boolean' => new BooleanType(),
++            'true' => new ConstantBooleanType(true),
++            'false' => new ConstantBooleanType(false),
++            'null', 'void' => new NullType(),
++            'never', 'never-return' => new NeverType(),
++            'array' => new ArrayType(new MixedType(), new MixedType()),
++            'list' => new ArrayType(new IntegerType(), new MixedType()),
++            'mixed', 'iterable', 'object', 'callable', 'scalar', 'self', 'static', '$this' => new MixedType(),
++            default => new ObjectType(ltrim($name, '\\')),
++        };
++    }
++
++    private function fromGeneric(GenericTypeNode $node): Type
++    {
++        $base = strtolower($node->type->name);
++        $args = array_map($this->toType(...), $node->genericTypes);
++
++        return match (true) {
++            $base === 'array' && count($args) === 2 => new ArrayType($args[0], $args[1]),
++            $base === 'array' && count($args) === 1 => new ArrayType(new MixedType(), $args[0]),
++            ($base === 'list' || $base === 'non-empty-list') && count($args) >= 1
++                => new ArrayType(new IntegerType(), $args[0]),
++            default => new MixedType(),
++        };
++    }
++}
+diff --git a/dev/src/Reflection/ReflectionProvider.php b/dev/src/Reflection/ReflectionProvider.php
+index 7b2e253..1b9de61 100644
+--- a/dev/src/Reflection/ReflectionProvider.php
++++ b/dev/src/Reflection/ReflectionProvider.php
+@@ -30,9 +30,12 @@ final class ReflectionProvider
+ 
+     private TypeNodeResolver $typeNodeResolver;
+ 
++    private PhpDocTypeResolver $phpDocTypeResolver;
++
+     public function __construct()
+     {
+         $this->typeNodeResolver = new TypeNodeResolver();
++        $this->phpDocTypeResolver = new PhpDocTypeResolver();
+     }
+ 
+     /**
+@@ -59,10 +62,10 @@ final class ReflectionProvider
+                 $this->collect($node->stmts);
+             } elseif ($node instanceof ClassLike && $node->name !== null) {
+                 $name = ($node->namespacedName ?? $node->name)->toString();
+-                $this->classes[strtolower($name)] = ClassReflection::fromNode($name, $node, $this->typeNodeResolver, $this);
++                $this->classes[strtolower($name)] = ClassReflection::fromNode($name, $node, $this->typeNodeResolver, $this->phpDocTypeResolver, $this);
+             } elseif ($node instanceof Function_) {
+                 $name = ($node->namespacedName ?? $node->name)->toString();
+-                $this->functions[strtolower($name)] = FunctionReflection::fromNode($name, $node, $this->typeNodeResolver);
++                $this->functions[strtolower($name)] = FunctionReflection::fromNode($name, $node, $this->typeNodeResolver, $this->phpDocTypeResolver);
+             }
+         }
+     }
+diff --git a/dev/src/Type/ArrayType.php b/dev/src/Type/ArrayType.php
+new file mode 100644
+index 0000000..c2909ae
+--- /dev/null
++++ b/dev/src/Type/ArrayType.php
+@@ -0,0 +1,46 @@
++<?php
++
++declare(strict_types=1);
++
++namespace Ministan\Type;
++
++use Ministan\TrinaryLogic;
++
++/**
++ * 配列型。キーと要素の型を持つ。`array<int, string>` や `list<Foo>`（= array<int, Foo>）。
++ *
++ * PHPDoc から生まれる最初の「複合型」。要素型を保つことで `foreach` の要素や配列アクセスの
++ * 型推論につながる（本格化は応用編）。PHPStan の配列型を大きく簡略化したもの。
++ */
++final class ArrayType implements Type
++{
++    use SimpleTypeTrait;
++
++    public function __construct(
++        public readonly Type $keyType,
++        public readonly Type $itemType,
++    ) {
++    }
++
++    public function describe(): string
++    {
++        return sprintf('array<%s, %s>', $this->keyType->describe(), $this->itemType->describe());
++    }
++
++    public function isSuperTypeOf(Type $type): TrinaryLogic
++    {
++        return $this->relateToSpecial($type)
++            ?? match (true) {
++                $type instanceof self => $this->keyType->isSuperTypeOf($type->keyType)
++                    ->and($this->itemType->isSuperTypeOf($type->itemType)),
++                default => TrinaryLogic::No,
++            };
++    }
++
++    public function equals(Type $type): bool
++    {
++        return $type instanceof self
++            && $this->keyType->equals($type->keyType)
++            && $this->itemType->equals($type->itemType);
++    }
++}
+diff --git a/dev/tests/Command/AnnotateCommandTest.php b/dev/tests/Command/AnnotateCommandTest.php
+index 12d2855..36826e7 100644
+--- a/dev/tests/Command/AnnotateCommandTest.php
++++ b/dev/tests/Command/AnnotateCommandTest.php
+@@ -27,4 +27,17 @@ final class AnnotateCommandTest extends TestCase
+         self::assertMatchesRegularExpression('/\$text\s+:\s+string$/m', $output);
+         self::assertMatchesRegularExpression('/return\s+:\s+string$/m', $output);
+     }
++
++    public function testPhpDocDrivesInference(): void
++    {
++        ob_start();
++        $exitCode = (new AnnotateCommand())->run([__DIR__ . '/../fixtures/phpdoc.php']);
++        $output = ob_get_clean();
++
++        self::assertSame(0, $exitCode);
++        // @return array<int, string> が呼び出し結果に伝わる。
++        self::assertMatchesRegularExpression('/\$result\s+:\s+array<int, string>$/m', $output);
++        // @var int が右辺の mixed を上書きする。
++        self::assertMatchesRegularExpression('/\$count\s+:\s+int$/m', $output);
++    }
+ }
+diff --git a/dev/tests/Reflection/PhpDocTypeResolverTest.php b/dev/tests/Reflection/PhpDocTypeResolverTest.php
+new file mode 100644
+index 0000000..c16da12
+--- /dev/null
++++ b/dev/tests/Reflection/PhpDocTypeResolverTest.php
+@@ -0,0 +1,64 @@
++<?php
++
++declare(strict_types=1);
++
++namespace Ministan\Tests\Reflection;
++
++use Ministan\Reflection\PhpDocTypeResolver;
++use PHPUnit\Framework\TestCase;
++
++final class PhpDocTypeResolverTest extends TestCase
++{
++    private PhpDocTypeResolver $resolver;
++
++    protected function setUp(): void
++    {
++        $this->resolver = new PhpDocTypeResolver();
++    }
++
++    public function testReturnTag(): void
++    {
++        $doc = $this->resolver->parse('/** @return int */');
++
++        self::assertNotNull($doc->returnType);
++        self::assertSame('int', $doc->returnType->describe());
++    }
++
++    public function testGenericArrayAndListAndBrackets(): void
++    {
++        self::assertSame(
++            'array<int, string>',
++            $this->resolver->parse('/** @return array<int, string> */')->returnType?->describe(),
++        );
++        self::assertSame(
++            'array<int, string>',
++            $this->resolver->parse('/** @return list<string> */')->returnType?->describe(),
++        );
++        self::assertSame(
++            'array<mixed, string>',
++            $this->resolver->parse('/** @return string[] */')->returnType?->describe(),
++        );
++    }
++
++    public function testParamAndNullable(): void
++    {
++        $doc = $this->resolver->parse('/** @param ?int $count */');
++
++        self::assertSame('int|null', $doc->paramTypes['count']->describe());
++    }
++
++    public function testVarTag(): void
++    {
++        $doc = $this->resolver->parse('/** @var Foo\Bar $x */');
++
++        self::assertSame('Foo\Bar', $doc->varTypes['x']->describe());
++    }
++
++    public function testEmptyDocBlock(): void
++    {
++        $doc = $this->resolver->parse(null);
++
++        self::assertNull($doc->returnType);
++        self::assertSame([], $doc->paramTypes);
++    }
++}
+diff --git a/dev/tests/fixtures/phpdoc.php b/dev/tests/fixtures/phpdoc.php
+new file mode 100644
+index 0000000..c202bf7
+--- /dev/null
++++ b/dev/tests/fixtures/phpdoc.php
+@@ -0,0 +1,16 @@
++<?php
++
++declare(strict_types=1);
++
++/**
++ * @return array<int, string>
++ */
++function names(): array
++{
++    return ['a', 'b'];
++}
++
++$result = names();
++
++/** @var int $count */
++$count = compute();
+diff --git a/examples/phpdoc.php b/examples/phpdoc.php
+new file mode 100644
+index 0000000..a62ff87
+--- /dev/null
++++ b/examples/phpdoc.php
+@@ -0,0 +1,17 @@
++<?php
++
++declare(strict_types=1);
++
++/**
++ * @param list<string> $names
++ * @return array<int, string>
++ */
++function shout(array $names): array
++{
++    return array_map(static fn (string $name): string => strtoupper($name), $names);
++}
++
++$result = shout(['a', 'b']); // array<int, string>（@return から）
++
++/** @var int $count */
++$count = compute(); // int（@var が mixed を上書き）

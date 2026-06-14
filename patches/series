@@ -1,0 +1,16 @@
+01-php-parser.patch
+02-scope.patch
+03-type-system.patch
+04-type-inference.patch
+05-narrowing.patch
+06-reflection.patch
+07-phpdoc.patch
+08-rules-and-levels.patch
+09-tooling.patch
+seasoned-01-configuration.patch
+seasoned-02-arrays.patch
+seasoned-03-generics.patch
+seasoned-04-control-flow.patch
+seasoned-05-byref-stubs.patch
+seasoned-06-performance.patch
+seasoned-07-precision.patch

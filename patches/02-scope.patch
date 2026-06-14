@@ -1,0 +1,777 @@
+diff --git a/dev/src/Analyser/Analyser.php b/dev/src/Analyser/Analyser.php
+index a594505..4c7ef57 100644
+--- a/dev/src/Analyser/Analyser.php
++++ b/dev/src/Analyser/Analyser.php
+@@ -6,14 +6,14 @@ namespace Ministan\Analyser;
+ 
+ use Ministan\Rules\RuleRegistry;
+ use PhpParser\Error as ParserError;
+-use PhpParser\NodeTraverser;
+ use PhpParser\ParserFactory;
+ 
+ /**
+  * 解析パイプラインの入口。
+  *
+  * Part 0: 構文エラーの翻訳。
+- * Part 1: パース済み AST にルール群を適用する（← イマココ）。
++ * Part 1: パース済み AST にルール群を適用する。
++ * Part 2: スコープを伝播させながらルールを適用する（← イマココ）。
+  */
+ final class Analyser
+ {
+@@ -41,9 +41,8 @@ final class Analyser
+             return [new Error($e->getRawMessage(), $file, $e->getStartLine())];
+         }
+ 
+-        $visitor = new RuleApplyingVisitor($this->registry, $file);
+-        (new NodeTraverser($visitor))->traverse($ast);
++        $resolver = new NodeScopeResolver($this->registry, $file);
+ 
+-        return $visitor->getErrors();
++        return $resolver->analyse($ast, Scope::createForFile());
+     }
+ }
+diff --git a/dev/src/Analyser/NodeScopeResolver.php b/dev/src/Analyser/NodeScopeResolver.php
+new file mode 100644
+index 0000000..3b83fa5
+--- /dev/null
++++ b/dev/src/Analyser/NodeScopeResolver.php
+@@ -0,0 +1,361 @@
++<?php
++
++declare(strict_types=1);
++
++namespace Ministan\Analyser;
++
++use Ministan\Rules\RuleRegistry;
++use PhpParser\Node;
++use PhpParser\Node\Expr;
++use PhpParser\Node\Stmt;
++
++/**
++ * AST を下りながら {@see Scope} を運び、各ノードでルールを適用する。
++ *
++ * PHPStan の {@see \PHPStan\Analyser\NodeScopeResolver} に対応する核。
++ * Part 1 の RuleApplyingVisitor（ノードを訪れるだけ）を、ここで「スコープを
++ * 伝播させる再帰下降」へと育てた。
++ *
++ * 設計の要は「読み取り文脈と書き込み文脈を区別する」こと。`$x = 1` の左辺 `$x` は
++ * **定義**であって未定義チェックの対象ではない。`foreach (... as $v)` の `$v` も同様。
++ * そうした束縛構文だけを個別に捌き、それ以外は {@see processChildren()} で機械的に
++ * 子へ降りる。降りた先で出会う Variable は「読み取り」なのでルールに掛かる。
++ *
++ * 制御構文（if/while/for/try…）は専用処理を持たず、子を順に辿るだけにしている。
++ * 代入は前方へ伝播し、合流は {@see Scope::mergeWith()} の楽観的和集合になるため、
++ * 偽陽性を出さない。経路に敏感な精密化（「全経路で定義されたか」）は Part 5 で扱う。
++ */
++final class NodeScopeResolver
++{
++    /** @var list<Error> */
++    private array $errors = [];
++
++    public function __construct(
++        private readonly RuleRegistry $registry,
++        private readonly string $file,
++    ) {
++    }
++
++    /**
++     * @param Node[] $stmts
++     *
++     * @return list<Error>
++     */
++    public function analyse(array $stmts, Scope $scope): array
++    {
++        $this->errors = [];
++        $this->processStmts($stmts, $scope);
++
++        return $this->errors;
++    }
++
++    /**
++     * @param Node[] $nodes
++     */
++    private function processStmts(array $nodes, Scope $scope): Scope
++    {
++        foreach ($nodes as $node) {
++            $scope = $this->processNode($node, $scope);
++        }
++
++        return $scope;
++    }
++
++    private function processNode(Node $node, Scope $scope): Scope
++    {
++        $this->applyRules($node, $scope);
++
++        return match (true) {
++            // --- スコープ境界を作る構文 ---
++            $node instanceof Stmt\Function_,
++            $node instanceof Stmt\ClassMethod    => $this->processFunctionLike($node, $scope),
++            $node instanceof Expr\Closure        => $this->processClosure($node, $scope),
++            $node instanceof Expr\ArrowFunction  => $this->processArrowFunction($node, $scope),
++
++            // --- 変数を束縛する構文 ---
++            $node instanceof Expr\Assign,
++            $node instanceof Expr\AssignRef      => $this->processAssign($node, $scope),
++            $node instanceof Expr\AssignOp       => $this->processAssignOp($node, $scope),
++            $node instanceof Stmt\Foreach_       => $this->processForeach($node, $scope),
++            $node instanceof Stmt\Catch_         => $this->processCatch($node, $scope),
++            $node instanceof Stmt\Global_        => $this->processGlobal($node, $scope),
++            $node instanceof Stmt\Static_        => $this->processStaticVars($node, $scope),
++
++            // --- 未定義変数を許容する読み取り文脈 ---
++            // isset($x) / empty($x) は未定義でも合法。中は未定義チェックしない。
++            $node instanceof Expr\Isset_,
++            $node instanceof Expr\Empty_         => $scope,
++            $node instanceof Expr\BinaryOp\Coalesce => $this->processCoalesce($node, $scope),
++
++            // --- 変数そのもの（読み取り）。ルール適用済み、子はない ---
++            $node instanceof Expr\Variable       => $scope,
++
++            // --- それ以外は子へ降り、スコープを順に伝播 ---
++            default => $this->processChildren($node, $scope),
++        };
++    }
++
++    private function processChildren(Node $node, Scope $scope): Scope
++    {
++        foreach ($node->getSubNodeNames() as $name) {
++            $scope = $this->processSubNode($node->$name, $scope);
++        }
++
++        return $scope;
++    }
++
++    private function processSubNode(mixed $subNode, Scope $scope): Scope
++    {
++        if ($subNode instanceof Node) {
++            return $this->processNode($subNode, $scope);
++        }
++
++        if (is_array($subNode)) {
++            foreach ($subNode as $item) {
++                $scope = $this->processSubNode($item, $scope);
++            }
++        }
++
++        return $scope;
++    }
++
++    // --- 代入 ---
++
++    private function processAssign(Expr\Assign|Expr\AssignRef $node, Scope $scope): Scope
++    {
++        // 右辺を先に解析する（右辺の変数は読み取りなので未定義チェックの対象）。
++        $scope = $this->processNode($node->expr, $scope);
++
++        return $this->processAssignTarget($node->var, $scope);
++    }
++
++    private function processAssignOp(Expr\AssignOp $node, Scope $scope): Scope
++    {
++        // 複合代入（+= など）の対象は読みも兼ねるが、ここでは定義として扱い
++        // 偽陽性を避ける（厳密な「未定義への +=」検出は後の章へ）。
++        $scope = $this->processNode($node->expr, $scope);
++
++        return $this->processAssignTarget($node->var, $scope);
++    }
++
++    /**
++     * 代入の**左辺**を処理し、束縛された変数をスコープに加える。
++     * 左辺の Variable は「定義」なので未定義チェックには掛けない。
++     */
++    private function processAssignTarget(Expr $target, Scope $scope): Scope
++    {
++        return match (true) {
++            $target instanceof Expr\Variable => is_string($target->name)
++                ? $scope->assignVariable($target->name)
++                : $this->processNode($target, $scope),
++
++            // 分割代入: [$a, $b] = ... / list($a, $b) = ...
++            $target instanceof Expr\List_,
++            $target instanceof Expr\Array_ => $this->processListAssign($target, $scope),
++
++            // $arr[$i] = ... / $arr[] = ... : 添字は読み取り、根の変数は定義（自動生成）
++            $target instanceof Expr\ArrayDimFetch => $this->processArrayDimAssign($target, $scope),
++
++            // $obj->p = ... / Foo::$p = ... : オブジェクト側は読み取り。新しい変数は生まれない
++            default => $this->processNode($target, $scope),
++        };
++    }
++
++    private function processListAssign(Expr\List_|Expr\Array_ $node, Scope $scope): Scope
++    {
++        foreach ($node->items as $item) {
++            if ($item === null) {
++                continue; // [, $b] = ... の空き
++            }
++
++            if ($item->key !== null) {
++                $scope = $this->processNode($item->key, $scope); // キーは読み取り
++            }
++
++            $scope = $this->processAssignTarget($item->value, $scope);
++        }
++
++        return $scope;
++    }
++
++    private function processArrayDimAssign(Expr\ArrayDimFetch $node, Scope $scope): Scope
++    {
++        if ($node->dim !== null) {
++            $scope = $this->processNode($node->dim, $scope); // 添字は読み取り
++        }
++
++        return $this->processAssignTarget($node->var, $scope); // 根を定義
++    }
++
++    // --- ループ・例外・宣言 ---
++
++    private function processForeach(Stmt\Foreach_ $node, Scope $scope): Scope
++    {
++        $scope = $this->processNode($node->expr, $scope); // 反復対象は読み取り
++
++        $loopScope = $scope;
++        if ($node->keyVar !== null) {
++            $loopScope = $this->processAssignTarget($node->keyVar, $loopScope);
++        }
++        $loopScope = $this->processAssignTarget($node->valueVar, $loopScope);
++
++        $bodyScope = $this->processStmts($node->stmts, $loopScope);
++
++        // ループは 0 回かもしれない。楽観的に合流して偽陽性を避ける（ループ変数は残る）。
++        return $scope->mergeWith($bodyScope);
++    }
++
++    private function processCatch(Stmt\Catch_ $node, Scope $scope): Scope
++    {
++        $catchScope = $scope;
++        if ($node->var !== null && is_string($node->var->name)) {
++            $catchScope = $catchScope->assignVariable($node->var->name);
++        }
++
++        $bodyScope = $this->processStmts($node->stmts, $catchScope);
++
++        return $scope->mergeWith($bodyScope);
++    }
++
++    private function processGlobal(Stmt\Global_ $node, Scope $scope): Scope
++    {
++        foreach ($node->vars as $var) {
++            if ($var instanceof Expr\Variable && is_string($var->name)) {
++                $scope = $scope->assignVariable($var->name);
++            }
++        }
++
++        return $scope;
++    }
++
++    private function processStaticVars(Stmt\Static_ $node, Scope $scope): Scope
++    {
++        foreach ($node->vars as $staticVar) {
++            if (is_string($staticVar->var->name)) {
++                $scope = $scope->assignVariable($staticVar->var->name);
++            }
++        }
++
++        return $scope;
++    }
++
++    private function processCoalesce(Expr\BinaryOp\Coalesce $node, Scope $scope): Scope
++    {
++        // `$x ?? d` は左辺が未定義でも安全（短絡）。左辺は未定義チェックせず辿る。
++        $scope = $this->processSilently($node->left, $scope);
++
++        return $this->processNode($node->right, $scope);
++    }
++
++    /**
++     * スコープは伝播させつつ、配下の Variable 読み取りを未定義チェックに掛けない。
++     * isset() 相当の寛容な文脈で使う。
++     */
++    private function processSilently(Node $node, Scope $scope): Scope
++    {
++        if ($node instanceof Expr\Variable) {
++            return $scope;
++        }
++
++        foreach ($node->getSubNodeNames() as $name) {
++            $sub = $node->$name;
++            if ($sub instanceof Node) {
++                $scope = $this->processSilently($sub, $scope);
++            } elseif (is_array($sub)) {
++                foreach ($sub as $item) {
++                    if ($item instanceof Node) {
++                        $scope = $this->processSilently($item, $scope);
++                    }
++                }
++            }
++        }
++
++        return $scope;
++    }
++
++    // --- 関数・クロージャ（スコープ境界）---
++
++    private function processFunctionLike(Stmt\Function_|Stmt\ClassMethod $node, Scope $outer): Scope
++    {
++        $inner = Scope::createForFunction();
++        $inner = $this->bindParams($node->params, $inner);
++
++        if ($node instanceof Stmt\ClassMethod && !$node->isStatic()) {
++            $inner = $inner->assignVariable('this');
++        }
++
++        if ($node->stmts !== null) { // 抽象メソッド・インターフェイスは null
++            $this->processStmts($node->stmts, $inner);
++        }
++
++        return $outer; // 関数定義は外側の変数を増やさない
++    }
++
++    private function processClosure(Expr\Closure $node, Scope $outer): Scope
++    {
++        $inner = Scope::createForFunction();
++        $inner = $this->bindParams($node->params, $inner);
++
++        foreach ($node->uses as $use) {
++            // 値渡しの use($x) は外側の読み取り。&付きは外側に変数を生む。
++            if ($use->byRef) {
++                if (is_string($use->var->name)) {
++                    $outer = $outer->assignVariable($use->var->name);
++                }
++            } else {
++                $this->applyRules($use->var, $outer);
++            }
++
++            if (is_string($use->var->name)) {
++                $inner = $inner->assignVariable($use->var->name);
++            }
++        }
++
++        if (!$node->static) {
++            $inner = $inner->assignVariable('this');
++        }
++
++        $this->processStmts($node->stmts, $inner);
++
++        return $outer;
++    }
++
++    private function processArrowFunction(Expr\ArrowFunction $node, Scope $outer): Scope
++    {
++        // アロー関数は外側を値で自動キャプチャする。
++        $inner = $this->bindParams($node->params, $outer);
++
++        if (!$node->static) {
++            $inner = $inner->assignVariable('this');
++        }
++
++        $this->processNode($node->expr, $inner);
++
++        return $outer;
++    }
++
++    /**
++     * @param Node\Param[] $params
++     */
++    private function bindParams(array $params, Scope $scope): Scope
++    {
++        foreach ($params as $param) {
++            $this->applyRules($param, $scope);
++
++            if ($param->var instanceof Expr\Variable && is_string($param->var->name)) {
++                $scope = $scope->assignVariable($param->var->name);
++            }
++        }
++
++        return $scope;
++    }
++
++    private function applyRules(Node $node, Scope $scope): void
++    {
++        foreach ($this->registry->getRulesFor($node) as $rule) {
++            foreach ($rule->processNode($node, $scope) as $ruleError) {
++                $this->errors[] = new Error($ruleError->message, $this->file, $ruleError->line);
++            }
++        }
++    }
++}
+diff --git a/dev/src/Analyser/RuleApplyingVisitor.php b/dev/src/Analyser/RuleApplyingVisitor.php
+deleted file mode 100644
+index bd93f97..0000000
+--- a/dev/src/Analyser/RuleApplyingVisitor.php
++++ /dev/null
+@@ -1,47 +0,0 @@
+-<?php
+-
+-declare(strict_types=1);
+-
+-namespace Ministan\Analyser;
+-
+-use Ministan\Rules\RuleRegistry;
+-use PhpParser\Node;
+-use PhpParser\NodeVisitorAbstract;
+-
+-/**
+- * AST を 1 ノードずつ歩き、各ノードに反応するルールを適用して {@see Error} を集める。
+- *
+- * PHPStan ではスコープを伝播させる NodeScopeResolver がこの役目を担うが、
+- * Part 1 ではまだ型もスコープもない。「ノードを訪れてルールを当てる」核だけを置く。
+- * Part 2 でここに {@see Scope} の伝播が加わる。
+- */
+-final class RuleApplyingVisitor extends NodeVisitorAbstract
+-{
+-    /** @var list<Error> */
+-    private array $errors = [];
+-
+-    public function __construct(
+-        private readonly RuleRegistry $registry,
+-        private readonly string $file,
+-    ) {
+-    }
+-
+-    public function enterNode(Node $node): null
+-    {
+-        foreach ($this->registry->getRulesFor($node) as $rule) {
+-            foreach ($rule->processNode($node) as $ruleError) {
+-                $this->errors[] = new Error($ruleError->message, $this->file, $ruleError->line);
+-            }
+-        }
+-
+-        return null;
+-    }
+-
+-    /**
+-     * @return list<Error>
+-     */
+-    public function getErrors(): array
+-    {
+-        return $this->errors;
+-    }
+-}
+diff --git a/dev/src/Analyser/Scope.php b/dev/src/Analyser/Scope.php
+new file mode 100644
+index 0000000..e589c0b
+--- /dev/null
++++ b/dev/src/Analyser/Scope.php
+@@ -0,0 +1,80 @@
++<?php
++
++declare(strict_types=1);
++
++namespace Ministan\Analyser;
++
++/**
++ * ある地点で「いま何が分かっているか」を表す不変オブジェクト。
++ *
++ * PHPStan の {@see \PHPStan\Analyser\Scope} に対応する。Part 2 では
++ * 「どの変数が定義済みか」だけを持つ。Part 3〜4 で、ここに変数→**型**の
++ * 対応が乗る。
++ *
++ * 不変なのが肝心。木を下りながら `assignVariable()` で**新しい** Scope を
++ * 作って渡すことで、分岐ごとに別の事実を持たせ、後から安全に合流できる。
++ */
++final readonly class Scope
++{
++    /**
++     * @param array<string, true> $variables 定義済み変数名の集合
++     */
++    private function __construct(
++        private array $variables,
++    ) {
++    }
++
++    /**
++     * ファイル直下（グローバル）スコープ。スーパーグローバルは常に定義済み。
++     */
++    public static function createForFile(): self
++    {
++        return self::createForFunction();
++    }
++
++    /**
++     * 関数境界の新しいスコープ。外側のローカル変数は見えないが、
++     * スーパーグローバルは関数内でも参照できる。
++     */
++    public static function createForFunction(): self
++    {
++        $superglobals = [
++            'GLOBALS', '_SERVER', '_GET', '_POST', '_FILES',
++            '_COOKIE', '_SESSION', '_REQUEST', '_ENV',
++        ];
++
++        $variables = [];
++        foreach ($superglobals as $name) {
++            $variables[$name] = true;
++        }
++
++        return new self($variables);
++    }
++
++    public function hasVariable(string $name): bool
++    {
++        return isset($this->variables[$name]);
++    }
++
++    public function assignVariable(string $name): self
++    {
++        if (isset($this->variables[$name])) {
++            return $this;
++        }
++
++        return new self([...$this->variables, $name => true]);
++    }
++
++    /**
++     * 2 つのスコープを合流する。
++     *
++     * Part 2 では「どちらかで定義されていれば定義済み」とする楽観的な和集合。
++     * これにより条件分岐をまたいでも**偽陽性を出さない**（non-rejecting）。
++     * PHPStan は「全経路で定義された場合のみ確定」とし、そうでなければ
++     * 「未定義かもしれない」を別途報告する——その精密化は Part 5 で扱う。
++     */
++    public function mergeWith(self $other): self
++    {
++        return new self($this->variables + $other->variables);
++    }
++}
+diff --git a/dev/src/Rules/Functions/NoVarDumpRule.php b/dev/src/Rules/Functions/NoVarDumpRule.php
+index d3eabb3..a9c6a46 100644
+--- a/dev/src/Rules/Functions/NoVarDumpRule.php
++++ b/dev/src/Rules/Functions/NoVarDumpRule.php
+@@ -4,6 +4,7 @@ declare(strict_types=1);
+ 
+ namespace Ministan\Rules\Functions;
+ 
++use Ministan\Analyser\Scope;
+ use Ministan\Rules\Rule;
+ use Ministan\Rules\RuleError;
+ use PhpParser\Node;
+@@ -28,7 +29,7 @@ final class NoVarDumpRule implements Rule
+         return FuncCall::class;
+     }
+ 
+-    public function processNode(Node $node): array
++    public function processNode(Node $node, Scope $scope): array
+     {
+         assert($node instanceof FuncCall);
+ 
+diff --git a/dev/src/Rules/Rule.php b/dev/src/Rules/Rule.php
+index cc3842d..ce9b1b3 100644
+--- a/dev/src/Rules/Rule.php
++++ b/dev/src/Rules/Rule.php
+@@ -4,6 +4,7 @@ declare(strict_types=1);
+ 
+ namespace Ministan\Rules;
+ 
++use Ministan\Analyser\Scope;
+ use PhpParser\Node;
+ 
+ /**
+@@ -12,6 +13,10 @@ use PhpParser\Node;
+  * PHPStan の {@see \PHPStan\Rules\Rule} に対応する。`getNodeType()` が
+  * 「どのノードに反応するか」を、`processNode()` が「何を報告するか」を決める。
+  *
++ * Part 2 で `processNode()` に {@see Scope} が加わった。これにより、ルールは
++ * 「このノードの地点で何が分かっているか（どの変数が定義済みか、Part 4 以降は
++ * 各式の型）」を踏まえて判断できる。
++ *
+  * @template TNodeType of Node
+  */
+ interface Rule
+@@ -29,5 +34,5 @@ interface Rule
+      *
+      * @return list<RuleError>
+      */
+-    public function processNode(Node $node): array;
++    public function processNode(Node $node, Scope $scope): array;
+ }
+diff --git a/dev/src/Rules/RuleRegistryFactory.php b/dev/src/Rules/RuleRegistryFactory.php
+index 5a4db94..a23e403 100644
+--- a/dev/src/Rules/RuleRegistryFactory.php
++++ b/dev/src/Rules/RuleRegistryFactory.php
+@@ -5,6 +5,7 @@ declare(strict_types=1);
+ namespace Ministan\Rules;
+ 
+ use Ministan\Rules\Functions\NoVarDumpRule;
++use Ministan\Rules\Variables\UndefinedVariableRule;
+ 
+ /**
+  * 既定のルール一式を組み立てる。
+@@ -18,6 +19,7 @@ final class RuleRegistryFactory
+     {
+         return new RuleRegistry([
+             new NoVarDumpRule(),
++            new UndefinedVariableRule(),
+         ]);
+     }
+ }
+diff --git a/dev/src/Rules/Variables/UndefinedVariableRule.php b/dev/src/Rules/Variables/UndefinedVariableRule.php
+new file mode 100644
+index 0000000..906e0ee
+--- /dev/null
++++ b/dev/src/Rules/Variables/UndefinedVariableRule.php
+@@ -0,0 +1,48 @@
++<?php
++
++declare(strict_types=1);
++
++namespace Ministan\Rules\Variables;
++
++use Ministan\Analyser\Scope;
++use Ministan\Rules\Rule;
++use Ministan\Rules\RuleError;
++use PhpParser\Node;
++use PhpParser\Node\Expr\Variable;
++
++/**
++ * 定義されていない変数の**読み取り**を検出する。PHPStan level 0 の代表選手。
++ *
++ * このルールは木の走査を知らない。ただ「いまこの地点の {@see Scope} に、この変数は
++ * 定義済みとして載っているか？」を問うだけ。読み取りか書き込みかの区別、isset() の
++ * 内側か否か、といった文脈判断は {@see \Ministan\Analyser\NodeScopeResolver} が担い、
++ * このルールには「報告すべき読み取り地点」でのみ Variable ノードが渡る。
++ *
++ * @implements Rule<Variable>
++ */
++final class UndefinedVariableRule implements Rule
++{
++    public function getNodeType(): string
++    {
++        return Variable::class;
++    }
++
++    public function processNode(Node $node, Scope $scope): array
++    {
++        assert($node instanceof Variable);
++
++        // 可変変数 $$name は静的に名前が定まらない → 追わない（non-rejecting）。
++        if (!is_string($node->name)) {
++            return [];
++        }
++
++        if ($scope->hasVariable($node->name)) {
++            return [];
++        }
++
++        return [new RuleError(
++            sprintf('Undefined variable: $%s', $node->name),
++            $node->getStartLine(),
++        )];
++    }
++}
+diff --git a/dev/tests/AnalyserTest.php b/dev/tests/AnalyserTest.php
+index 4667d06..e3a3703 100644
+--- a/dev/tests/AnalyserTest.php
++++ b/dev/tests/AnalyserTest.php
+@@ -7,13 +7,17 @@ namespace Ministan\Tests;
+ use Ministan\Analyser\Analyser;
+ use Ministan\Rules\Functions\NoVarDumpRule;
+ use Ministan\Rules\RuleRegistry;
++use Ministan\Rules\Variables\UndefinedVariableRule;
+ use PHPUnit\Framework\TestCase;
+ 
+ final class AnalyserTest extends TestCase
+ {
+     private function analyser(): Analyser
+     {
+-        return new Analyser(new RuleRegistry([new NoVarDumpRule()]));
++        return new Analyser(new RuleRegistry([
++            new NoVarDumpRule(),
++            new UndefinedVariableRule(),
++        ]));
+     }
+ 
+     public function testCleanFileReportsNoErrors(): void
+@@ -48,4 +52,31 @@ final class AnalyserTest extends TestCase
+         self::assertSame('Called var_dump().', $errors[0]->message);
+         self::assertSame(7, $errors[0]->line);
+     }
++
++    public function testUndefinedVariableIsReported(): void
++    {
++        $errors = $this->analyser()->analyseFile(__DIR__ . '/fixtures/undefined-variable.php');
++
++        self::assertCount(1, $errors);
++        self::assertSame('Undefined variable: $greetnig', $errors[0]->message);
++        self::assertSame(9, $errors[0]->line);
++    }
++
++    /**
++     * パラメータ・代入・foreach・アロー関数・条件分岐をまたいで定義された変数は、
++     * 偽陽性を出してはならない（non-rejecting の回帰テスト）。
++     */
++    public function testScopedVariablesProduceNoFalsePositives(): void
++    {
++        $errors = $this->analyser()->analyseFile(__DIR__ . '/fixtures/scoped-variables.php');
++
++        self::assertSame([], $errors);
++    }
++
++    public function testSuperglobalsAndCoalesceAreSafe(): void
++    {
++        $errors = $this->analyser()->analyseFile(__DIR__ . '/fixtures/superglobals.php');
++
++        self::assertSame([], $errors);
++    }
+ }
+diff --git a/dev/tests/fixtures/scoped-variables.php b/dev/tests/fixtures/scoped-variables.php
+new file mode 100644
+index 0000000..365affc
+--- /dev/null
++++ b/dev/tests/fixtures/scoped-variables.php
+@@ -0,0 +1,22 @@
++<?php
++
++declare(strict_types=1);
++
++function sum(array $numbers): int
++{
++    $total = 0;
++    foreach ($numbers as $key => $number) {
++        $total += $number;
++    }
++
++    return $total;
++}
++
++$double = static fn (int $x): int => $x * 2;
++
++$message = 'result';
++if ($message !== '') {
++    $label = strtoupper($message);
++}
++
++echo sum([1, 2, 3]) + $double(4);
+diff --git a/dev/tests/fixtures/superglobals.php b/dev/tests/fixtures/superglobals.php
+new file mode 100644
+index 0000000..eddd305
+--- /dev/null
++++ b/dev/tests/fixtures/superglobals.php
+@@ -0,0 +1,8 @@
++<?php
++
++declare(strict_types=1);
++
++$id = $_GET['id'] ?? null;
++$host = $_SERVER['HTTP_HOST'];
++
++echo $id, $host;
+diff --git a/dev/tests/fixtures/undefined-variable.php b/dev/tests/fixtures/undefined-variable.php
+new file mode 100644
+index 0000000..ef6c1c8
+--- /dev/null
++++ b/dev/tests/fixtures/undefined-variable.php
+@@ -0,0 +1,10 @@
++<?php
++
++declare(strict_types=1);
++
++function greet(string $name): string
++{
++    $greeting = 'Hello, ' . $name;
++
++    return $greetnig; // タイポ: $greeting のつもり → 未定義
++}

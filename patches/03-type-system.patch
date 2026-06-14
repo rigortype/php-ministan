@@ -1,0 +1,658 @@
+diff --git a/dev/src/TrinaryLogic.php b/dev/src/TrinaryLogic.php
+new file mode 100644
+index 0000000..b2d6650
+--- /dev/null
++++ b/dev/src/TrinaryLogic.php
+@@ -0,0 +1,74 @@
++<?php
++
++declare(strict_types=1);
++
++namespace Ministan;
++
++/**
++ * 三値論理: はい / たぶん / いいえ。
++ *
++ * PHPStan の {@see \PHPStan\TrinaryLogic} に対応する。静的解析では「確実にそう」
++ * 「確実に違う」だけでなく「そうかもしれない」が頻出する。`mixed` は int かもしれず、
++ * union 型は一部の経路でのみ条件を満たすかもしれない。この「たぶん」を一級市民として
++ * 扱えることが、偽陽性を出さない（non-rejecting）解析の土台になる。
++ *
++ * 経験則: レベルの低い解析は「いいえ」だけを報告し、「たぶん」は見逃す。レベルを
++ * 上げるほど「たぶん」も問題として扱う。Part 8 のレベル制はこの軸に乗る。
++ */
++enum TrinaryLogic
++{
++    case Yes;
++    case Maybe;
++    case No;
++
++    public function yes(): bool
++    {
++        return $this === self::Yes;
++    }
++
++    public function maybe(): bool
++    {
++        return $this === self::Maybe;
++    }
++
++    public function no(): bool
++    {
++        return $this === self::No;
++    }
++
++    public function negate(): self
++    {
++        return match ($this) {
++            self::Yes => self::No,
++            self::No => self::Yes,
++            self::Maybe => self::Maybe,
++        };
++    }
++
++    public function and(self $other): self
++    {
++        return match (true) {
++            $this === self::No || $other === self::No => self::No,
++            $this === self::Maybe || $other === self::Maybe => self::Maybe,
++            default => self::Yes,
++        };
++    }
++
++    public function or(self $other): self
++    {
++        return match (true) {
++            $this === self::Yes || $other === self::Yes => self::Yes,
++            $this === self::Maybe || $other === self::Maybe => self::Maybe,
++            default => self::No,
++        };
++    }
++
++    public function describe(): string
++    {
++        return match ($this) {
++            self::Yes => 'yes',
++            self::Maybe => 'maybe',
++            self::No => 'no',
++        };
++    }
++}
+diff --git a/dev/src/Type/BooleanType.php b/dev/src/Type/BooleanType.php
+new file mode 100644
+index 0000000..257c975
+--- /dev/null
++++ b/dev/src/Type/BooleanType.php
+@@ -0,0 +1,26 @@
++<?php
++
++declare(strict_types=1);
++
++namespace Ministan\Type;
++
++use Ministan\TrinaryLogic;
++use Ministan\Type\Constant\ConstantBooleanType;
++
++final class BooleanType implements Type
++{
++    use SimpleTypeTrait;
++
++    public function describe(): string
++    {
++        return 'bool';
++    }
++
++    public function isSuperTypeOf(Type $type): TrinaryLogic
++    {
++        return self::relateToTopAndBottom($type)
++            ?? (($type instanceof self || $type instanceof ConstantBooleanType)
++                ? TrinaryLogic::Yes
++                : TrinaryLogic::No);
++    }
++}
+diff --git a/dev/src/Type/Constant/ConstantBooleanType.php b/dev/src/Type/Constant/ConstantBooleanType.php
+new file mode 100644
+index 0000000..89f273c
+--- /dev/null
++++ b/dev/src/Type/Constant/ConstantBooleanType.php
+@@ -0,0 +1,45 @@
++<?php
++
++declare(strict_types=1);
++
++namespace Ministan\Type\Constant;
++
++use Ministan\TrinaryLogic;
++use Ministan\Type\BooleanType;
++use Ministan\Type\SimpleTypeTrait;
++use Ministan\Type\Type;
++
++/**
++ * `true` / `false` を表す定数型。条件の絞り込み（Part 5）で主役になる。
++ */
++final class ConstantBooleanType implements Type
++{
++    use SimpleTypeTrait;
++
++    public function __construct(
++        public readonly bool $value,
++    ) {
++    }
++
++    public function describe(): string
++    {
++        return $this->value ? 'true' : 'false';
++    }
++
++    public function isSuperTypeOf(Type $type): TrinaryLogic
++    {
++        return self::relateToTopAndBottom($type)
++            ?? match (true) {
++                $type instanceof self => $this->value === $type->value
++                    ? TrinaryLogic::Yes
++                    : TrinaryLogic::No,
++                $type instanceof BooleanType => TrinaryLogic::Maybe,
++                default => TrinaryLogic::No,
++            };
++    }
++
++    public function equals(Type $type): bool
++    {
++        return $type instanceof self && $type->value === $this->value;
++    }
++}
+diff --git a/dev/src/Type/Constant/ConstantIntegerType.php b/dev/src/Type/Constant/ConstantIntegerType.php
+new file mode 100644
+index 0000000..bf9d261
+--- /dev/null
++++ b/dev/src/Type/Constant/ConstantIntegerType.php
+@@ -0,0 +1,49 @@
++<?php
++
++declare(strict_types=1);
++
++namespace Ministan\Type\Constant;
++
++use Ministan\TrinaryLogic;
++use Ministan\Type\IntegerType;
++use Ministan\Type\SimpleTypeTrait;
++use Ministan\Type\Type;
++
++/**
++ * 単一の整数値を表す定数型（リテラル型）。`42` の型は `int` ではなく `42`。
++ *
++ * 定数型こそ PHPStan の推論を鋭くする源。`$x = 42;` の直後、$x の型は `int` ではなく
++ * `42` なので、`match` の網羅性や到達不能分岐まで判定できる。
++ */
++final class ConstantIntegerType implements Type
++{
++    use SimpleTypeTrait;
++
++    public function __construct(
++        public readonly int $value,
++    ) {
++    }
++
++    public function describe(): string
++    {
++        return (string) $this->value;
++    }
++
++    public function isSuperTypeOf(Type $type): TrinaryLogic
++    {
++        return self::relateToTopAndBottom($type)
++            ?? match (true) {
++                $type instanceof self => $this->value === $type->value
++                    ? TrinaryLogic::Yes
++                    : TrinaryLogic::No,
++                // 一般の int は、たまたまこの値かもしれない。
++                $type instanceof IntegerType => TrinaryLogic::Maybe,
++                default => TrinaryLogic::No,
++            };
++    }
++
++    public function equals(Type $type): bool
++    {
++        return $type instanceof self && $type->value === $this->value;
++    }
++}
+diff --git a/dev/src/Type/Constant/ConstantStringType.php b/dev/src/Type/Constant/ConstantStringType.php
+new file mode 100644
+index 0000000..a37b9cf
+--- /dev/null
++++ b/dev/src/Type/Constant/ConstantStringType.php
+@@ -0,0 +1,45 @@
++<?php
++
++declare(strict_types=1);
++
++namespace Ministan\Type\Constant;
++
++use Ministan\TrinaryLogic;
++use Ministan\Type\SimpleTypeTrait;
++use Ministan\Type\StringType;
++use Ministan\Type\Type;
++
++/**
++ * 単一の文字列値を表す定数型。`'foo'` の型は `string` ではなく `'foo'`。
++ */
++final class ConstantStringType implements Type
++{
++    use SimpleTypeTrait;
++
++    public function __construct(
++        public readonly string $value,
++    ) {
++    }
++
++    public function describe(): string
++    {
++        return "'" . $this->value . "'";
++    }
++
++    public function isSuperTypeOf(Type $type): TrinaryLogic
++    {
++        return self::relateToTopAndBottom($type)
++            ?? match (true) {
++                $type instanceof self => $this->value === $type->value
++                    ? TrinaryLogic::Yes
++                    : TrinaryLogic::No,
++                $type instanceof StringType => TrinaryLogic::Maybe,
++                default => TrinaryLogic::No,
++            };
++    }
++
++    public function equals(Type $type): bool
++    {
++        return $type instanceof self && $type->value === $this->value;
++    }
++}
+diff --git a/dev/src/Type/FloatType.php b/dev/src/Type/FloatType.php
+new file mode 100644
+index 0000000..5d31e64
+--- /dev/null
++++ b/dev/src/Type/FloatType.php
+@@ -0,0 +1,24 @@
++<?php
++
++declare(strict_types=1);
++
++namespace Ministan\Type;
++
++use Ministan\TrinaryLogic;
++
++final class FloatType implements Type
++{
++    use SimpleTypeTrait;
++
++    public function describe(): string
++    {
++        return 'float';
++    }
++
++    public function isSuperTypeOf(Type $type): TrinaryLogic
++    {
++        // int → float の暗黙拡大は accepts の精密化として後の章で扱う。ここでは厳密。
++        return self::relateToTopAndBottom($type)
++            ?? ($type instanceof self ? TrinaryLogic::Yes : TrinaryLogic::No);
++    }
++}
+diff --git a/dev/src/Type/IntegerType.php b/dev/src/Type/IntegerType.php
+new file mode 100644
+index 0000000..0cc5d52
+--- /dev/null
++++ b/dev/src/Type/IntegerType.php
+@@ -0,0 +1,26 @@
++<?php
++
++declare(strict_types=1);
++
++namespace Ministan\Type;
++
++use Ministan\TrinaryLogic;
++use Ministan\Type\Constant\ConstantIntegerType;
++
++final class IntegerType implements Type
++{
++    use SimpleTypeTrait;
++
++    public function describe(): string
++    {
++        return 'int';
++    }
++
++    public function isSuperTypeOf(Type $type): TrinaryLogic
++    {
++        return self::relateToTopAndBottom($type)
++            ?? (($type instanceof self || $type instanceof ConstantIntegerType)
++                ? TrinaryLogic::Yes   // int も、42 のような定数 int も、int の部分型
++                : TrinaryLogic::No);
++    }
++}
+diff --git a/dev/src/Type/MixedType.php b/dev/src/Type/MixedType.php
+new file mode 100644
+index 0000000..da573db
+--- /dev/null
++++ b/dev/src/Type/MixedType.php
+@@ -0,0 +1,28 @@
++<?php
++
++declare(strict_types=1);
++
++namespace Ministan\Type;
++
++use Ministan\TrinaryLogic;
++
++/**
++ * 最上位の型。あらゆる値を含む。「分からない」を表す既定値でもある。
++ *
++ * non-rejecting の哲学では、推論に失敗したら never でも例外でもなく mixed に
++ * 縮退させる。mixed はすべてを受け入れ、すべての上位型である。
++ */
++final class MixedType implements Type
++{
++    use SimpleTypeTrait;
++
++    public function describe(): string
++    {
++        return 'mixed';
++    }
++
++    public function isSuperTypeOf(Type $type): TrinaryLogic
++    {
++        return TrinaryLogic::Yes;
++    }
++}
+diff --git a/dev/src/Type/NeverType.php b/dev/src/Type/NeverType.php
+new file mode 100644
+index 0000000..72b0227
+--- /dev/null
++++ b/dev/src/Type/NeverType.php
+@@ -0,0 +1,29 @@
++<?php
++
++declare(strict_types=1);
++
++namespace Ministan\Type;
++
++use Ministan\TrinaryLogic;
++
++/**
++ * 最下位の型。値を一つも含まない（決して起こらない）。
++ *
++ * `throw` するだけの関数の戻り値や、到達しえない分岐の型。あらゆる型の部分型であり、
++ * 上位型となるのは never だけ。mixed とは対極の存在。
++ */
++final class NeverType implements Type
++{
++    use SimpleTypeTrait;
++
++    public function describe(): string
++    {
++        return 'never';
++    }
++
++    public function isSuperTypeOf(Type $type): TrinaryLogic
++    {
++        // never の上位型は never のみ。mixed に対しても「いいえ」。
++        return $type instanceof self ? TrinaryLogic::Yes : TrinaryLogic::No;
++    }
++}
+diff --git a/dev/src/Type/NullType.php b/dev/src/Type/NullType.php
+new file mode 100644
+index 0000000..ae0dc27
+--- /dev/null
++++ b/dev/src/Type/NullType.php
+@@ -0,0 +1,23 @@
++<?php
++
++declare(strict_types=1);
++
++namespace Ministan\Type;
++
++use Ministan\TrinaryLogic;
++
++final class NullType implements Type
++{
++    use SimpleTypeTrait;
++
++    public function describe(): string
++    {
++        return 'null';
++    }
++
++    public function isSuperTypeOf(Type $type): TrinaryLogic
++    {
++        return self::relateToTopAndBottom($type)
++            ?? ($type instanceof self ? TrinaryLogic::Yes : TrinaryLogic::No);
++    }
++}
+diff --git a/dev/src/Type/SimpleTypeTrait.php b/dev/src/Type/SimpleTypeTrait.php
+new file mode 100644
+index 0000000..167557d
+--- /dev/null
++++ b/dev/src/Type/SimpleTypeTrait.php
+@@ -0,0 +1,45 @@
++<?php
++
++declare(strict_types=1);
++
++namespace Ministan\Type;
++
++use Ministan\TrinaryLogic;
++
++/**
++ * 単純な値型（int, string, null …）が共有する定型処理。
++ *
++ * - `accepts` は `isSuperTypeOf` に委譲する（これらの型では代入可能性＝部分型関係）。
++ *   float が int を受け入れる、といった暗黙変換は後の章の精密化に回す。
++ * - `equals` は同じクラスかどうか。定数型は値も比べるので個別に上書きする。
++ * - `relateToTopAndBottom` は、どの型にも共通の「上端 mixed・下端 never」との関係を返す。
++ */
++trait SimpleTypeTrait
++{
++    public function accepts(Type $type): TrinaryLogic
++    {
++        return $this->isSuperTypeOf($type);
++    }
++
++    public function equals(Type $type): bool
++    {
++        return $type::class === static::class;
++    }
++
++    /**
++     * never はあらゆる型の部分型（= 常に Yes）。mixed はどの型でもありうる（= Maybe）。
++     * どちらでもなければ null を返し、呼び出し側の固有判定に委ねる。
++     */
++    protected static function relateToTopAndBottom(Type $type): ?TrinaryLogic
++    {
++        if ($type instanceof NeverType) {
++            return TrinaryLogic::Yes;
++        }
++
++        if ($type instanceof MixedType) {
++            return TrinaryLogic::Maybe;
++        }
++
++        return null;
++    }
++}
+diff --git a/dev/src/Type/StringType.php b/dev/src/Type/StringType.php
+new file mode 100644
+index 0000000..dc933cf
+--- /dev/null
++++ b/dev/src/Type/StringType.php
+@@ -0,0 +1,26 @@
++<?php
++
++declare(strict_types=1);
++
++namespace Ministan\Type;
++
++use Ministan\TrinaryLogic;
++use Ministan\Type\Constant\ConstantStringType;
++
++final class StringType implements Type
++{
++    use SimpleTypeTrait;
++
++    public function describe(): string
++    {
++        return 'string';
++    }
++
++    public function isSuperTypeOf(Type $type): TrinaryLogic
++    {
++        return self::relateToTopAndBottom($type)
++            ?? (($type instanceof self || $type instanceof ConstantStringType)
++                ? TrinaryLogic::Yes
++                : TrinaryLogic::No);
++    }
++}
+diff --git a/dev/src/Type/Type.php b/dev/src/Type/Type.php
+new file mode 100644
+index 0000000..030f0fa
+--- /dev/null
++++ b/dev/src/Type/Type.php
+@@ -0,0 +1,30 @@
++<?php
++
++declare(strict_types=1);
++
++namespace Ministan\Type;
++
++use Ministan\TrinaryLogic;
++
++/**
++ * 型を表す代数的オブジェクト。PHPStan の {@see \PHPStan\Type\Type} に対応する核。
++ *
++ * 3 つの基本演算で型どうしの関係を問う:
++ *
++ * - {@see describe()} … 人間向けの文字列（`int`, `'foo'`, `mixed` …）
++ * - {@see isSuperTypeOf()} … 部分型関係。「$type の値はすべて自分の値か？」
++ * - {@see accepts()} … 代入可能性。「自分の場所に $type の値を入れてよいか？」
++ *
++ * いずれも答えは {@see TrinaryLogic}。`int` は `mixed` を「たぶん」受け入れ、
++ * `string` は決して `int` を受け入れない（いいえ）。この「たぶん」がレベル制の鍵。
++ */
++interface Type
++{
++    public function describe(): string;
++
++    public function accepts(Type $type): TrinaryLogic;
++
++    public function isSuperTypeOf(Type $type): TrinaryLogic;
++
++    public function equals(Type $type): bool;
++}
+diff --git a/dev/tests/Type/TypeTest.php b/dev/tests/Type/TypeTest.php
+new file mode 100644
+index 0000000..cd0a4b0
+--- /dev/null
++++ b/dev/tests/Type/TypeTest.php
+@@ -0,0 +1,104 @@
++<?php
++
++declare(strict_types=1);
++
++namespace Ministan\Tests\Type;
++
++use Ministan\TrinaryLogic;
++use Ministan\Type\BooleanType;
++use Ministan\Type\Constant\ConstantBooleanType;
++use Ministan\Type\Constant\ConstantIntegerType;
++use Ministan\Type\Constant\ConstantStringType;
++use Ministan\Type\FloatType;
++use Ministan\Type\IntegerType;
++use Ministan\Type\MixedType;
++use Ministan\Type\NeverType;
++use Ministan\Type\NullType;
++use Ministan\Type\StringType;
++use Ministan\Type\Type;
++use PHPUnit\Framework\Attributes\DataProvider;
++use PHPUnit\Framework\TestCase;
++
++final class TypeTest extends TestCase
++{
++    public function testDescribe(): void
++    {
++        self::assertSame('int', (new IntegerType())->describe());
++        self::assertSame('string', (new StringType())->describe());
++        self::assertSame('mixed', (new MixedType())->describe());
++        self::assertSame('never', (new NeverType())->describe());
++        self::assertSame('42', (new ConstantIntegerType(42))->describe());
++        self::assertSame("'foo'", (new ConstantStringType('foo'))->describe());
++        self::assertSame('true', (new ConstantBooleanType(true))->describe());
++        self::assertSame('false', (new ConstantBooleanType(false))->describe());
++    }
++
++    #[DataProvider('superTypeCases')]
++    public function testIsSuperTypeOf(Type $a, Type $b, TrinaryLogic $expected): void
++    {
++        self::assertSame(
++            $expected,
++            $a->isSuperTypeOf($b),
++            sprintf('%s isSuperTypeOf %s', $a->describe(), $b->describe()),
++        );
++    }
++
++    /**
++     * @return iterable<string, array{Type, Type, TrinaryLogic}>
++     */
++    public static function superTypeCases(): iterable
++    {
++        $int = new IntegerType();
++        $string = new StringType();
++        $mixed = new MixedType();
++        $never = new NeverType();
++
++        yield 'int ⊇ int' => [$int, $int, TrinaryLogic::Yes];
++        yield 'int ⊇ 42' => [$int, new ConstantIntegerType(42), TrinaryLogic::Yes];
++        yield 'int ⊉ string' => [$int, $string, TrinaryLogic::No];
++        yield 'int ⊇? mixed' => [$int, $mixed, TrinaryLogic::Maybe];
++        yield 'int ⊇ never' => [$int, $never, TrinaryLogic::Yes];
++
++        yield '42 ⊇ 42' => [new ConstantIntegerType(42), new ConstantIntegerType(42), TrinaryLogic::Yes];
++        yield '42 ⊉ 43' => [new ConstantIntegerType(42), new ConstantIntegerType(43), TrinaryLogic::No];
++        yield '42 ⊇? int' => [new ConstantIntegerType(42), $int, TrinaryLogic::Maybe];
++
++        yield "'foo' ⊇? string" => [new ConstantStringType('foo'), $string, TrinaryLogic::Maybe];
++        yield "string ⊇ 'foo'" => [$string, new ConstantStringType('foo'), TrinaryLogic::Yes];
++
++        yield 'mixed ⊇ int' => [$mixed, $int, TrinaryLogic::Yes];
++        yield 'mixed ⊇ never' => [$mixed, $never, TrinaryLogic::Yes];
++        yield 'never ⊉ int' => [$never, $int, TrinaryLogic::No];
++        yield 'never ⊉ mixed' => [$never, $mixed, TrinaryLogic::No];
++        yield 'never ⊇ never' => [$never, $never, TrinaryLogic::Yes];
++
++        yield 'null ⊉ int' => [new NullType(), $int, TrinaryLogic::No];
++        yield 'float ⊉ int' => [new FloatType(), $int, TrinaryLogic::No];
++        yield 'bool ⊇ true' => [new BooleanType(), new ConstantBooleanType(true), TrinaryLogic::Yes];
++    }
++
++    public function testAcceptsDelegatesToSuperType(): void
++    {
++        self::assertSame(TrinaryLogic::Yes, (new IntegerType())->accepts(new ConstantIntegerType(7)));
++        self::assertSame(TrinaryLogic::No, (new IntegerType())->accepts(new StringType()));
++        self::assertSame(TrinaryLogic::Maybe, (new IntegerType())->accepts(new MixedType()));
++    }
++
++    public function testEquals(): void
++    {
++        self::assertTrue((new IntegerType())->equals(new IntegerType()));
++        self::assertFalse((new IntegerType())->equals(new StringType()));
++        self::assertTrue((new ConstantIntegerType(1))->equals(new ConstantIntegerType(1)));
++        self::assertFalse((new ConstantIntegerType(1))->equals(new ConstantIntegerType(2)));
++        self::assertFalse((new ConstantIntegerType(1))->equals(new IntegerType()));
++    }
++
++    public function testTrinaryLogic(): void
++    {
++        self::assertSame(TrinaryLogic::No, TrinaryLogic::Yes->negate());
++        self::assertSame(TrinaryLogic::Maybe, TrinaryLogic::Maybe->negate());
++        self::assertSame(TrinaryLogic::No, TrinaryLogic::Yes->and(TrinaryLogic::No));
++        self::assertSame(TrinaryLogic::Maybe, TrinaryLogic::Yes->and(TrinaryLogic::Maybe));
++        self::assertSame(TrinaryLogic::Yes, TrinaryLogic::No->or(TrinaryLogic::Yes));
++    }
++}

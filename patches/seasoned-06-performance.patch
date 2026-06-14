@@ -1,0 +1,261 @@
+diff --git a/dev/src/Analyser/Analyser.php b/dev/src/Analyser/Analyser.php
+index a1a4c7c..9aafdea 100644
+--- a/dev/src/Analyser/Analyser.php
++++ b/dev/src/Analyser/Analyser.php
+@@ -4,6 +4,7 @@ declare(strict_types=1);
+ 
+ namespace Ministan\Analyser;
+ 
++use Ministan\Cache\ResultCache;
+ use Ministan\Reflection\ReflectionProvider;
+ use Ministan\Reflection\ReflectionProviderStaticAccessor;
+ use Ministan\Rules\RuleRegistry;
+@@ -17,11 +18,13 @@ use PhpParser\Node;
+  * Part 1: パース済み AST にルール群を適用する。
+  * Part 2: スコープを伝播させながらルールを適用する。
+  * Part 4: スコープが各式の型を推論する。ルール適用は走査へのコールバックとして渡す。
++ * S6:     ファイル内容が変わっていなければ結果キャッシュを使う。
+  */
+ final class Analyser
+ {
+     public function __construct(
+         private readonly RuleRegistry $registry,
++        private readonly ?ResultCache $cache = null,
+     ) {
+     }
+ 
+@@ -54,14 +57,38 @@ final class Analyser
+             return [new Error(sprintf('File "%s" was not found.', $file), $file, 0)];
+         }
+ 
++        if ($this->cache !== null) {
++            $cached = $this->cache->load($code);
++            if ($cached !== null) {
++                // キャッシュは (メッセージ, 行) だけ持つ。ファイル名は今のものを付け直す。
++                return array_map(
++                    static fn (array $entry): Error => new Error($entry['message'], $file, $entry['line']),
++                    $cached,
++                );
++            }
++        }
++
++        $errors = $this->computeErrors($code, $file);
++
++        $this->cache?->save(
++            $code,
++            array_map(static fn (Error $e): array => ['message' => $e->message, 'line' => $e->line], $errors),
++        );
++
++        return $errors;
++    }
++
++    /**
++     * @return list<Error>
++     */
++    private function computeErrors(string $code, string $file): array
++    {
+         try {
+             $ast = Parsing::parse($code);
+         } catch (ParserError $e) {
+-            // 構文エラーがある間はルールを走らせても意味がないので、ここで打ち切る。
+             return [new Error($e->getRawMessage(), $file, $e->getStartLine())];
+         }
+ 
+-        // 解析対象の宣言からリフレクションを組み、型オブジェクトから引けるようにする。
+         ReflectionProviderStaticAccessor::set(ReflectionProvider::fromNodes($ast));
+ 
+         $errors = [];
+diff --git a/dev/src/Cache/ResultCache.php b/dev/src/Cache/ResultCache.php
+new file mode 100644
+index 0000000..27085a1
+--- /dev/null
++++ b/dev/src/Cache/ResultCache.php
+@@ -0,0 +1,56 @@
++<?php
++
++declare(strict_types=1);
++
++namespace Ministan\Cache;
++
++/**
++ * ファイル単位の解析結果キャッシュ。
++ *
++ * 大規模コードベースで毎回全ファイルを解析するのは遅い。ファイルの**内容**が変わって
++ * いなければ結果も変わらない——という事実を使い、内容ハッシュをキーに結果を保存する。
++ * PHPStan の結果キャッシュを大きく簡略化したもの。
++ *
++ * キーには salt（解析器のバージョン＋レベル）を混ぜる。解析ロジックやレベルが変われば
++ * 自動的にキャッシュが無効になる。ファイルパスはキーに含めない（同一内容なら結果も同一）。
++ */
++final class ResultCache
++{
++    public function __construct(
++        private readonly string $directory,
++        private readonly string $salt,
++    ) {
++    }
++
++    /**
++     * @return list<array{message: string, line: int}>|null ヒットすれば結果、無ければ null
++     */
++    public function load(string $code): ?array
++    {
++        $path = $this->pathFor($code);
++        if (!is_file($path)) {
++            return null;
++        }
++
++        $decoded = json_decode((string) file_get_contents($path), true);
++
++        return is_array($decoded) ? $decoded : null;
++    }
++
++    /**
++     * @param list<array{message: string, line: int}> $entries
++     */
++    public function save(string $code, array $entries): void
++    {
++        if (!is_dir($this->directory)) {
++            @mkdir($this->directory, 0777, true);
++        }
++
++        file_put_contents($this->pathFor($code), json_encode($entries));
++    }
++
++    private function pathFor(string $code): string
++    {
++        return $this->directory . '/' . sha1($this->salt . "\0" . $code) . '.json';
++    }
++}
+diff --git a/dev/src/Command/AnalyseCommand.php b/dev/src/Command/AnalyseCommand.php
+index 89f29f0..f892224 100644
+--- a/dev/src/Command/AnalyseCommand.php
++++ b/dev/src/Command/AnalyseCommand.php
+@@ -6,6 +6,7 @@ namespace Ministan\Command;
+ 
+ use Ministan\Analyser\Analyser;
+ use Ministan\Analyser\FileFinder;
++use Ministan\Cache\ResultCache;
+ use Ministan\Configuration\Configuration;
+ use Ministan\Configuration\ConfigurationLoader;
+ use Ministan\Configuration\IgnoredErrorHelper;
+@@ -34,6 +35,8 @@ final class AnalyseCommand
+ 
+     private const string DEFAULT_CONFIG = 'ministan.neon';
+ 
++    private const string DEFAULT_CACHE = '.ministan-cache';
++
+     /**
+      * @param list<string> $args
+      */
+@@ -44,11 +47,16 @@ final class AnalyseCommand
+         $configFile = null;
+         $baselineToApply = null;
+         $baselineToGenerate = null;
++        $cacheDir = null;
+         $cliPaths = [];
+ 
+         foreach ($args as $arg) {
+             if (str_starts_with($arg, '--level=')) {
+                 $cliLevel = min((int) substr($arg, strlen('--level=')), RuleRegistryFactory::MAX_LEVEL);
++            } elseif ($arg === '--cache') {
++                $cacheDir = self::DEFAULT_CACHE;
++            } elseif (str_starts_with($arg, '--cache=')) {
++                $cacheDir = substr($arg, strlen('--cache='));
+             } elseif (str_starts_with($arg, '--configuration=')) {
+                 $configFile = substr($arg, strlen('--configuration='));
+             } elseif (str_starts_with($arg, '--error-format=')) {
+@@ -77,7 +85,8 @@ final class AnalyseCommand
+ 
+         $files = (new FileFinder())->find($paths);
+         $registry = (new RuleRegistryFactory())->createForLevel($level, $this->instantiateRules($config));
+-        $errors = (new Analyser($registry))->analyse($files);
++        $cache = $cacheDir !== null ? new ResultCache($cacheDir, sprintf('ministan-1|level=%d', $level)) : null;
++        $errors = (new Analyser($registry, $cache))->analyse($files);
+ 
+         $errors = (new IgnoredErrorHelper($config->ignoreErrors))->filter($errors);
+ 
+diff --git a/dev/src/Console/Application.php b/dev/src/Console/Application.php
+index 9eb6034..9af88cb 100644
+--- a/dev/src/Console/Application.php
++++ b/dev/src/Console/Application.php
+@@ -44,6 +44,7 @@ final class Application
+               --error-format=json       JSON で出力する
+               --baseline=FILE           既知の指摘を無視する
+               --generate-baseline[=FILE]  現在の指摘を baseline に書き出す
++              --cache[=DIR]             結果キャッシュを使う（既定 .ministan-cache）
+ 
+             TXT;
+ 
+diff --git a/dev/tests/Cache/ResultCacheTest.php b/dev/tests/Cache/ResultCacheTest.php
+new file mode 100644
+index 0000000..743ec7b
+--- /dev/null
++++ b/dev/tests/Cache/ResultCacheTest.php
+@@ -0,0 +1,66 @@
++<?php
++
++declare(strict_types=1);
++
++namespace Ministan\Tests\Cache;
++
++use Ministan\Analyser\Analyser;
++use Ministan\Cache\ResultCache;
++use Ministan\Rules\RuleRegistryFactory;
++use PHPUnit\Framework\TestCase;
++
++final class ResultCacheTest extends TestCase
++{
++    private string $dir;
++
++    protected function setUp(): void
++    {
++        $this->dir = sys_get_temp_dir() . '/ministan-cache-' . bin2hex(random_bytes(6));
++    }
++
++    protected function tearDown(): void
++    {
++        if (is_dir($this->dir)) {
++            foreach (glob($this->dir . '/*') ?: [] as $file) {
++                unlink($file);
++            }
++            rmdir($this->dir);
++        }
++    }
++
++    public function testStoreAndLoad(): void
++    {
++        $cache = new ResultCache($this->dir, 'salt');
++
++        self::assertNull($cache->load('<?php $x = 1;'));
++
++        $cache->save('<?php $x = 1;', [['message' => 'boom', 'line' => 1]]);
++
++        self::assertSame([['message' => 'boom', 'line' => 1]], $cache->load('<?php $x = 1;'));
++    }
++
++    public function testSaltInvalidatesCache(): void
++    {
++        (new ResultCache($this->dir, 'level=0'))->save('code', [['message' => 'm', 'line' => 1]]);
++
++        // 別 salt（例: レベル変更）では同じ内容でもヒットしない。
++        self::assertNull((new ResultCache($this->dir, 'level=9'))->load('code'));
++    }
++
++    public function testAnalyserReturnsSameResultFromCache(): void
++    {
++        $cache = new ResultCache($this->dir, 'v1');
++        $analyser = new Analyser((new RuleRegistryFactory())->createForLevel(0), $cache);
++        $fixture = __DIR__ . '/../fixtures/undefined-method.php';
++
++        $cold = $analyser->analyseFile($fixture); // 計算してキャッシュ
++        $warm = $analyser->analyseFile($fixture); // キャッシュから
++
++        self::assertCount(1, $cold);
++        self::assertSame(
++            array_map(static fn ($e): string => $e->message, $cold),
++            array_map(static fn ($e): string => $e->message, $warm),
++        );
++        self::assertNotEmpty(glob($this->dir . '/*'));
++    }
++}

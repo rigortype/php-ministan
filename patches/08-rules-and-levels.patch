@@ -1,0 +1,640 @@
+diff --git a/dev/src/Analyser/NodeScopeResolver.php b/dev/src/Analyser/NodeScopeResolver.php
+index 14b60ae..c5c5d65 100644
+--- a/dev/src/Analyser/NodeScopeResolver.php
++++ b/dev/src/Analyser/NodeScopeResolver.php
+@@ -80,6 +80,8 @@ final class NodeScopeResolver
+             $node instanceof Expr\AssignRef      => $this->processAssign($node, $scope),
+             $node instanceof Expr\AssignOp       => $this->processAssignOp($node, $scope),
+             $node instanceof Stmt\Expression     => $this->processExpressionStmt($node, $scope),
++            $node instanceof Expr\BinaryOp\BooleanAnd,
++            $node instanceof Expr\BinaryOp\BooleanOr => $this->processLogical($node, $scope),
+             $node instanceof Stmt\If_            => $this->processIf($node, $scope),
+             $node instanceof Expr\Ternary        => $this->processTernary($node, $scope),
+             $node instanceof Stmt\Foreach_       => $this->processForeach($node, $scope),
+@@ -209,6 +211,22 @@ final class NodeScopeResolver
+         return $this->processChildren($node, $scope);
+     }
+ 
++    /**
++     * `&&`／`||` の右辺は、左辺で絞り込まれた世界で評価される。
++     * `$x !== null && $x->foo()` の右辺で $x が非 null になるのはこのため。
++     */
++    private function processLogical(Expr\BinaryOp\BooleanAnd|Expr\BinaryOp\BooleanOr $node, Scope $scope): Scope
++    {
++        $scope = $this->processNode($node->left, $scope);
++        $specified = $this->typeSpecifier->specify($node->left, $scope);
++
++        // && は「左が真」、|| は「左が偽」の世界線で右辺を評価する。
++        $rightScope = $node instanceof Expr\BinaryOp\BooleanAnd ? $specified->truthy : $specified->falsy;
++        $this->processNode($node->right, $rightScope);
++
++        return $scope;
++    }
++
+     // --- 条件分岐: 型の絞り込みを適用する ---
+ 
+     private function processIf(Stmt\If_ $node, Scope $scope): Scope
+@@ -342,7 +360,10 @@ final class NodeScopeResolver
+ 
+     private function processFunctionLike(Stmt\Function_|Stmt\ClassMethod $node, Scope $outer): Scope
+     {
+-        $inner = Scope::createForFunction();
++        $doc = $this->phpDocTypeResolver->parse($node->getDocComment()?->getText());
++        $returnType = $doc->returnType ?? $this->typeNodeResolver->resolve($node->returnType);
++
++        $inner = Scope::createForFunction()->withFunctionReturnType($returnType);
+         $inner = $this->bindParams($node->params, $inner);
+ 
+         if ($node instanceof Stmt\ClassMethod && !$node->isStatic()) {
+diff --git a/dev/src/Analyser/Scope.php b/dev/src/Analyser/Scope.php
+index 914b331..75d3b0a 100644
+--- a/dev/src/Analyser/Scope.php
++++ b/dev/src/Analyser/Scope.php
+@@ -33,9 +33,11 @@ final readonly class Scope
+ {
+     /**
+      * @param array<string, Type> $variableTypes 定義済み変数名 → その型
++     * @param Type|null $functionReturnType 現在いる関数／メソッドの宣言戻り値型（無ければ null）
+      */
+     private function __construct(
+         private array $variableTypes,
++        private ?Type $functionReturnType = null,
+     ) {
+     }
+ 
+@@ -74,7 +76,18 @@ final readonly class Scope
+ 
+     public function assignVariable(string $name, Type $type): self
+     {
+-        return new self([...$this->variableTypes, $name => $type]);
++        return new self([...$this->variableTypes, $name => $type], $this->functionReturnType);
++    }
++
++    /** 関数本体に入るとき、宣言された戻り値型を覚えておく（戻り値検査が使う）。 */
++    public function withFunctionReturnType(Type $type): self
++    {
++        return new self($this->variableTypes, $type);
++    }
++
++    public function getFunctionReturnType(): ?Type
++    {
++        return $this->functionReturnType;
+     }
+ 
+     /**
+@@ -91,7 +104,7 @@ final readonly class Scope
+                 : $type;
+         }
+ 
+-        return new self($merged);
++        return new self($merged, $this->functionReturnType);
+     }
+ 
+     /**
+diff --git a/dev/src/Command/AnalyseCommand.php b/dev/src/Command/AnalyseCommand.php
+index 04fdfc6..9863a13 100644
+--- a/dev/src/Command/AnalyseCommand.php
++++ b/dev/src/Command/AnalyseCommand.php
+@@ -9,10 +9,10 @@ use Ministan\Output\ErrorFormatter;
+ use Ministan\Rules\RuleRegistryFactory;
+ 
+ /**
+- * `ministan analyse <file>` の実装。
++ * `ministan analyse [--level=N] <file>` の実装。
+  *
+- * PHPStan の AnalyseCommand に対応する最小版。Part 9 で設定読み込みや
+- * 複数ファイル・複数フォーマットへ拡張する。
++ * PHPStan の AnalyseCommand に対応する最小版。Part 9 で複数ファイル・複数フォーマットや
++ * baseline へ拡張する。
+  */
+ final class AnalyseCommand
+ {
+@@ -21,14 +21,24 @@ final class AnalyseCommand
+      */
+     public function run(array $args): int
+     {
+-        if ($args === []) {
+-            fwrite(STDERR, "Usage: ministan analyse <file>\n");
++        $level = RuleRegistryFactory::DEFAULT_LEVEL;
++        $files = [];
++        foreach ($args as $arg) {
++            if (str_starts_with($arg, '--level=')) {
++                $level = min((int) substr($arg, strlen('--level=')), RuleRegistryFactory::MAX_LEVEL);
++            } else {
++                $files[] = $arg;
++            }
++        }
++
++        if ($files === []) {
++            fwrite(STDERR, "Usage: ministan analyse [--level=N] <file>\n");
+ 
+             return 1;
+         }
+ 
+-        $registry = (new RuleRegistryFactory())->create();
+-        $errors = (new Analyser($registry))->analyseFile($args[0]);
++        $registry = (new RuleRegistryFactory())->createForLevel($level);
++        $errors = (new Analyser($registry))->analyseFile($files[0]);
+ 
+         echo (new ErrorFormatter())->format($errors);
+ 
+diff --git a/dev/src/Console/Application.php b/dev/src/Console/Application.php
+index 7d4f4cd..ae7bb5a 100644
+--- a/dev/src/Console/Application.php
++++ b/dev/src/Console/Application.php
+@@ -36,8 +36,8 @@ final class Application
+             ministan {$this->versionLine()}
+ 
+             Usage:
+-              ministan analyse <file>    PHP ファイルを解析する
+-              ministan annotate <file>   推論された型を表示する
++              ministan analyse [--level=N] <file>   PHP ファイルを解析する（N=0..9, 既定 5）
++              ministan annotate <file>              推論された型を表示する
+ 
+             TXT;
+ 
+diff --git a/dev/src/Rules/ArgumentTypeChecker.php b/dev/src/Rules/ArgumentTypeChecker.php
+new file mode 100644
+index 0000000..f61c2cd
+--- /dev/null
++++ b/dev/src/Rules/ArgumentTypeChecker.php
+@@ -0,0 +1,50 @@
++<?php
++
++declare(strict_types=1);
++
++namespace Ministan\Rules;
++
++use Ministan\Analyser\Scope;
++use Ministan\Type\Type;
++use PhpParser\Node\Arg;
++
++/**
++ * 呼び出しの実引数を、宣言されたパラメータ型と照合する共通処理。
++ * 関数呼び出しとメソッド呼び出しのルールが共有する。
++ */
++final readonly class ArgumentTypeChecker
++{
++    public function __construct(
++        private RuleLevelHelper $ruleLevelHelper,
++    ) {
++    }
++
++    /**
++     * @param list<Type> $parameterTypes
++     * @param array<Arg|\PhpParser\Node\VariadicPlaceholder> $args
++     *
++     * @return list<array{int, Type, Type}> [位置(1始まり), 期待型, 実際の型] の不一致
++     */
++    public function check(array $parameterTypes, array $args, Scope $scope): array
++    {
++        $mismatches = [];
++
++        foreach ($args as $position => $arg) {
++            if (!$arg instanceof Arg || $arg->unpack || $arg->name !== null) {
++                continue; // ...$spread・名前付き引数は位置対応が崩れるので見送り
++            }
++            if (!isset($parameterTypes[$position])) {
++                continue; // 余剰引数・可変長は見送り（non-rejecting）
++            }
++
++            $expected = $parameterTypes[$position];
++            $actual = $scope->getType($arg->value);
++
++            if (!$this->ruleLevelHelper->isAcceptable($expected, $actual)) {
++                $mismatches[] = [$position + 1, $expected, $actual];
++            }
++        }
++
++        return $mismatches;
++    }
++}
+diff --git a/dev/src/Rules/Functions/FunctionCallParameterTypesRule.php b/dev/src/Rules/Functions/FunctionCallParameterTypesRule.php
+new file mode 100644
+index 0000000..70aa2c7
+--- /dev/null
++++ b/dev/src/Rules/Functions/FunctionCallParameterTypesRule.php
+@@ -0,0 +1,60 @@
++<?php
++
++declare(strict_types=1);
++
++namespace Ministan\Rules\Functions;
++
++use Ministan\Analyser\Scope;
++use Ministan\Reflection\ReflectionProviderStaticAccessor;
++use Ministan\Rules\ArgumentTypeChecker;
++use Ministan\Rules\Rule;
++use Ministan\Rules\RuleError;
++use PhpParser\Node;
++use PhpParser\Node\Expr\FuncCall;
++use PhpParser\Node\Name;
++
++/**
++ * 関数呼び出しの実引数の型を、宣言されたパラメータ型と照合する。
++ *
++ * @implements Rule<FuncCall>
++ */
++final class FunctionCallParameterTypesRule implements Rule
++{
++    public function __construct(
++        private readonly ArgumentTypeChecker $checker,
++    ) {
++    }
++
++    public function getNodeType(): string
++    {
++        return FuncCall::class;
++    }
++
++    public function processNode(Node $node, Scope $scope): array
++    {
++        assert($node instanceof FuncCall);
++
++        $provider = ReflectionProviderStaticAccessor::getInstanceOrNull();
++        if (!$node->name instanceof Name || $provider === null || !$provider->hasFunction($node->name->toString())) {
++            return [];
++        }
++
++        $function = $provider->getFunction($node->name->toString());
++
++        $errors = [];
++        foreach ($this->checker->check($function->parameterTypes, $node->args, $scope) as [$position, $expected, $actual]) {
++            $errors[] = new RuleError(
++                sprintf(
++                    'Parameter #%d of function %s() expects %s, %s given.',
++                    $position,
++                    $function->name,
++                    $expected->describe(),
++                    $actual->describe(),
++                ),
++                $node->getStartLine(),
++            );
++        }
++
++        return $errors;
++    }
++}
+diff --git a/dev/src/Rules/Functions/FunctionReturnTypeRule.php b/dev/src/Rules/Functions/FunctionReturnTypeRule.php
+new file mode 100644
+index 0000000..25abb05
+--- /dev/null
++++ b/dev/src/Rules/Functions/FunctionReturnTypeRule.php
+@@ -0,0 +1,59 @@
++<?php
++
++declare(strict_types=1);
++
++namespace Ministan\Rules\Functions;
++
++use Ministan\Analyser\Scope;
++use Ministan\Rules\Rule;
++use Ministan\Rules\RuleError;
++use Ministan\Rules\RuleLevelHelper;
++use Ministan\Type\NullType;
++use PhpParser\Node;
++use PhpParser\Node\Stmt\Return_;
++
++/**
++ * `return` する式の型が、宣言された戻り値型に適合するか検査する。
++ *
++ * 現在いる関数／メソッドの戻り値型は {@see Scope::getFunctionReturnType()} が運ぶ
++ * （関数本体に入るとき {@see \Ministan\Analyser\NodeScopeResolver} が設定する）。
++ *
++ * @implements Rule<Return_>
++ */
++final class FunctionReturnTypeRule implements Rule
++{
++    public function __construct(
++        private readonly RuleLevelHelper $ruleLevelHelper,
++    ) {
++    }
++
++    public function getNodeType(): string
++    {
++        return Return_::class;
++    }
++
++    public function processNode(Node $node, Scope $scope): array
++    {
++        assert($node instanceof Return_);
++
++        $declared = $scope->getFunctionReturnType();
++        if ($declared === null) {
++            return []; // 関数の外（トップレベルの return 等）
++        }
++
++        $returned = $node->expr === null ? new NullType() : $scope->getType($node->expr);
++
++        if ($this->ruleLevelHelper->isAcceptable($declared, $returned)) {
++            return [];
++        }
++
++        return [new RuleError(
++            sprintf(
++                'Should return %s but returns %s.',
++                $declared->describe(),
++                $returned->describe(),
++            ),
++            $node->getStartLine(),
++        )];
++    }
++}
+diff --git a/dev/src/Rules/Methods/MethodCallParameterTypesRule.php b/dev/src/Rules/Methods/MethodCallParameterTypesRule.php
+new file mode 100644
+index 0000000..b5c46f5
+--- /dev/null
++++ b/dev/src/Rules/Methods/MethodCallParameterTypesRule.php
+@@ -0,0 +1,72 @@
++<?php
++
++declare(strict_types=1);
++
++namespace Ministan\Rules\Methods;
++
++use Ministan\Analyser\Scope;
++use Ministan\Reflection\ReflectionProviderStaticAccessor;
++use Ministan\Rules\ArgumentTypeChecker;
++use Ministan\Rules\Rule;
++use Ministan\Rules\RuleError;
++use Ministan\Type\ObjectType;
++use PhpParser\Node;
++use PhpParser\Node\Expr\MethodCall;
++use PhpParser\Node\Identifier;
++
++/**
++ * メソッド呼び出しの実引数の型を、宣言されたパラメータ型と照合する。
++ *
++ * @implements Rule<MethodCall>
++ */
++final class MethodCallParameterTypesRule implements Rule
++{
++    public function __construct(
++        private readonly ArgumentTypeChecker $checker,
++    ) {
++    }
++
++    public function getNodeType(): string
++    {
++        return MethodCall::class;
++    }
++
++    public function processNode(Node $node, Scope $scope): array
++    {
++        assert($node instanceof MethodCall);
++
++        if (!$node->name instanceof Identifier) {
++            return [];
++        }
++
++        $objectType = $scope->getType($node->var);
++        $provider = ReflectionProviderStaticAccessor::getInstanceOrNull();
++        if (!$objectType instanceof ObjectType || $provider === null || !$provider->hasClass($objectType->className)) {
++            return [];
++        }
++
++        $class = $provider->getClass($objectType->className);
++        if (!$class->hasMethod($node->name->toString())) {
++            return []; // 未定義メソッドは別ルールの担当
++        }
++
++        $method = $class->getMethod($node->name->toString());
++
++        $errors = [];
++        foreach ($this->checker->check($method->parameterTypes, $node->args, $scope) as [$position, $expected, $actual]) {
++            $errors[] = new RuleError(
++                sprintf(
++                    'Parameter #%d of method %s::%s() expects %s, %s given.',
++                    $position,
++                    $class->name,
++                    $method->name,
++                    $expected->describe(),
++                    $actual->describe(),
++                ),
++                $node->getStartLine(),
++            );
++        }
++
++        return $errors;
++    }
++}
+diff --git a/dev/src/Rules/RuleLevelHelper.php b/dev/src/Rules/RuleLevelHelper.php
+new file mode 100644
+index 0000000..28ad63c
+--- /dev/null
++++ b/dev/src/Rules/RuleLevelHelper.php
+@@ -0,0 +1,39 @@
++<?php
++
++declare(strict_types=1);
++
++namespace Ministan\Rules;
++
++use Ministan\TrinaryLogic;
++use Ministan\Type\Type;
++
++/**
++ * 「期待される型に、実際の型を入れてよいか」をレベルに応じて判定する。
++ *
++ * PHPStan の {@see \PHPStan\Rules\RuleLevelHelper} に対応する核心。鍵は三値:
++ * - Yes（確実に適合）→ 常に OK
++ * - No（確実に不適合）→ 常にエラー
++ * - Maybe（mixed 等で不確実）→ **高レベルでのみ**エラー
++ *
++ * これが「レベルを上げるほど厳しくなる」の正体。低レベルでは mixed を素通りさせ、
++ * 高レベルでは mixed の混入も咎める。non-rejecting の哲学がレベル軸に乗る。
++ */
++final readonly class RuleLevelHelper
++{
++    /** この閾値以上のレベルで「Maybe」を不適合として扱う。 */
++    private const int STRICT_LEVEL = 7;
++
++    public function __construct(
++        private int $level,
++    ) {
++    }
++
++    public function isAcceptable(Type $accepting, Type $accepted): bool
++    {
++        return match ($accepting->accepts($accepted)) {
++            TrinaryLogic::Yes => true,
++            TrinaryLogic::No => false,
++            TrinaryLogic::Maybe => $this->level < self::STRICT_LEVEL,
++        };
++    }
++}
+diff --git a/dev/src/Rules/RuleRegistryFactory.php b/dev/src/Rules/RuleRegistryFactory.php
+index 65ef14c..6655789 100644
+--- a/dev/src/Rules/RuleRegistryFactory.php
++++ b/dev/src/Rules/RuleRegistryFactory.php
+@@ -4,24 +4,53 @@ declare(strict_types=1);
+ 
+ namespace Ministan\Rules;
+ 
++use Ministan\Rules\Functions\FunctionCallParameterTypesRule;
++use Ministan\Rules\Functions\FunctionReturnTypeRule;
+ use Ministan\Rules\Functions\NoVarDumpRule;
+ use Ministan\Rules\Methods\CallToUndefinedMethodRule;
++use Ministan\Rules\Methods\MethodCallParameterTypesRule;
+ use Ministan\Rules\Variables\UndefinedVariableRule;
+ 
+ /**
+- * 既定のルール一式を組み立てる。
++ * レベルに応じたルール束を組み立てる。
+  *
+- * PHPStan では DI コンテナと neon 設定がこの役目を担うが、ここでは素朴な
+- * ファクトリで十分。Part 8 でレベル別のルール束へ発展させる。
++ * PHPStan では neon と DI がこの役目を担うが、ここでは素朴に「各ルールに最低レベルを
++ * 添えた表」を持ち、要求レベル以下のものを集める。レベルを上げるほどルールが増え、
++ * かつ {@see RuleLevelHelper} が型照合自体も厳しくする——二段構えで厳しさが増す。
+  */
+ final class RuleRegistryFactory
+ {
++    public const int MAX_LEVEL = 9;
++
++    public const int DEFAULT_LEVEL = 5;
++
+     public function create(): RuleRegistry
+     {
+-        return new RuleRegistry([
+-            new NoVarDumpRule(),
+-            new UndefinedVariableRule(),
+-            new CallToUndefinedMethodRule(),
+-        ]);
++        return $this->createForLevel(self::MAX_LEVEL);
++    }
++
++    public function createForLevel(int $level): RuleRegistry
++    {
++        $helper = new RuleLevelHelper($level);
++        $checker = new ArgumentTypeChecker($helper);
++
++        /** @var list<array{int, Rule<\PhpParser\Node>}> $leveled */
++        $leveled = [
++            [0, new NoVarDumpRule()],
++            [0, new CallToUndefinedMethodRule()],
++            [0, new UndefinedVariableRule()],
++            [5, new FunctionCallParameterTypesRule($checker)],
++            [5, new MethodCallParameterTypesRule($checker)],
++            [6, new FunctionReturnTypeRule($helper)],
++        ];
++
++        $active = [];
++        foreach ($leveled as [$ruleLevel, $rule]) {
++            if ($ruleLevel <= $level) {
++                $active[] = $rule;
++            }
++        }
++
++        return new RuleRegistry($active);
+     }
+ }
+diff --git a/dev/tests/RuleLevelTest.php b/dev/tests/RuleLevelTest.php
+new file mode 100644
+index 0000000..e72a0f2
+--- /dev/null
++++ b/dev/tests/RuleLevelTest.php
+@@ -0,0 +1,49 @@
++<?php
++
++declare(strict_types=1);
++
++namespace Ministan\Tests;
++
++use Ministan\Analyser\Analyser;
++use Ministan\Rules\RuleRegistryFactory;
++use PHPUnit\Framework\TestCase;
++
++final class RuleLevelTest extends TestCase
++{
++    /**
++     * @return list<string>
++     */
++    private function messagesFor(string $fixture, int $level): array
++    {
++        $registry = (new RuleRegistryFactory())->createForLevel($level);
++        $errors = (new Analyser($registry))->analyseFile(__DIR__ . '/fixtures/' . $fixture);
++
++        return array_map(static fn ($error): string => $error->message, $errors);
++    }
++
++    public function testArgumentMismatchIsReportedFromLevel5(): void
++    {
++        self::assertSame([], $this->messagesFor('argument-mismatch.php', 0));
++
++        $messages = $this->messagesFor('argument-mismatch.php', 5);
++        self::assertCount(1, $messages);
++        self::assertSame("Parameter #1 of function needs_int() expects int, 'hello' given.", $messages[0]);
++    }
++
++    public function testReturnMismatchIsReportedFromLevel6(): void
++    {
++        self::assertSame([], $this->messagesFor('return-mismatch.php', 5));
++
++        $messages = $this->messagesFor('return-mismatch.php', 6);
++        self::assertCount(1, $messages);
++        self::assertSame('Should return string but returns 42.', $messages[0]);
++    }
++
++    public function testHigherLevelIncludesLowerLevelRules(): void
++    {
++        // level 0 でも未定義メソッドは検出される。
++        $messages = $this->messagesFor('undefined-method.php', 0);
++
++        self::assertContains('Call to an undefined method Box::close().', $messages);
++    }
++}
+diff --git a/dev/tests/fixtures/argument-mismatch.php b/dev/tests/fixtures/argument-mismatch.php
+new file mode 100644
+index 0000000..173e97e
+--- /dev/null
++++ b/dev/tests/fixtures/argument-mismatch.php
+@@ -0,0 +1,10 @@
++<?php
++
++declare(strict_types=1);
++
++function needs_int(int $n): int
++{
++    return $n;
++}
++
++needs_int('hello');
+diff --git a/dev/tests/fixtures/return-mismatch.php b/dev/tests/fixtures/return-mismatch.php
+new file mode 100644
+index 0000000..b7a42f3
+--- /dev/null
++++ b/dev/tests/fixtures/return-mismatch.php
+@@ -0,0 +1,8 @@
++<?php
++
++declare(strict_types=1);
++
++function make_string(): string
++{
++    return 42;
++}
+diff --git a/examples/level.php b/examples/level.php
+new file mode 100644
+index 0000000..bfebd32
+--- /dev/null
++++ b/examples/level.php
+@@ -0,0 +1,18 @@
++<?php
++
++declare(strict_types=1);
++
++function needs_int(int $n): int
++{
++    return $n;
++}
++
++needs_int('hello'); // string を int パラメータに → 型不一致
++
++/**
++ * @return string
++ */
++function make_string(): string
++{
++    return 42; // 戻り値が宣言と不一致（level 6 以上で検出）
++}

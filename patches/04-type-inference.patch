@@ -1,0 +1,920 @@
+diff --git a/dev/src/Analyser/Analyser.php b/dev/src/Analyser/Analyser.php
+index 4c7ef57..07ae18e 100644
+--- a/dev/src/Analyser/Analyser.php
++++ b/dev/src/Analyser/Analyser.php
+@@ -6,6 +6,7 @@ namespace Ministan\Analyser;
+ 
+ use Ministan\Rules\RuleRegistry;
+ use PhpParser\Error as ParserError;
++use PhpParser\Node;
+ use PhpParser\ParserFactory;
+ 
+ /**
+@@ -13,7 +14,8 @@ use PhpParser\ParserFactory;
+  *
+  * Part 0: 構文エラーの翻訳。
+  * Part 1: パース済み AST にルール群を適用する。
+- * Part 2: スコープを伝播させながらルールを適用する（← イマココ）。
++ * Part 2: スコープを伝播させながらルールを適用する。
++ * Part 4: スコープが各式の型を推論する。ルール適用は走査へのコールバックとして渡す。
+  */
+ final class Analyser
+ {
+@@ -41,8 +43,19 @@ final class Analyser
+             return [new Error($e->getRawMessage(), $file, $e->getStartLine())];
+         }
+ 
+-        $resolver = new NodeScopeResolver($this->registry, $file);
++        $errors = [];
++        $resolver = new NodeScopeResolver(
++            function (Node $node, Scope $scope) use (&$errors, $file): void {
++                foreach ($this->registry->getRulesFor($node) as $rule) {
++                    foreach ($rule->processNode($node, $scope) as $ruleError) {
++                        $errors[] = new Error($ruleError->message, $file, $ruleError->line);
++                    }
++                }
++            },
++        );
+ 
+-        return $resolver->analyse($ast, Scope::createForFile());
++        $resolver->processNodes($ast, Scope::createForFile());
++
++        return $errors;
+     }
+ }
+diff --git a/dev/src/Analyser/NodeScopeResolver.php b/dev/src/Analyser/NodeScopeResolver.php
+index 3b83fa5..4241a9a 100644
+--- a/dev/src/Analyser/NodeScopeResolver.php
++++ b/dev/src/Analyser/NodeScopeResolver.php
+@@ -4,49 +4,48 @@ declare(strict_types=1);
+ 
+ namespace Ministan\Analyser;
+ 
+-use Ministan\Rules\RuleRegistry;
++use Closure;
++use Ministan\Type\BooleanType;
++use Ministan\Type\FloatType;
++use Ministan\Type\IntegerType;
++use Ministan\Type\MixedType;
++use Ministan\Type\NullType;
++use Ministan\Type\StringType;
++use Ministan\Type\Type;
+ use PhpParser\Node;
+ use PhpParser\Node\Expr;
+ use PhpParser\Node\Stmt;
+ 
+ /**
+- * AST を下りながら {@see Scope} を運び、各ノードでルールを適用する。
++ * AST を下りながら {@see Scope} を運び、各ノードで**コールバック**を呼ぶ。
+  *
+- * PHPStan の {@see \PHPStan\Analyser\NodeScopeResolver} に対応する核。
+- * Part 1 の RuleApplyingVisitor（ノードを訪れるだけ）を、ここで「スコープを
+- * 伝播させる再帰下降」へと育てた。
++ * PHPStan の {@see \PHPStan\Analyser\NodeScopeResolver} に対応する核。Part 2 では
++ * ルール適用を直接抱えていたが、Part 4 で「各ノードで (node, scope) を渡して呼ぶ」
++ * 汎用コールバックに一般化した。これにより、ルールを走らせる解析（{@see Analyser}）も、
++ * 推論型を覗く `annotate` も、同じ走査を再利用できる。
+  *
+- * 設計の要は「読み取り文脈と書き込み文脈を区別する」こと。`$x = 1` の左辺 `$x` は
+- * **定義**であって未定義チェックの対象ではない。`foreach (... as $v)` の `$v` も同様。
+- * そうした束縛構文だけを個別に捌き、それ以外は {@see processChildren()} で機械的に
+- * 子へ降りる。降りた先で出会う Variable は「読み取り」なのでルールに掛かる。
+- *
+- * 制御構文（if/while/for/try…）は専用処理を持たず、子を順に辿るだけにしている。
+- * 代入は前方へ伝播し、合流は {@see Scope::mergeWith()} の楽観的和集合になるため、
+- * 偽陽性を出さない。経路に敏感な精密化（「全経路で定義されたか」）は Part 5 で扱う。
++ * 走査の要は Part 2 と同じ「読み取り文脈と書き込み文脈の区別」。加えて Part 4 では、
++ * 代入のたびに右辺の型を {@see Scope::getType()} で推論し、変数に結びつける。
+  */
+ final class NodeScopeResolver
+ {
+-    /** @var list<Error> */
+-    private array $errors = [];
++    /** @var Closure(Node, Scope): void */
++    private Closure $nodeCallback;
+ 
+-    public function __construct(
+-        private readonly RuleRegistry $registry,
+-        private readonly string $file,
+-    ) {
++    /**
++     * @param callable(Node, Scope): void $nodeCallback
++     */
++    public function __construct(callable $nodeCallback)
++    {
++        $this->nodeCallback = Closure::fromCallable($nodeCallback);
+     }
+ 
+     /**
+      * @param Node[] $stmts
+-     *
+-     * @return list<Error>
+      */
+-    public function analyse(array $stmts, Scope $scope): array
++    public function processNodes(array $stmts, Scope $scope): void
+     {
+-        $this->errors = [];
+         $this->processStmts($stmts, $scope);
+-
+-        return $this->errors;
+     }
+ 
+     /**
+@@ -63,16 +62,14 @@ final class NodeScopeResolver
+ 
+     private function processNode(Node $node, Scope $scope): Scope
+     {
+-        $this->applyRules($node, $scope);
++        ($this->nodeCallback)($node, $scope);
+ 
+         return match (true) {
+-            // --- スコープ境界を作る構文 ---
+             $node instanceof Stmt\Function_,
+             $node instanceof Stmt\ClassMethod    => $this->processFunctionLike($node, $scope),
+             $node instanceof Expr\Closure        => $this->processClosure($node, $scope),
+             $node instanceof Expr\ArrowFunction  => $this->processArrowFunction($node, $scope),
+ 
+-            // --- 変数を束縛する構文 ---
+             $node instanceof Expr\Assign,
+             $node instanceof Expr\AssignRef      => $this->processAssign($node, $scope),
+             $node instanceof Expr\AssignOp       => $this->processAssignOp($node, $scope),
+@@ -81,16 +78,12 @@ final class NodeScopeResolver
+             $node instanceof Stmt\Global_        => $this->processGlobal($node, $scope),
+             $node instanceof Stmt\Static_        => $this->processStaticVars($node, $scope),
+ 
+-            // --- 未定義変数を許容する読み取り文脈 ---
+-            // isset($x) / empty($x) は未定義でも合法。中は未定義チェックしない。
+             $node instanceof Expr\Isset_,
+             $node instanceof Expr\Empty_         => $scope,
+             $node instanceof Expr\BinaryOp\Coalesce => $this->processCoalesce($node, $scope),
+ 
+-            // --- 変数そのもの（読み取り）。ルール適用済み、子はない ---
+             $node instanceof Expr\Variable       => $scope,
+ 
+-            // --- それ以外は子へ降り、スコープを順に伝播 ---
+             default => $this->processChildren($node, $scope),
+         };
+     }
+@@ -119,44 +112,36 @@ final class NodeScopeResolver
+         return $scope;
+     }
+ 
+-    // --- 代入 ---
++    // --- 代入: 右辺の型を推論して変数に結びつける ---
+ 
+     private function processAssign(Expr\Assign|Expr\AssignRef $node, Scope $scope): Scope
+     {
+-        // 右辺を先に解析する（右辺の変数は読み取りなので未定義チェックの対象）。
+         $scope = $this->processNode($node->expr, $scope);
++        $type = $scope->getType($node->expr);
+ 
+-        return $this->processAssignTarget($node->var, $scope);
++        return $this->processAssignTarget($node->var, $type, $scope);
+     }
+ 
+     private function processAssignOp(Expr\AssignOp $node, Scope $scope): Scope
+     {
+-        // 複合代入（+= など）の対象は読みも兼ねるが、ここでは定義として扱い
+-        // 偽陽性を避ける（厳密な「未定義への +=」検出は後の章へ）。
+         $scope = $this->processNode($node->expr, $scope);
+ 
+-        return $this->processAssignTarget($node->var, $scope);
++        // 複合代入（+= 等）の結果型は後章で精密化。ここでは mixed に縮退して安全側に。
++        return $this->processAssignTarget($node->var, new MixedType(), $scope);
+     }
+ 
+-    /**
+-     * 代入の**左辺**を処理し、束縛された変数をスコープに加える。
+-     * 左辺の Variable は「定義」なので未定義チェックには掛けない。
+-     */
+-    private function processAssignTarget(Expr $target, Scope $scope): Scope
++    private function processAssignTarget(Expr $target, Type $type, Scope $scope): Scope
+     {
+         return match (true) {
+             $target instanceof Expr\Variable => is_string($target->name)
+-                ? $scope->assignVariable($target->name)
++                ? $scope->assignVariable($target->name, $type)
+                 : $this->processNode($target, $scope),
+ 
+-            // 分割代入: [$a, $b] = ... / list($a, $b) = ...
+             $target instanceof Expr\List_,
+             $target instanceof Expr\Array_ => $this->processListAssign($target, $scope),
+ 
+-            // $arr[$i] = ... / $arr[] = ... : 添字は読み取り、根の変数は定義（自動生成）
+             $target instanceof Expr\ArrayDimFetch => $this->processArrayDimAssign($target, $scope),
+ 
+-            // $obj->p = ... / Foo::$p = ... : オブジェクト側は読み取り。新しい変数は生まれない
+             default => $this->processNode($target, $scope),
+         };
+     }
+@@ -165,14 +150,15 @@ final class NodeScopeResolver
+     {
+         foreach ($node->items as $item) {
+             if ($item === null) {
+-                continue; // [, $b] = ... の空き
++                continue;
+             }
+ 
+             if ($item->key !== null) {
+-                $scope = $this->processNode($item->key, $scope); // キーは読み取り
++                $scope = $this->processNode($item->key, $scope);
+             }
+ 
+-            $scope = $this->processAssignTarget($item->value, $scope);
++            // 分割代入の要素型はまだ追えない → mixed
++            $scope = $this->processAssignTarget($item->value, new MixedType(), $scope);
+         }
+ 
+         return $scope;
+@@ -181,27 +167,27 @@ final class NodeScopeResolver
+     private function processArrayDimAssign(Expr\ArrayDimFetch $node, Scope $scope): Scope
+     {
+         if ($node->dim !== null) {
+-            $scope = $this->processNode($node->dim, $scope); // 添字は読み取り
++            $scope = $this->processNode($node->dim, $scope);
+         }
+ 
+-        return $this->processAssignTarget($node->var, $scope); // 根を定義
++        // $arr[...] = ... で $arr は配列になるが、配列型は後章。ここでは mixed。
++        return $this->processAssignTarget($node->var, new MixedType(), $scope);
+     }
+ 
+     // --- ループ・例外・宣言 ---
+ 
+     private function processForeach(Stmt\Foreach_ $node, Scope $scope): Scope
+     {
+-        $scope = $this->processNode($node->expr, $scope); // 反復対象は読み取り
++        $scope = $this->processNode($node->expr, $scope);
+ 
+         $loopScope = $scope;
+         if ($node->keyVar !== null) {
+-            $loopScope = $this->processAssignTarget($node->keyVar, $loopScope);
++            $loopScope = $this->processAssignTarget($node->keyVar, new MixedType(), $loopScope);
+         }
+-        $loopScope = $this->processAssignTarget($node->valueVar, $loopScope);
++        $loopScope = $this->processAssignTarget($node->valueVar, new MixedType(), $loopScope);
+ 
+         $bodyScope = $this->processStmts($node->stmts, $loopScope);
+ 
+-        // ループは 0 回かもしれない。楽観的に合流して偽陽性を避ける（ループ変数は残る）。
+         return $scope->mergeWith($bodyScope);
+     }
+ 
+@@ -209,7 +195,8 @@ final class NodeScopeResolver
+     {
+         $catchScope = $scope;
+         if ($node->var !== null && is_string($node->var->name)) {
+-            $catchScope = $catchScope->assignVariable($node->var->name);
++            // 例外の型は ObjectType を持つ Part 6 で精密化。
++            $catchScope = $catchScope->assignVariable($node->var->name, new MixedType());
+         }
+ 
+         $bodyScope = $this->processStmts($node->stmts, $catchScope);
+@@ -221,7 +208,7 @@ final class NodeScopeResolver
+     {
+         foreach ($node->vars as $var) {
+             if ($var instanceof Expr\Variable && is_string($var->name)) {
+-                $scope = $scope->assignVariable($var->name);
++                $scope = $scope->assignVariable($var->name, new MixedType());
+             }
+         }
+ 
+@@ -232,7 +219,7 @@ final class NodeScopeResolver
+     {
+         foreach ($node->vars as $staticVar) {
+             if (is_string($staticVar->var->name)) {
+-                $scope = $scope->assignVariable($staticVar->var->name);
++                $scope = $scope->assignVariable($staticVar->var->name, new MixedType());
+             }
+         }
+ 
+@@ -241,16 +228,11 @@ final class NodeScopeResolver
+ 
+     private function processCoalesce(Expr\BinaryOp\Coalesce $node, Scope $scope): Scope
+     {
+-        // `$x ?? d` は左辺が未定義でも安全（短絡）。左辺は未定義チェックせず辿る。
+         $scope = $this->processSilently($node->left, $scope);
+ 
+         return $this->processNode($node->right, $scope);
+     }
+ 
+-    /**
+-     * スコープは伝播させつつ、配下の Variable 読み取りを未定義チェックに掛けない。
+-     * isset() 相当の寛容な文脈で使う。
+-     */
+     private function processSilently(Node $node, Scope $scope): Scope
+     {
+         if ($node instanceof Expr\Variable) {
+@@ -281,14 +263,14 @@ final class NodeScopeResolver
+         $inner = $this->bindParams($node->params, $inner);
+ 
+         if ($node instanceof Stmt\ClassMethod && !$node->isStatic()) {
+-            $inner = $inner->assignVariable('this');
++            $inner = $inner->assignVariable('this', new MixedType());
+         }
+ 
+-        if ($node->stmts !== null) { // 抽象メソッド・インターフェイスは null
++        if ($node->stmts !== null) {
+             $this->processStmts($node->stmts, $inner);
+         }
+ 
+-        return $outer; // 関数定義は外側の変数を増やさない
++        return $outer;
+     }
+ 
+     private function processClosure(Expr\Closure $node, Scope $outer): Scope
+@@ -297,22 +279,26 @@ final class NodeScopeResolver
+         $inner = $this->bindParams($node->params, $inner);
+ 
+         foreach ($node->uses as $use) {
+-            // 値渡しの use($x) は外側の読み取り。&付きは外側に変数を生む。
++            $name = is_string($use->var->name) ? $use->var->name : null;
++
+             if ($use->byRef) {
+-                if (is_string($use->var->name)) {
+-                    $outer = $outer->assignVariable($use->var->name);
++                if ($name !== null) {
++                    $outer = $outer->assignVariable($name, new MixedType());
+                 }
+             } else {
+-                $this->applyRules($use->var, $outer);
++                ($this->nodeCallback)($use->var, $outer); // 値渡し use は外側の読み取り
+             }
+ 
+-            if (is_string($use->var->name)) {
+-                $inner = $inner->assignVariable($use->var->name);
++            if ($name !== null) {
++                $inner = $inner->assignVariable(
++                    $name,
++                    $use->byRef ? new MixedType() : $outer->getVariableType($name),
++                );
+             }
+         }
+ 
+         if (!$node->static) {
+-            $inner = $inner->assignVariable('this');
++            $inner = $inner->assignVariable('this', new MixedType());
+         }
+ 
+         $this->processStmts($node->stmts, $inner);
+@@ -322,11 +308,10 @@ final class NodeScopeResolver
+ 
+     private function processArrowFunction(Expr\ArrowFunction $node, Scope $outer): Scope
+     {
+-        // アロー関数は外側を値で自動キャプチャする。
+-        $inner = $this->bindParams($node->params, $outer);
++        $inner = $this->bindParams($node->params, $outer); // 外側を値で自動キャプチャ
+ 
+         if (!$node->static) {
+-            $inner = $inner->assignVariable('this');
++            $inner = $inner->assignVariable('this', new MixedType());
+         }
+ 
+         $this->processNode($node->expr, $inner);
+@@ -340,22 +325,33 @@ final class NodeScopeResolver
+     private function bindParams(array $params, Scope $scope): Scope
+     {
+         foreach ($params as $param) {
+-            $this->applyRules($param, $scope);
++            ($this->nodeCallback)($param, $scope);
+ 
+             if ($param->var instanceof Expr\Variable && is_string($param->var->name)) {
+-                $scope = $scope->assignVariable($param->var->name);
++                $scope = $scope->assignVariable($param->var->name, $this->typeFromHint($param->type));
+             }
+         }
+ 
+         return $scope;
+     }
+ 
+-    private function applyRules(Node $node, Scope $scope): void
++    /**
++     * パラメータの型宣言を {@see Type} に写す最小版。クラス型・nullable・union は
++     * リフレクションと PHPDoc を扱う Part 6〜7 で精密化する。
++     */
++    private function typeFromHint(?Node $node): Type
+     {
+-        foreach ($this->registry->getRulesFor($node) as $rule) {
+-            foreach ($rule->processNode($node, $scope) as $ruleError) {
+-                $this->errors[] = new Error($ruleError->message, $this->file, $ruleError->line);
+-            }
++        if ($node instanceof Node\Identifier) {
++            return match ($node->toLowerString()) {
++                'int' => new IntegerType(),
++                'string' => new StringType(),
++                'float' => new FloatType(),
++                'bool' => new BooleanType(),
++                'null' => new NullType(),
++                default => new MixedType(),
++            };
+         }
++
++        return new MixedType();
+     }
+ }
+diff --git a/dev/src/Analyser/Scope.php b/dev/src/Analyser/Scope.php
+index e589c0b..23a0acf 100644
+--- a/dev/src/Analyser/Scope.php
++++ b/dev/src/Analyser/Scope.php
+@@ -4,38 +4,41 @@ declare(strict_types=1);
+ 
+ namespace Ministan\Analyser;
+ 
++use Ministan\Type\BooleanType;
++use Ministan\Type\Constant\ConstantBooleanType;
++use Ministan\Type\Constant\ConstantIntegerType;
++use Ministan\Type\Constant\ConstantStringType;
++use Ministan\Type\FloatType;
++use Ministan\Type\IntegerType;
++use Ministan\Type\MixedType;
++use Ministan\Type\NullType;
++use Ministan\Type\StringType;
++use Ministan\Type\Type;
++use PhpParser\Node\Expr;
++use PhpParser\Node\Scalar;
++
+ /**
+  * ある地点で「いま何が分かっているか」を表す不変オブジェクト。
+  *
+- * PHPStan の {@see \PHPStan\Analyser\Scope} に対応する。Part 2 では
+- * 「どの変数が定義済みか」だけを持つ。Part 3〜4 で、ここに変数→**型**の
+- * 対応が乗る。
+- *
+- * 不変なのが肝心。木を下りながら `assignVariable()` で**新しい** Scope を
+- * 作って渡すことで、分岐ごとに別の事実を持たせ、後から安全に合流できる。
++ * Part 2 では「変数が定義済みか」だけを持っていた。Part 4 でそれを **変数→型** の
++ * 対応へ育て、さらに {@see getType()} で任意の式の型を推論できるようにする。
++ * これが PHPStan の `Scope::getType()` に対応する、型推論の本体。
+  */
+ final readonly class Scope
+ {
+     /**
+-     * @param array<string, true> $variables 定義済み変数名の集合
++     * @param array<string, Type> $variableTypes 定義済み変数名 → その型
+      */
+     private function __construct(
+-        private array $variables,
++        private array $variableTypes,
+     ) {
+     }
+ 
+-    /**
+-     * ファイル直下（グローバル）スコープ。スーパーグローバルは常に定義済み。
+-     */
+     public static function createForFile(): self
+     {
+         return self::createForFunction();
+     }
+ 
+-    /**
+-     * 関数境界の新しいスコープ。外側のローカル変数は見えないが、
+-     * スーパーグローバルは関数内でも参照できる。
+-     */
+     public static function createForFunction(): self
+     {
+         $superglobals = [
+@@ -43,38 +46,141 @@ final readonly class Scope
+             '_COOKIE', '_SESSION', '_REQUEST', '_ENV',
+         ];
+ 
+-        $variables = [];
++        $variableTypes = [];
+         foreach ($superglobals as $name) {
+-            $variables[$name] = true;
++            $variableTypes[$name] = new MixedType();
+         }
+ 
+-        return new self($variables);
++        return new self($variableTypes);
+     }
+ 
+     public function hasVariable(string $name): bool
+     {
+-        return isset($this->variables[$name]);
++        return isset($this->variableTypes[$name]);
++    }
++
++    /**
++     * 変数の型。未定義なら mixed に縮退する（non-rejecting）。
++     */
++    public function getVariableType(string $name): Type
++    {
++        return $this->variableTypes[$name] ?? new MixedType();
+     }
+ 
+-    public function assignVariable(string $name): self
++    public function assignVariable(string $name, Type $type): self
+     {
+-        if (isset($this->variables[$name])) {
+-            return $this;
++        return new self([...$this->variableTypes, $name => $type]);
++    }
++
++    /**
++     * 2 つのスコープを合流する。両方で定義され型が食い違う変数は mixed に広げる
++     * （union 型はまだ無いため）。片方だけの変数は楽観的に残す（偽陽性を出さない）。
++     * 全経路で同じ型のときだけ型を保てる。精密な合流（union）は Part 5 で。
++     */
++    public function mergeWith(self $other): self
++    {
++        $merged = $this->variableTypes;
++        foreach ($other->variableTypes as $name => $type) {
++            if (!isset($merged[$name])) {
++                $merged[$name] = $type;
++            } elseif (!$merged[$name]->equals($type)) {
++                $merged[$name] = new MixedType();
++            }
+         }
+ 
+-        return new self([...$this->variables, $name => true]);
++        return new self($merged);
+     }
+ 
+     /**
+-     * 2 つのスコープを合流する。
++     * 式の型を推論する。型システムが初めて「動いて見える」場所。
+      *
+-     * Part 2 では「どちらかで定義されていれば定義済み」とする楽観的な和集合。
+-     * これにより条件分岐をまたいでも**偽陽性を出さない**（non-rejecting）。
+-     * PHPStan は「全経路で定義された場合のみ確定」とし、そうでなければ
+-     * 「未定義かもしれない」を別途報告する——その精密化は Part 5 で扱う。
++     * Part 4 ではリテラル・定数・変数参照・基本的な二項/単項演算を扱う。
++     * メソッド呼び出しや配列アクセスは、リフレクション（Part 6）以降で精密化する。
+      */
+-    public function mergeWith(self $other): self
++    public function getType(Expr $expr): Type
++    {
++        return match (true) {
++            // --- リテラル → 定数型 ---
++            $expr instanceof Scalar\Int_    => new ConstantIntegerType($expr->value),
++            $expr instanceof Scalar\String_ => new ConstantStringType($expr->value),
++            $expr instanceof Scalar\Float_  => new FloatType(), // 定数 float 型は後章
++
++            // --- true / false / null ---
++            $expr instanceof Expr\ConstFetch => $this->constFetchType($expr),
++
++            // --- 変数参照 ---
++            $expr instanceof Expr\Variable => is_string($expr->name)
++                ? $this->getVariableType($expr->name)
++                : new MixedType(),
++
++            // --- 文字列連結は常に string ---
++            $expr instanceof Expr\BinaryOp\Concat => new StringType(),
++
++            // --- 算術 ---
++            $expr instanceof Expr\BinaryOp\Plus,
++            $expr instanceof Expr\BinaryOp\Minus,
++            $expr instanceof Expr\BinaryOp\Mul => $this->arithmeticType($expr),
++
++            $expr instanceof Expr\UnaryMinus,
++            $expr instanceof Expr\UnaryPlus => $this->toNumeric($this->getType($expr->expr)),
++
++            // --- 比較・論理は常に bool ---
++            $expr instanceof Expr\BinaryOp\Identical,
++            $expr instanceof Expr\BinaryOp\NotIdentical,
++            $expr instanceof Expr\BinaryOp\Equal,
++            $expr instanceof Expr\BinaryOp\NotEqual,
++            $expr instanceof Expr\BinaryOp\Smaller,
++            $expr instanceof Expr\BinaryOp\SmallerOrEqual,
++            $expr instanceof Expr\BinaryOp\Greater,
++            $expr instanceof Expr\BinaryOp\GreaterOrEqual,
++            $expr instanceof Expr\BinaryOp\BooleanAnd,
++            $expr instanceof Expr\BinaryOp\BooleanOr,
++            $expr instanceof Expr\BooleanNot => new BooleanType(),
++
++            // --- 分からないものは mixed に縮退 ---
++            default => new MixedType(),
++        };
++    }
++
++    private function constFetchType(Expr\ConstFetch $expr): Type
++    {
++        return match ($expr->name->toLowerString()) {
++            'true' => new ConstantBooleanType(true),
++            'false' => new ConstantBooleanType(false),
++            'null' => new NullType(),
++            default => new MixedType(),
++        };
++    }
++
++    private function arithmeticType(Expr\BinaryOp $expr): Type
++    {
++        $left = $this->getType($expr->left);
++        $right = $this->getType($expr->right);
++
++        $int = new IntegerType();
++        if ($int->isSuperTypeOf($left)->yes() && $int->isSuperTypeOf($right)->yes()) {
++            return new IntegerType();
++        }
++
++        if ($this->isNumeric($left) && $this->isNumeric($right)) {
++            return new FloatType();
++        }
++
++        return new MixedType();
++    }
++
++    private function toNumeric(Type $type): Type
++    {
++        if ((new IntegerType())->isSuperTypeOf($type)->yes()) {
++            return new IntegerType();
++        }
++
++        return $this->isNumeric($type) ? new FloatType() : new MixedType();
++    }
++
++    private function isNumeric(Type $type): bool
+     {
+-        return new self($this->variables + $other->variables);
++        return (new IntegerType())->isSuperTypeOf($type)->yes()
++            || (new FloatType())->isSuperTypeOf($type)->yes();
+     }
+ }
+diff --git a/dev/src/Command/AnnotateCommand.php b/dev/src/Command/AnnotateCommand.php
+new file mode 100644
+index 0000000..72cbe00
+--- /dev/null
++++ b/dev/src/Command/AnnotateCommand.php
+@@ -0,0 +1,107 @@
++<?php
++
++declare(strict_types=1);
++
++namespace Ministan\Command;
++
++use Ministan\Analyser\NodeScopeResolver;
++use Ministan\Analyser\Scope;
++use PhpParser\Error as ParserError;
++use PhpParser\Node;
++use PhpParser\Node\Expr;
++use PhpParser\Node\Stmt;
++use PhpParser\ParserFactory;
++
++/**
++ * `ministan annotate <file>` の実装。
++ *
++ * 各代入・各 return について、推論された型を表示する。PHPStan には無いが、
++ * chibirigor の `annotate` に倣ったコマンド。型推論を「目で見える」ものにし、
++ * 解析器の頭の中を覗くデバッグ手段にもなる。
++ *
++ * 解析（ルール適用）と同じ {@see NodeScopeResolver} を、別のコールバックで再利用する。
++ */
++final class AnnotateCommand
++{
++    /**
++     * @param list<string> $args
++     */
++    public function run(array $args): int
++    {
++        if ($args === []) {
++            fwrite(STDERR, "Usage: ministan annotate <file>\n");
++
++            return 1;
++        }
++
++        $file = $args[0];
++        $code = @file_get_contents($file);
++        if ($code === false) {
++            fwrite(STDERR, sprintf("File \"%s\" was not found.\n", $file));
++
++            return 1;
++        }
++
++        $parser = (new ParserFactory())->createForNewestSupportedVersion();
++
++        try {
++            $ast = $parser->parse($code) ?? [];
++        } catch (ParserError $e) {
++            fwrite(STDERR, sprintf("%s on line %d\n", $e->getRawMessage(), $e->getStartLine()));
++
++            return 1;
++        }
++
++        /** @var list<array{int, string, string}> $rows */
++        $rows = [];
++        $resolver = new NodeScopeResolver(
++            static function (Node $node, Scope $scope) use (&$rows): void {
++                if ($node instanceof Expr\Assign
++                    && $node->var instanceof Expr\Variable
++                    && is_string($node->var->name)
++                ) {
++                    // コールバックは代入の処理前に呼ばれるので、右辺は現在のスコープで推論できる。
++                    $rows[] = [
++                        $node->getStartLine(),
++                        '$' . $node->var->name,
++                        $scope->getType($node->expr)->describe(),
++                    ];
++                } elseif ($node instanceof Stmt\Return_ && $node->expr !== null) {
++                    $rows[] = [
++                        $node->getStartLine(),
++                        'return',
++                        $scope->getType($node->expr)->describe(),
++                    ];
++                }
++            },
++        );
++
++        $resolver->processNodes($ast, Scope::createForFile());
++
++        echo $this->format($file, $rows);
++
++        return 0;
++    }
++
++    /**
++     * @param list<array{int, string, string}> $rows
++     */
++    private function format(string $file, array $rows): string
++    {
++        if ($rows === []) {
++            return sprintf("%s\n  (推論できる代入・return がありません)\n", $file);
++        }
++
++        $labelWidth = 0;
++        foreach ($rows as [, $label]) {
++            $labelWidth = max($labelWidth, strlen($label));
++        }
++
++        $out = $file . "\n";
++        foreach ($rows as [$line, $label, $type]) {
++            $out .= sprintf("  %4d  %-{$labelWidth}s : %s\n", $line, $label, $type);
++        }
++
++        return $out;
++    }
++}
+diff --git a/dev/src/Console/Application.php b/dev/src/Console/Application.php
+index 8288113..7d4f4cd 100644
+--- a/dev/src/Console/Application.php
++++ b/dev/src/Console/Application.php
+@@ -5,6 +5,7 @@ declare(strict_types=1);
+ namespace Ministan\Console;
+ 
+ use Ministan\Command\AnalyseCommand;
++use Ministan\Command\AnnotateCommand;
+ 
+ /**
+  * CLI のエントリポイント。サブコマンドを振り分けるだけの薄い層。
+@@ -23,6 +24,7 @@ final class Application
+ 
+         return match ($command) {
+             'analyse', 'analyze' => (new AnalyseCommand())->run($args),
++            'annotate' => (new AnnotateCommand())->run($args),
+             null, 'help', '--help', '-h' => $this->help(),
+             default => $this->unknown($command),
+         };
+@@ -34,7 +36,8 @@ final class Application
+             ministan {$this->versionLine()}
+ 
+             Usage:
+-              ministan analyse <file>   PHP ファイルを解析する
++              ministan analyse <file>    PHP ファイルを解析する
++              ministan annotate <file>   推論された型を表示する
+ 
+             TXT;
+ 
+diff --git a/dev/tests/Analyser/ScopeInferenceTest.php b/dev/tests/Analyser/ScopeInferenceTest.php
+new file mode 100644
+index 0000000..0aecf36
+--- /dev/null
++++ b/dev/tests/Analyser/ScopeInferenceTest.php
+@@ -0,0 +1,58 @@
++<?php
++
++declare(strict_types=1);
++
++namespace Ministan\Tests\Analyser;
++
++use Ministan\Analyser\Scope;
++use Ministan\Type\Constant\ConstantIntegerType;
++use PhpParser\Node\Expr\BinaryOp\Concat;
++use PhpParser\Node\Expr\BinaryOp\Plus;
++use PhpParser\Node\Expr\BinaryOp\Smaller;
++use PhpParser\Node\Expr\ConstFetch;
++use PhpParser\Node\Expr\UnaryMinus;
++use PhpParser\Node\Expr\Variable;
++use PhpParser\Node\Name;
++use PhpParser\Node\Scalar\Float_;
++use PhpParser\Node\Scalar\Int_;
++use PhpParser\Node\Scalar\String_;
++use PHPUnit\Framework\TestCase;
++
++final class ScopeInferenceTest extends TestCase
++{
++    public function testLiteralsBecomeConstantTypes(): void
++    {
++        $scope = Scope::createForFile();
++
++        self::assertSame('42', $scope->getType(new Int_(42))->describe());
++        self::assertSame("'foo'", $scope->getType(new String_('foo'))->describe());
++        self::assertSame('float', $scope->getType(new Float_(1.5))->describe());
++    }
++
++    public function testConstFetch(): void
++    {
++        $scope = Scope::createForFile();
++
++        self::assertSame('true', $scope->getType(new ConstFetch(new Name('true')))->describe());
++        self::assertSame('false', $scope->getType(new ConstFetch(new Name('false')))->describe());
++        self::assertSame('null', $scope->getType(new ConstFetch(new Name('null')))->describe());
++    }
++
++    public function testArithmeticAndConcatAndComparison(): void
++    {
++        $scope = Scope::createForFile();
++
++        self::assertSame('int', $scope->getType(new Plus(new Int_(1), new Int_(2)))->describe());
++        self::assertSame('string', $scope->getType(new Concat(new String_('a'), new String_('b')))->describe());
++        self::assertSame('bool', $scope->getType(new Smaller(new Int_(1), new Int_(2)))->describe());
++        self::assertSame('int', $scope->getType(new UnaryMinus(new Int_(5)))->describe());
++    }
++
++    public function testVariableLookupAndMixedFallback(): void
++    {
++        $scope = Scope::createForFile()->assignVariable('a', new ConstantIntegerType(42));
++
++        self::assertSame('42', $scope->getType(new Variable('a'))->describe());
++        self::assertSame('mixed', $scope->getType(new Variable('unknown'))->describe());
++    }
++}
+diff --git a/dev/tests/Command/AnnotateCommandTest.php b/dev/tests/Command/AnnotateCommandTest.php
+new file mode 100644
+index 0000000..12d2855
+--- /dev/null
++++ b/dev/tests/Command/AnnotateCommandTest.php
+@@ -0,0 +1,30 @@
++<?php
++
++declare(strict_types=1);
++
++namespace Ministan\Tests\Command;
++
++use Ministan\Command\AnnotateCommand;
++use PHPUnit\Framework\TestCase;
++
++final class AnnotateCommandTest extends TestCase
++{
++    public function testAnnotatesInferredTypes(): void
++    {
++        ob_start();
++        $exitCode = (new AnnotateCommand())->run([__DIR__ . '/../fixtures/annotate.php']);
++        $output = ob_get_clean();
++
++        self::assertSame(0, $exitCode);
++
++        // 定数畳み込みはしないので $a = 42 は 42、$b = $a + 1 は int。
++        self::assertMatchesRegularExpression('/\$a\s+:\s+42$/m', $output);
++        self::assertMatchesRegularExpression('/\$b\s+:\s+int$/m', $output);
++        self::assertMatchesRegularExpression("/\\\$c\s+:\s+'hello'$/m", $output);
++        self::assertMatchesRegularExpression('/\$d\s+:\s+string$/m', $output);
++        self::assertMatchesRegularExpression('/\$e\s+:\s+bool$/m', $output);
++        // 関数内: $text は string、return も string。
++        self::assertMatchesRegularExpression('/\$text\s+:\s+string$/m', $output);
++        self::assertMatchesRegularExpression('/return\s+:\s+string$/m', $output);
++    }
++}
+diff --git a/dev/tests/fixtures/annotate.php b/dev/tests/fixtures/annotate.php
+new file mode 100644
+index 0000000..f14a607
+--- /dev/null
++++ b/dev/tests/fixtures/annotate.php
+@@ -0,0 +1,16 @@
++<?php
++
++declare(strict_types=1);
++
++$a = 42;
++$b = $a + 1;
++$c = 'hello';
++$d = $c . ' world';
++$e = $a < $b;
++
++function label(int $n): string
++{
++    $text = 'n=' . $n;
++
++    return $text;
++}
+diff --git a/examples/types.php b/examples/types.php
+new file mode 100644
+index 0000000..be24cec
+--- /dev/null
++++ b/examples/types.php
+@@ -0,0 +1,17 @@
++<?php
++
++declare(strict_types=1);
++
++$a = 42;
++$b = $a + 1;
++$c = 'hello';
++$d = $c . ' world';
++$e = $a < $b;
++$f = -$a;
++
++function label(int $n): string
++{
++    $text = 'n=' . $n;
++
++    return $text;
++}
