@@ -73,6 +73,51 @@ $ ./bin/ministan analyse examples/with-var-dump.php
 | S6 | パフォーマンス | 結果キャッシュ |
 | S7 | 推論と検査の精度向上 | match 式結果型・union 部分型吸収・ループ型ワイドニング・名前付き引数照合 |
 
-## ライセンス
+## License
 
-MIT
+This repository contains two kinds of material, each covered by its own
+copyright and license.
+
+### Prose and figures
+
+The book text, figures, and other documentation under `book/ja/`.
+
+Copyright © 2026 USAMI Kenta. Licensed under
+[Creative Commons Attribution-ShareAlike 4.0 International (CC BY-SA 4.0)](https://creativecommons.org/licenses/by-sa/4.0/);
+see [`LICENSE`](LICENSE) for the full text.
+
+[![CC BY-SA 4.0](cc-by-sa.svg)](https://creativecommons.org/licenses/by-sa/4.0/)
+
+> php-ministan © 2026 USAMI Kenta is licensed under [CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/).
+
+### Source code
+
+The code under `dev/`, `impls/`, and `examples/` is a derivative work of
+[phpstan/phpstan](https://github.com/phpstan/phpstan) and
+[phpstan/phpstan-src](https://github.com/phpstan/phpstan-src), distributed
+under their original MIT License:
+
+```
+MIT License
+
+Copyright (c) 2016 Ondřej Mirtes
+Copyright (c) 2025 PHPStan s.r.o.
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+```
