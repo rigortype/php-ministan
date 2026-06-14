@@ -35,6 +35,11 @@ public function getOffsetValueType(Type $offset): Type
   <img src="../figures/s2-array-shape.svg" alt="constant array shape: キーごとに値型を保持し、$row['id'] を定数 42 にピンポイント解決する。一般の配列型では int 止まり">
 </picture>
 
+> 参考書メモ：キーごとに型を持つこの形は、型理論の **レコード型**（TAPL 11 章 §11.8）そのもの。
+> レコードどうしの相性（部分型）は2つの規則 —— **幅**（余分なキーがあってもよい）と **深さ**（各キーの
+> 値型が部分型なら全体も部分型）で測ります（TAPL 15.2）。`array{id: 42}` が `array{id: int}` に
+> 収まるのは「深さ」の部分型です。`accepts` がキー／値を再帰で比べるのは、この考え方をなぞっています。
+
 ## 配列リテラルを推論する
 
 `Scope::getType()` に配列リテラルを足します。キーがすべて定数なら shape、そうでなければ
