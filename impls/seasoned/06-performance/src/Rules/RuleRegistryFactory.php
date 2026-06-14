@@ -41,7 +41,7 @@ final class RuleRegistryFactory
         $leveled = [
             [0, new NoVarDumpRule()],
             [0, new CallToUndefinedMethodRule()],
-            [1, new UndefinedVariableRule()],
+            [0, new UndefinedVariableRule()],
             [5, new FunctionCallParameterTypesRule($checker)],
             [5, new MethodCallParameterTypesRule($checker)],
             [6, new FunctionReturnTypeRule($helper)],

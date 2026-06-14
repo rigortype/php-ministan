@@ -46,14 +46,15 @@ final class UnionType implements Type
 
     public function isSuperTypeOf(Type $type): TrinaryLogic
     {
-        // 相手が union なら、その全メンバを部分型に持つ必要がある（AND）。
+        // 相手が union なら、各メンバとの関係を集めて extreme-identity で畳む
+        // （全 Yes→Yes・全 No→No・混在は部分一致で Maybe）。
         if ($type instanceof UnionType) {
-            $result = TrinaryLogic::Yes;
+            $results = [];
             foreach ($type->types as $member) {
-                $result = $result->and($this->isSuperTypeOf($member));
+                $results[] = $this->isSuperTypeOf($member);
             }
 
-            return $result;
+            return TrinaryLogic::extremeIdentity($results);
         }
 
         // 単型なら、どれか 1 つのメンバが受け入れればよい（OR）。
@@ -68,12 +69,12 @@ final class UnionType implements Type
     public function accepts(Type $type): TrinaryLogic
     {
         if ($type instanceof UnionType) {
-            $result = TrinaryLogic::Yes;
+            $results = [];
             foreach ($type->types as $member) {
-                $result = $result->and($this->accepts($member));
+                $results[] = $this->accepts($member);
             }
 
-            return $result;
+            return TrinaryLogic::extremeIdentity($results);
         }
 
         $result = TrinaryLogic::No;
