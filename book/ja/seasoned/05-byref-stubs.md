@@ -53,6 +53,11 @@ $ dev/bin/ministan analyse examples/seasoned/byref-stubs.php
 **スタブ**（PHPDoc 付きの宣言をパースする `.stub` 系のファイル）でこれを補います —— この
 PHPDoc スタブを広めたのは Psalm（`.phpstub`）です。ministan も同じ手を使います。
 
+> 参考書メモ：スタブは、自分で型注釈を書けないコード（組み込み関数・vendor）に**外から**型を
+> あてがう仕組み。Ruby の **RBS**（`.rbs`）、TypeScript の **`.d.ts`** と同じ役回りで、「型を本体と
+> 別ファイルに宣言する」発想です（Part 7 で触れた「型をどこに書くか」の一形態）。型理論の中心からは
+> 外れますが、現実の言語を相手にする検査器には欠かせません。
+
 [`stubs/core.php`](../../../impls/seasoned/05-byref-stubs/stubs/core.php) は**実行されません**。シグネチャを読むためだけに
 **パース**されます:
 
