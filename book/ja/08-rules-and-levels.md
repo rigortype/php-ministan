@@ -86,7 +86,7 @@ $this->processNode($node->right, $rightScope);
 $leveled = [
     [0, new NoVarDumpRule()],
     [0, new CallToUndefinedMethodRule()],
-    [1, new UndefinedVariableRule()],
+    [0, new UndefinedVariableRule()],
     [5, new FunctionCallParameterTypesRule($checker)],
     [5, new MethodCallParameterTypesRule($checker)],
     [6, new FunctionReturnTypeRule($helper)],
@@ -95,6 +95,10 @@ $leveled = [
 
 厳しさは **二段構え** で増します —— レベルを上げるほど (1) ルールが増え、(2)
 `RuleLevelHelper` が `mixed` にも厳しくなる。
+
+> レベル番号は最小核向けの素朴化です。たとえば未定義メソッドの検査は、実 PHPStan では
+> `$this->` 限定が level 0・**全式**が level 2 と分かれますが、ministan は 1 つのルールで
+> 全式を level 0 から見ます（検出内容は変わりません）。
 
 ## 動かす
 
