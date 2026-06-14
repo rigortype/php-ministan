@@ -2,7 +2,7 @@
 
 > ＊この章のコードはスナップショット [`impls/05-narrowing`](../../impls/05-narrowing) にあります（この章の到達点は `git tag part-05`）。
 
-> 参考書（任意）：無タグの **合併型** は『しくみ』が*あえて避け*、TAPL も 11 章 §11.10 の*タグ付き*バリアントしか持たない領域。**絞り込み**（occurrence／flow typing）も両書の外 —— 動的言語の検査器ならではの地形です。
+> 参考書（任意）：無タグの **ユニオン型** は『しくみ』が*あえて避け*、TAPL も 11 章 §11.10 の*タグ付き*バリアントしか持たない領域。**絞り込み**（occurrence／flow typing）も両書の外 —— 動的言語の検査器ならではの地形です。
 
 Part 4 で式の型を推論できるようになりました。でも実際のコードは条件で枝分かれします。
 
@@ -20,9 +20,9 @@ function f(int|null $x): int
 いるべきです。これを実現するのが本章の主役、**型の絞り込み（narrowing）** と、その器で
 ある **`UnionType`** です。
 
-## まず合併型 —— `UnionType`
+## まずユニオン型 —— `UnionType`
 
-「int または string」を表す型が要ります（[`UnionType`](../../impls/05-narrowing/src/Type/UnionType.php)）。
+「int または string」を表す **ユニオン型**（union type、合併型とも）が要ります（[`UnionType`](../../impls/05-narrowing/src/Type/UnionType.php)）。
 部分型判定は素直で、相手が単型なら **どれか 1 つのメンバーが受ければよい（OR）**:
 
 ```php
@@ -33,7 +33,7 @@ foreach ($this->types as $member) {
 return $result; // int|string ⊇ 42 は Yes（int が受ける）
 ```
 
-合併の **生成** は型クラスではなく [`TypeCombinator`](../../impls/05-narrowing/src/Type/TypeCombinator.php)
+ユニオン型の **生成** は型クラスではなく [`TypeCombinator`](../../impls/05-narrowing/src/Type/TypeCombinator.php)
 に集約します。正規化—フラット化・`never` 除去・`mixed` 吸収・重複除去・1 個なら単型—は
 横断的な操作で、各型に持たせるべきではないからです:
 

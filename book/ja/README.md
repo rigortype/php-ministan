@@ -46,7 +46,7 @@
   （オーム社。原著 *Types and Programming Languages*）。型理論の共通の参照先。
 
 本書の **non-rejecting** は、健全性（TAPL 8 章 §8.3）をあえて崩してでも偽陽性を避ける
-**gradual typing**（Siek & Taha 2006）寄りの立場 —— 詳しくは関連章のメモで。
+**漸進的型付け**（gradual typing、Siek & Taha 2006）寄りの立場 —— 詳しくは関連章のメモで。
 
 ## 設計哲学 —— non-rejecting
 

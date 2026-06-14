@@ -16,7 +16,7 @@
 | **`mixed` / `never`** | `mixed`＝最上位（すべての値・「分からない」の縮退先）。`never`＝最下位（空集合）。型の束の両端。 | [Part 3](03-type-system.md) |
 | **定数型（constant type）** | `42`・`'foo'`・`true` のような単一の値の型。`$x = 42` の直後の型は `int` ではなく `42`。推論の切れ味の源。 | [Part 3](03-type-system.md) |
 | **型推論（`Scope::getType`）** | 式の構造から型をボトムアップで組み立てる営み。`annotate` で覗ける。大域推論ではなく、宣言と式からの伝播＋局所絞り込み。 | [Part 4](04-type-inference.md) |
-| **`UnionType`（union 型）** | 「いずれかの型」`int\|string`。絞り込みの合流で生まれる。生成・正規化は `TypeCombinator` が担う。 | [Part 5](05-narrowing.md) |
+| **`UnionType`（ユニオン型）** | 「いずれかの型」`int\|string`。絞り込みの合流で生まれる。生成・正規化は `TypeCombinator` が担う。 | [Part 5](05-narrowing.md) |
 | **絞り込み（narrowing）／`TypeSpecifier`** | 条件が分岐ごとに型を狭めること。`instanceof`／`is_*`／`=== null`／`isset` から、真・偽それぞれの `Scope` を導く。 | [Part 5](05-narrowing.md) |
 | **リフレクション（`ReflectionProvider`）** | クラス・メソッド・関数のシグネチャを引く窓口。対象コードの宣言＋ネイティブの二段構え。`ObjectType` の継承判定や戻り値推論に使う。 | [Part 6](06-reflection.md) |
 | **PHPDoc** | `@param`／`@return`／`@var`／`@template` などのコメント注釈。ネイティブ宣言より精密な型を書ける（実行時には消える＝解析器が意味を与える）。 | [Part 7](07-phpdoc.md) |

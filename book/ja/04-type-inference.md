@@ -157,4 +157,4 @@ examples/types.php
 
 次の Part 5 では、型を **絞り込み**ます。`if ($x instanceof Foo)` や `is_int($x)`、
 `$x === null` といった条件が、分岐の中で `$x` の型をどう狭めるか。`UnionType` を導入し、
-`Scope::mergeWith()` を「mixed への退避」から正しい合併へと精密化します。
+`Scope::mergeWith()` を「mixed への退避」から正しい合流へと精密化します。
