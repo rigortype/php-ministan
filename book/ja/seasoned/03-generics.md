@@ -2,6 +2,8 @@
 
 > ＊この章のコードはスナップショット [`impls/seasoned/03-generics`](../../../impls/seasoned/03-generics) にあります（この章の到達点は `git tag seasoned-03`）。
 
+> 参考書（任意）：TAPL 22 章「型再構築」・23 章「全称型（System F）」（有界量化は 26 章）／『しくみ』9 章「ジェネリクス」。`@template T` は全称型 `∀T`、型引数の置換は **型代入** です。
+
 PHP には言語レベルのジェネリクスがありませんが、PHPDoc の `@template` で表現します。
 これを解析できるかどうかが、現代の PHP 静的解析の分かれ目です（この `@template` は Hack の
 ジェネリクスに源流を持ち、PHP では Psalm が先駆けました）。

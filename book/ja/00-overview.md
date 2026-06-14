@@ -2,6 +2,8 @@
 
 > ＊この章のコードは [`impls/00-hello`](../../impls/00-hello) にあります（ライブツリー `dev/` を `git tag part-00` 時点で切り出したスナップショット）。
 
+> 参考書（任意）：本書の **non-rejecting**（働くコードを弾かない）は、健全性（TAPL 8 章 §8.3＝進行＋保存）をあえて崩す **gradual typing**（Siek & Taha 2006）寄りの立場です —— 『しくみ』「おわりに」が次のフロンティアとして挙げる領域。
+
 ## このチュートリアルが作るもの
 
 私たちは [PHPStan](https://github.com/phpstan/phpstan) のエッセンスを蒸留した、
