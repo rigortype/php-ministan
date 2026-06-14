@@ -29,7 +29,7 @@ trait SimpleTypeTrait
      * 全型に共通する相手との関係:
      * - never はあらゆる型の部分型（= Yes）
      * - mixed はどの型でもありうる（= Maybe）
-     * - union は「全メンバを部分型に持つか」の AND
+     * - union は各メンバとの関係の extreme-identity（全 Yes→Yes・全 No→No・混在→Maybe）
      *
      * いずれでもなければ null を返し、呼び出し側の固有判定に委ねる。
      */
@@ -44,12 +44,14 @@ trait SimpleTypeTrait
         }
 
         if ($type instanceof UnionType) {
-            $result = TrinaryLogic::Yes;
+            // 部分一致（一部メンバだけ適合）は No に潰さず Maybe にする。さもないと
+            // union の一部不適合を低レベルで誤検出してしまう（高レベルでのみ咎める）。
+            $results = [];
             foreach ($type->getTypes() as $member) {
-                $result = $result->and($this->isSuperTypeOf($member));
+                $results[] = $this->isSuperTypeOf($member);
             }
 
-            return $result;
+            return TrinaryLogic::extremeIdentity($results);
         }
 
         return null;

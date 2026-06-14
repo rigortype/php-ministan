@@ -63,6 +63,28 @@ enum TrinaryLogic
         };
     }
 
+    /**
+     * 全 operand が一致すればその値、1 つでも異なれば Maybe。
+     *
+     * union との関係に使う —— ある型が union の「全メンバに対して Yes」なら Yes、
+     * 「全メンバに対して No」なら No、混在すれば部分一致なので Maybe。`and`（min）で
+     * 畳むと部分一致が No に潰れ、union の一部不適合を低レベルで誤検出してしまう。
+     * PHPStan の {@see \PHPStan\TrinaryLogic::extremeIdentity} に対応。
+     *
+     * @param non-empty-list<self> $operands
+     */
+    public static function extremeIdentity(array $operands): self
+    {
+        $first = $operands[0];
+        foreach ($operands as $operand) {
+            if ($operand !== $first) {
+                return self::Maybe;
+            }
+        }
+
+        return $first;
+    }
+
     public function describe(): string
     {
         return match ($this) {
