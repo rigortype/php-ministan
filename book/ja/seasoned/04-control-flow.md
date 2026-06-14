@@ -98,7 +98,7 @@ $ dev/bin/ministan annotate examples/seasoned/narrowing.php
 - **終わる枝（return/throw）を合流から外す**ことで、早期 return の後の絞り込みが効く
 - `assert()` は文そのものが以降のスコープを狭める
 - `match` の腕を条件で絞り込み、S2 の宿題を回収した
-- いずれも S5 の `TypeSpecifier` 部品の組み合わせ —— 小さな部品が複雑な制御フローを支える
+- いずれも Part 5 の `TypeSpecifier` 部品の組み合わせ —— 小さな部品が複雑な制御フローを支える
 
 > 簡略化: ループの不動点解析（ループ本体を安定するまで再解析）と `match` **式の結果型**
 > 推論は見送り。前者は到達不能解析、後者は腕ごとの絞り込み込みの評価が要ります。

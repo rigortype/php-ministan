@@ -136,7 +136,7 @@ public function processNode(Node $node, Scope $scope): array
 
 - **スーパーグローバル**（`$_GET` など）は最初から定義済みとして種をまく
 - **`isset($x)` / `empty($x)` / `$x ?? d`** の内側は未定義チェックしない（未定義でも合法だから）
-- **分岐の合流は楽観的な和集合**（[`Scope::mergeWith()`](../../impls/02-scope/src/Analyser/Scope.php)）。
+- **分岐の合流は楽観的和集合**（[`Scope::mergeWith()`](../../impls/02-scope/src/Analyser/Scope.php)）。
   「どれかの経路で定義されていれば定義済み」とみなす:
 
   ```php

@@ -34,7 +34,7 @@ return $result; // int|string ⊇ 42 は Yes（int が受ける）
 ```
 
 ユニオン型の **生成** は型クラスではなく [`TypeCombinator`](../../impls/05-narrowing/src/Type/TypeCombinator.php)
-に集約します。正規化—フラット化・`never` 除去・`mixed` 吸収・重複除去・1 個なら単型—は
+に集約します。正規化 —— フラット化・`never` 除去・`mixed` 吸収・重複除去・1 個なら単型 —— は
 横断的な操作で、各型に持たせるべきではないからです:
 
 ```php
