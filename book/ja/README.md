@@ -40,9 +40,9 @@
 **どちらも必読ではありません** —— 本書だけで完結しますし、型理論を前提にしたくないので
 本筋には混ぜていません:
 
-- **『しくみ』** … 遠藤侑介『型システムのしくみ —— TypeScript で実装しながら学ぶ型と
-  プログラミング言語』（ラムダノート）。本書と同じ「作りながら学ぶ型チェッカー本」の別言語版。
-- **TAPL** … Benjamin C. Pierce『型システム入門 —— プログラミング言語と型の理論』
+- **『しくみ』** … 遠藤侑介[『型システムのしくみ —— TypeScript で実装しながら学ぶ型と
+  プログラミング言語』](https://www.lambdanote.com/products/type-systems)（ラムダノート）。本書と同じ「作りながら学ぶ型チェッカー本」の別言語版。
+- **『TAPL』** … Benjamin C. Pierce[『型システム入門 —— プログラミング言語と型の理論』](https://tatsu-zine.com/books/types-and-programming-languages-ja)
   （オーム社。原著 *Types and Programming Languages*）。型理論の共通の参照先。
 
 本書の **non-rejecting** は、健全性（TAPL 8 章 §8.3）をあえて崩してでも偽陽性を避ける
@@ -107,7 +107,6 @@ $ ./bin/ministan analyse examples/with-var-dump.php
 ```
 
 先の章まで含む最終形を見たいときは、全章を育てきったライブツリー [`dev/`](../../dev) を。
-スナップショットの生成方法など制作の裏側は、[WORKFLOW.md](../../WORKFLOW.md) に。
 
 ## その先 —— 本物の PHPStan へ
 
