@@ -57,6 +57,11 @@ public function resolve(Type $type): Type
 }
 ```
 
+> 参考書メモ：『しくみ』9 章はこの `subst` の*罠* —— 型変数の **捕獲（variable capture）** を `poly_bug.ts`
+> で炙り出し、`freshTypeAbs`（α 変換）で直すのが山場でした。ministan の型変数は PHPDoc の `@template`
+> 由来でクラス・関数ごとに名前が分かれ、ネストした型抽象に晒されにくいので、捕獲の露出面はずっと
+> 小さい —— 思想は同じ α 変換です。TAPL 23 章が System F の代入と α 変換の理論を与えます。
+
 ## `@template` を読む
 
 [`PhpDocTypeResolver`](../../../impls/seasoned/03-generics/src/Reflection/PhpDocTypeResolver.php) に型変数の概念を
