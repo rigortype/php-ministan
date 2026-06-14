@@ -81,7 +81,7 @@ $falsy  = $scope->assignVariable($name, TypeCombinator::remove($current, $narrow
 だけ。小さな部品の組み合わせで複雑な条件に対応できます。
 
 > 参考書メモ：条件のかたちに沿って型を狭めるこの操作は、型理論では **occurrence typing**
-> （フロー依存型付け）と呼ばれ、Typed Racket の Tobin-Hochstadt & Felleisen（2008）が起点です。
+> （フロー依存型付け）と呼ばれる研究領域です。
 > TAPL も『しくみ』も式に静的な型を一度つける枠組みで、「同じ変数が場所によって型を変える」この
 > 地形は扱いません —— 動的言語を相手にする検査器ならではの領域です。
 
