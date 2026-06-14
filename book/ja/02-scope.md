@@ -56,6 +56,10 @@ final readonly class Scope
 持たせ、合流時に意図どおり混ぜられます。Part 0 で `Error` を `readonly` にしたのも、
 この設計に揃えるための地ならしでした。
 
+> 参考書メモ：『しくみ』3・4 章は型環境を `tyEnv` と呼び、束縛を足すとき破壊せず
+> `{ ...tyEnv, x: 型 }` と**コピー**して引き回しました。不変 `Scope`（`assignVariable` が新しい
+> `Scope` を返す）はそれと同じ作法です —— 枝ごとに別の環境を安全に持てるのが狙い（型が乗るのは Part 3）。
+
 > Part 2 の `Scope` は「定義済みか否か」だけを持ちます。Part 3 で各変数に**型**が
 > 結びつき、`hasVariable()` は `getType()` へと育ちます。
 

@@ -54,6 +54,10 @@ public function hasClass(string $name): bool
 仕事で、php-parser の型ノードと PHP ネイティブの `ReflectionType` の両方を扱います
 （`?Foo` → `Foo|null` など、Part 5 の `UnionType` がここで効きます）。
 
+> 参考書メモ：『しくみ』3 章（TAPL 9 章）は関数の型を `{ params, retType }` というデータで持ちました。
+> `MethodReflection`／`FunctionReflection` も同じく「引数の型ならび ＋ 戻りの型」を束ねたもの —— ただし
+> メソッドごとに、ソースやネイティブのリフレクションから引いてくる点が違います。
+
 ## 型オブジェクトはどう provider を引くか —— 静的アクセサという継ぎ目
 
 `ObjectType` は推論のあちこちで生成されるので、provider を引数で持ち回せません。
