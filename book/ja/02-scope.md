@@ -4,7 +4,7 @@
 
 > 参考書（任意）：『しくみ』3・4 章の **型環境（tyenv）**／TAPL 9・11 章。`Scope` は「変数 → そこで分かっていること」の対応で、Part 3 で型が乗ると型理論の型環境そのものになります。
 
-Part 1 のルールは AST の形だけを見ていました。本章で初めて **文脈** が登場します。
+Part 1 のルールは AST の形だけを見ていました。本章で初めて **コンテキスト**（文脈）が登場します。
 「この地点で、いったい何が分かっているのか？」を運ぶ器 —— **`Scope`** です。
 題材は、PHPStan level 0 の看板である **未定義変数の検出** です。
 
@@ -69,7 +69,7 @@ Part 1 の `RuleApplyingVisitor`（ただノードを訪れるだけ）を捨て
 **再帰下降**に置き換えます（[`NodeScopeResolver`](../../impls/02-scope/src/Analyser/NodeScopeResolver.php)）。
 これは PHPStan の `NodeScopeResolver` に対応する、本シリーズの背骨です。
 
-設計の核心はただ一つ —— **読み取り文脈と書き込み文脈を区別する**こと。
+設計の核心はただ一つ —— **読み取りコンテキストと書き込みコンテキストを区別する**こと。
 
 ```php
 private function processNode(Node $node, Scope $scope): Scope
@@ -112,7 +112,7 @@ private function processAssign(Expr\Assign $node, Scope $scope): Scope
 
 ## ルールは走査を知らない
 
-未定義検出は、文脈を一切持たない素朴なルールです
+未定義検出は、コンテキストを一切持たない素朴なルールです
 （[`UndefinedVariableRule`](../../impls/02-scope/src/Rules/Variables/UndefinedVariableRule.php)）:
 
 ```php
@@ -178,7 +178,7 @@ $ for f in $(find dev/src -name '*.php'); do dev/bin/ministan analyse "$f"; done
 
 - `Scope` は「その地点で分かっていること」を運ぶ **不変** オブジェクト
 - `NodeScopeResolver` が木を下りながらスコープを伝播させる —— 鍵は
-  **読み取り文脈と書き込み文脈の区別**
+  **読み取りコンテキストと書き込みコンテキストの区別**
 - ルールは走査を知らず、渡された地点と `Scope` だけで判断する（関心の分離）
 - 合流は楽観的和集合で **偽陽性を出さない**。精密化は後の章へ
 

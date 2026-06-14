@@ -9,7 +9,7 @@
 | **AST（抽象構文木）** | ソースコードを「文字列」ではなく木構造として表したもの。`nikic/php-parser` が作る。解析はこの木に対して行う。 | [Part 1](01-php-parser.md) |
 | **`Rule`（ルール）** | 1 種類の AST ノードを検査し、問題があれば報告する検査器。`getNodeType()`（どのノードか）と `processNode()`（何を報告するか）の 2 つ。 | [Part 1](01-php-parser.md) |
 | **`Scope`（スコープ）** | ある地点で「いま分かっていること」を表す不変オブジェクト。最初は定義済み変数の集合、のちに変数→型の環境になる。 | [Part 2](02-scope.md) |
-| **`NodeScopeResolver`** | AST を下りながら `Scope` を運び、各地点でルール（やコールバック）を呼ぶ再帰下降。読み取り文脈と書き込み文脈を区別するのが肝。 | [Part 2](02-scope.md) |
+| **`NodeScopeResolver`** | AST を下りながら `Scope` を運び、各地点でルール（やコールバック）を呼ぶ再帰下降。読み取りコンテキストと書き込みコンテキストを区別するのが肝。 | [Part 2](02-scope.md) |
 | **`Type`（型）** | 「値の集合」を表す代数的オブジェクト。`describe()`／`isSuperTypeOf()`／`accepts()` の 3 つで型どうしの関係を問う。 | [Part 3](03-type-system.md) |
 | **`TrinaryLogic`（三値論理）** | Yes／Maybe／No の三値。`mixed` は int「かもしれない」など、「たぶん」を一級市民にする。レベル制の軸になる。 | [Part 3](03-type-system.md) |
 | **部分型（`isSuperTypeOf`）** | 型を集合とみたときの包含関係。`int ⊇ 42` は Yes、逆の `42 ⊇ int` は Maybe（非対称）。 | [Part 3](03-type-system.md) |

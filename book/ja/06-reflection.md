@@ -94,7 +94,7 @@ $expr instanceof Expr\MethodCall  => $this->methodCallType($expr),  // $obj->m()
 $expr instanceof Expr\FuncCall    => $this->funcCallType($expr),    // f() の戻り値
 ```
 
-`methodCallType()` は、レシーバの型が確定した `ObjectType` で、そのクラスが引けて、
+`methodCallType()` は、レシーバーの型が確定した `ObjectType` で、そのクラスが引けて、
 メソッドがあるときだけ戻り値型を返し、少しでも不明なら `mixed` に縮退します。
 
 ## 未定義メソッドを叩く

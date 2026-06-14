@@ -23,7 +23,7 @@ function f(int|null $x): int
 ## まず合併型 —— `UnionType`
 
 「int または string」を表す型が要ります（[`UnionType`](../../impls/05-narrowing/src/Type/UnionType.php)）。
-部分型判定は素直で、相手が単型なら **どれか 1 つのメンバが受ければよい（OR）**:
+部分型判定は素直で、相手が単型なら **どれか 1 つのメンバーが受ければよい（OR）**:
 
 ```php
 $result = TrinaryLogic::No;
