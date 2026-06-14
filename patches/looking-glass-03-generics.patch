@@ -1,0 +1,715 @@
+diff --git a/dev/src/Analyser/NodeScopeResolver.php b/dev/src/Analyser/NodeScopeResolver.php
+index 649c4c9..436b684 100644
+--- a/dev/src/Analyser/NodeScopeResolver.php
++++ b/dev/src/Analyser/NodeScopeResolver.php
+@@ -391,7 +391,7 @@ final class NodeScopeResolver
+         $returnType = $doc->returnType ?? $this->typeNodeResolver->resolve($node->returnType);
+ 
+         $inner = Scope::createForFunction()->withFunctionReturnType($returnType);
+-        $inner = $this->bindParams($node->params, $inner);
++        $inner = $this->bindParams($node->params, $inner, $doc->paramTypes);
+ 
+         if ($node instanceof Stmt\ClassMethod && !$node->isStatic()) {
+             $inner = $inner->assignVariable('this', new MixedType());
+@@ -451,15 +451,18 @@ final class NodeScopeResolver
+     }
+ 
+     /**
+-     * @param Node\Param[] $params
++     * @param Node\Param[]        $params
++     * @param array<string, Type> $docParamTypes @param で宣言された型（ネイティブ宣言より優先）
+      */
+-    private function bindParams(array $params, Scope $scope): Scope
++    private function bindParams(array $params, Scope $scope, array $docParamTypes = []): Scope
+     {
+         foreach ($params as $param) {
+             ($this->nodeCallback)($param, $scope);
+ 
+             if ($param->var instanceof Expr\Variable && is_string($param->var->name)) {
+-                $scope = $scope->assignVariable($param->var->name, $this->typeNodeResolver->resolve($param->type));
++                $name = $param->var->name;
++                $type = $docParamTypes[$name] ?? $this->typeNodeResolver->resolve($param->type);
++                $scope = $scope->assignVariable($name, $type);
+             }
+         }
+ 
+diff --git a/dev/src/Analyser/Scope.php b/dev/src/Analyser/Scope.php
+index 6a72d76..54c6e73 100644
+--- a/dev/src/Analyser/Scope.php
++++ b/dev/src/Analyser/Scope.php
+@@ -11,14 +11,18 @@ use Ministan\Type\Constant\ConstantBooleanType;
+ use Ministan\Type\Constant\ConstantIntegerType;
+ use Ministan\Type\Constant\ConstantStringType;
+ use Ministan\Type\FloatType;
++use Ministan\Type\GenericObjectType;
+ use Ministan\Type\IntegerType;
+ use Ministan\Type\MixedType;
+ use Ministan\Type\NullType;
+ use Ministan\Type\ObjectType;
+ use Ministan\Type\StringType;
++use Ministan\Type\TemplateType;
++use Ministan\Type\TemplateTypeMap;
+ use Ministan\Type\Type;
+ use Ministan\Type\TypeCombinator;
+ use Ministan\Reflection\ReflectionProviderStaticAccessor;
++use PhpParser\Node\Arg;
+ use PhpParser\Node\ArrayItem;
+ use PhpParser\Node\Expr;
+ use PhpParser\Node\Identifier;
+@@ -248,7 +252,21 @@ final readonly class Scope
+             return new MixedType();
+         }
+ 
+-        return $class->getMethod($expr->name->toString())->returnType;
++        $returnType = $class->getMethod($expr->name->toString())->returnType;
++
++        // ジェネリッククラスなら、型引数で戻り値の型変数を置換する（Collection<int>::get(): T → int）。
++        if ($objectType instanceof GenericObjectType && $class->templateNames !== []) {
++            $map = [];
++            foreach ($class->templateNames as $i => $templateName) {
++                if (isset($objectType->typeArguments[$i])) {
++                    $map[$templateName] = $objectType->typeArguments[$i];
++                }
++            }
++
++            return (new TemplateTypeMap($map))->resolve($returnType);
++        }
++
++        return $returnType;
+     }
+ 
+     private function funcCallType(Expr\FuncCall $expr): Type
+@@ -258,7 +276,24 @@ final readonly class Scope
+             return new MixedType();
+         }
+ 
+-        return $provider->getFunction($expr->name->toString())->returnType;
++        $function = $provider->getFunction($expr->name->toString());
++        if ($function->templateNames === []) {
++            return $function->returnType;
++        }
++
++        // 実引数から型変数を推論し（identity(42) なら T → 42）、戻り値型を置換する。
++        $map = [];
++        foreach ($expr->args as $position => $arg) {
++            if (!$arg instanceof Arg) {
++                continue;
++            }
++            $paramType = $function->parameterTypes[$position] ?? null;
++            if ($paramType instanceof TemplateType && in_array($paramType->name, $function->templateNames, true)) {
++                $map[$paramType->name] = $this->getType($arg->value);
++            }
++        }
++
++        return (new TemplateTypeMap($map))->resolve($function->returnType);
+     }
+ 
+     private function constFetchType(Expr\ConstFetch $expr): Type
+diff --git a/dev/src/Reflection/ClassReflection.php b/dev/src/Reflection/ClassReflection.php
+index 14542af..8caa31b 100644
+--- a/dev/src/Reflection/ClassReflection.php
++++ b/dev/src/Reflection/ClassReflection.php
+@@ -23,6 +23,7 @@ final class ClassReflection
+     /**
+      * @param list<string> $parentNames extends / implements の上位クラス名（FQN）
+      * @param array<string, MethodReflection> $methods 小文字名 → メソッド（直接宣言分）
++     * @param list<string> $templateNames このクラスが宣言する型変数（@template）
+      */
+     public function __construct(
+         public readonly string $name,
+@@ -30,6 +31,7 @@ final class ClassReflection
+         private readonly array $methods,
+         private readonly ReflectionProvider $provider,
+         private readonly ?ReflectionClass $native = null,
++        public readonly array $templateNames = [],
+     ) {
+     }
+ 
+@@ -53,12 +55,14 @@ final class ClassReflection
+             }
+         }
+ 
++        $templateNames = $phpDoc->parse($node->getDocComment()?->getText())->templateNames;
++
+         $methods = [];
+         foreach ($node->getMethods() as $method) {
+-            $methods[strtolower($method->name->toString())] = MethodReflection::fromNode($method, $resolver, $phpDoc);
++            $methods[strtolower($method->name->toString())] = MethodReflection::fromNode($method, $resolver, $phpDoc, $templateNames);
+         }
+ 
+-        return new self($name, $parents, $methods, $provider);
++        return new self($name, $parents, $methods, $provider, null, $templateNames);
+     }
+ 
+     /**
+diff --git a/dev/src/Reflection/FunctionReflection.php b/dev/src/Reflection/FunctionReflection.php
+index 6f1ac83..115e39f 100644
+--- a/dev/src/Reflection/FunctionReflection.php
++++ b/dev/src/Reflection/FunctionReflection.php
+@@ -15,12 +15,14 @@ use ReflectionFunction;
+ final readonly class FunctionReflection
+ {
+     /**
+-     * @param list<Type> $parameterTypes
++     * @param list<Type>   $parameterTypes
++     * @param list<string> $templateNames この関数が宣言する型変数（@template）
+      */
+     public function __construct(
+         public string $name,
+         public Type $returnType,
+         public array $parameterTypes,
++        public array $templateNames = [],
+     ) {
+     }
+ 
+@@ -40,6 +42,7 @@ final readonly class FunctionReflection
+             $name,
+             $doc->returnType ?? $resolver->resolve($node->returnType),
+             $parameterTypes,
++            $doc->templateNames,
+         );
+     }
+ 
+diff --git a/dev/src/Reflection/MethodReflection.php b/dev/src/Reflection/MethodReflection.php
+index 984c3ab..6dcc4c8 100644
+--- a/dev/src/Reflection/MethodReflection.php
++++ b/dev/src/Reflection/MethodReflection.php
+@@ -27,9 +27,12 @@ final readonly class MethodReflection
+     ) {
+     }
+ 
+-    public static function fromNode(ClassMethod $node, TypeNodeResolver $resolver, PhpDocTypeResolver $phpDoc): self
++    /**
++     * @param list<string> $classTemplateNames クラスが宣言する型変数（メソッドの @return T 等が参照する）
++     */
++    public static function fromNode(ClassMethod $node, TypeNodeResolver $resolver, PhpDocTypeResolver $phpDoc, array $classTemplateNames = []): self
+     {
+-        $doc = $phpDoc->parse($node->getDocComment()?->getText());
++        $doc = $phpDoc->parse($node->getDocComment()?->getText(), $classTemplateNames);
+ 
+         $parameterTypes = [];
+         foreach ($node->params as $param) {
+diff --git a/dev/src/Reflection/ParsedPhpDoc.php b/dev/src/Reflection/ParsedPhpDoc.php
+index aea1fd7..1442cf7 100644
+--- a/dev/src/Reflection/ParsedPhpDoc.php
++++ b/dev/src/Reflection/ParsedPhpDoc.php
+@@ -7,23 +7,25 @@ namespace Ministan\Reflection;
+ use Ministan\Type\Type;
+ 
+ /**
+- * 1 つの docblock から取り出した型情報。`@return`・`@param`・`@var`。
++ * 1 つの docblock から取り出した型情報。`@return`・`@param`・`@var`・`@template`。
+  */
+ final readonly class ParsedPhpDoc
+ {
+     /**
+-     * @param array<string, Type> $paramTypes パラメータ名（$ なし）→ 型
+-     * @param array<string, Type> $varTypes   変数名（$ なし、無名は ''）→ 型
++     * @param array<string, Type> $paramTypes    パラメータ名（$ なし）→ 型
++     * @param array<string, Type> $varTypes      変数名（$ なし、無名は ''）→ 型
++     * @param list<string>        $templateNames この docblock が宣言する型変数名
+      */
+     public function __construct(
+         public ?Type $returnType,
+         public array $paramTypes,
+         public array $varTypes,
++        public array $templateNames = [],
+     ) {
+     }
+ 
+     public static function empty(): self
+     {
+-        return new self(null, [], []);
++        return new self(null, [], [], []);
+     }
+ }
+diff --git a/dev/src/Reflection/PhpDocTypeResolver.php b/dev/src/Reflection/PhpDocTypeResolver.php
+index 718a15c..c76f529 100644
+--- a/dev/src/Reflection/PhpDocTypeResolver.php
++++ b/dev/src/Reflection/PhpDocTypeResolver.php
+@@ -8,12 +8,14 @@ use Ministan\Type\ArrayType;
+ use Ministan\Type\BooleanType;
+ use Ministan\Type\Constant\ConstantBooleanType;
+ use Ministan\Type\FloatType;
++use Ministan\Type\GenericObjectType;
+ use Ministan\Type\IntegerType;
+ use Ministan\Type\MixedType;
+ use Ministan\Type\NeverType;
+ use Ministan\Type\NullType;
+ use Ministan\Type\ObjectType;
+ use Ministan\Type\StringType;
++use Ministan\Type\TemplateType;
+ use Ministan\Type\Type;
+ use Ministan\Type\TypeCombinator;
+ use PHPStan\PhpDocParser\Ast\Type\ArrayTypeNode;
+@@ -30,11 +32,11 @@ use PHPStan\PhpDocParser\Parser\TypeParser;
+ use PHPStan\PhpDocParser\ParserConfig;
+ 
+ /**
+- * docblock を解析し、`@return`/`@param`/`@var` の型を {@see Type} に写す。
++ * docblock を解析し、`@return`/`@param`/`@var`/`@template` の型を {@see Type} に写す。
+  *
+- * phpstan/phpdoc-parser で文字列をパースし、その型 AST を ministan の型へ変換する。
+- * PHPStan の `TypeNodeResolver` に対応。クラス名の名前空間解決（use の解釈）までは
+- * 追わない——そこは応用編で。
++ * 型変数を扱うのが S3 での拡張点。`@template T` を集め、その名前の識別子は
++ * {@see TemplateType} に、`Collection<int>` のような識別子付きジェネリックは
++ * {@see GenericObjectType} に解決する。
+  */
+ final class PhpDocTypeResolver
+ {
+@@ -52,7 +54,10 @@ final class PhpDocTypeResolver
+         $this->parser = new PhpDocParser($config, $typeParser, $constExpr);
+     }
+ 
+-    public function parse(?string $docComment): ParsedPhpDoc
++    /**
++     * @param list<string> $outerTemplateNames 外側（クラス）から見えている型変数名
++     */
++    public function parse(?string $docComment, array $outerTemplateNames = []): ParsedPhpDoc
+     {
+         if ($docComment === null || trim($docComment) === '') {
+             return ParsedPhpDoc::empty();
+@@ -61,39 +66,57 @@ final class PhpDocTypeResolver
+         $tokens = new TokenIterator($this->lexer->tokenize($docComment));
+         $doc = $this->parser->parse($tokens);
+ 
++        $ownTemplates = [];
++        foreach ($doc->getTemplateTagValues() as $tag) {
++            $ownTemplates[] = $tag->name;
++        }
++        $active = [...$outerTemplateNames, ...$ownTemplates];
++
+         $returnType = null;
+         foreach ($doc->getReturnTagValues() as $tag) {
+-            $returnType = $this->toType($tag->type);
++            $returnType = $this->toType($tag->type, $active);
+             break;
+         }
+ 
+         $paramTypes = [];
+         foreach ($doc->getParamTagValues() as $tag) {
+-            $paramTypes[ltrim($tag->parameterName, '$')] = $this->toType($tag->type);
++            $paramTypes[ltrim($tag->parameterName, '$')] = $this->toType($tag->type, $active);
+         }
+ 
+         $varTypes = [];
+         foreach ($doc->getVarTagValues() as $tag) {
+-            $varTypes[ltrim($tag->variableName, '$')] = $this->toType($tag->type);
++            $varTypes[ltrim($tag->variableName, '$')] = $this->toType($tag->type, $active);
+         }
+ 
+-        return new ParsedPhpDoc($returnType, $paramTypes, $varTypes);
++        return new ParsedPhpDoc($returnType, $paramTypes, $varTypes, $ownTemplates);
+     }
+ 
+-    private function toType(TypeNode $node): Type
++    /**
++     * @param list<string> $templateNames
++     */
++    private function toType(TypeNode $node, array $templateNames): Type
+     {
+         return match (true) {
+-            $node instanceof IdentifierTypeNode => $this->fromIdentifier($node->name),
+-            $node instanceof NullableTypeNode => TypeCombinator::union($this->toType($node->type), new NullType()),
+-            $node instanceof UnionTypeNode => TypeCombinator::union(...array_map($this->toType(...), $node->types)),
+-            $node instanceof GenericTypeNode => $this->fromGeneric($node),
+-            $node instanceof ArrayTypeNode => new ArrayType(new MixedType(), $this->toType($node->type)),
++            $node instanceof IdentifierTypeNode => $this->fromIdentifier($node->name, $templateNames),
++            $node instanceof NullableTypeNode => TypeCombinator::union($this->toType($node->type, $templateNames), new NullType()),
++            $node instanceof UnionTypeNode => TypeCombinator::union(
++                ...array_map(fn (TypeNode $t): Type => $this->toType($t, $templateNames), $node->types),
++            ),
++            $node instanceof GenericTypeNode => $this->fromGeneric($node, $templateNames),
++            $node instanceof ArrayTypeNode => new ArrayType(new MixedType(), $this->toType($node->type, $templateNames)),
+             default => new MixedType(),
+         };
+     }
+ 
+-    private function fromIdentifier(string $name): Type
++    /**
++     * @param list<string> $templateNames
++     */
++    private function fromIdentifier(string $name, array $templateNames): Type
+     {
++        if (in_array($name, $templateNames, true)) {
++            return new TemplateType($name, new MixedType());
++        }
++
+         return match (strtolower($name)) {
+             'int', 'integer' => new IntegerType(),
+             'string' => new StringType(),
+@@ -110,17 +133,21 @@ final class PhpDocTypeResolver
+         };
+     }
+ 
+-    private function fromGeneric(GenericTypeNode $node): Type
++    /**
++     * @param list<string> $templateNames
++     */
++    private function fromGeneric(GenericTypeNode $node, array $templateNames): Type
+     {
+         $base = strtolower($node->type->name);
+-        $args = array_map($this->toType(...), $node->genericTypes);
++        $args = array_map(fn (TypeNode $t): Type => $this->toType($t, $templateNames), $node->genericTypes);
+ 
+         return match (true) {
+             $base === 'array' && count($args) === 2 => new ArrayType($args[0], $args[1]),
+             $base === 'array' && count($args) === 1 => new ArrayType(new MixedType(), $args[0]),
+             ($base === 'list' || $base === 'non-empty-list') && count($args) >= 1
+                 => new ArrayType(new IntegerType(), $args[0]),
+-            default => new MixedType(),
++            // それ以外の `Foo<…>` はジェネリッククラス。
++            default => new GenericObjectType(ltrim($node->type->name, '\\'), array_values($args)),
+         };
+     }
+ }
+diff --git a/dev/src/Type/GenericObjectType.php b/dev/src/Type/GenericObjectType.php
+new file mode 100644
+index 0000000..88f72ea
+--- /dev/null
++++ b/dev/src/Type/GenericObjectType.php
+@@ -0,0 +1,49 @@
++<?php
++
++declare(strict_types=1);
++
++namespace Ministan\Type;
++
++/**
++ * 型引数を伴うオブジェクト型。`Collection<int>`、`Result<string, Error>`。
++ *
++ * {@see ObjectType} を継承するので、未定義メソッド検出や引数検査などの「クラスを見る」
++ * 処理は型引数を無視してそのまま働く。型引数は、メソッド戻り値の型パラメータ置換に使う。
++ */
++final class GenericObjectType extends ObjectType
++{
++    /**
++     * @param list<Type> $typeArguments
++     */
++    public function __construct(
++        string $className,
++        public readonly array $typeArguments,
++    ) {
++        parent::__construct($className);
++    }
++
++    public function describe(): string
++    {
++        $args = implode(', ', array_map(static fn (Type $t): string => $t->describe(), $this->typeArguments));
++
++        return $this->className . '<' . $args . '>';
++    }
++
++    public function equals(Type $type): bool
++    {
++        if (!$type instanceof self
++            || $type->className !== $this->className
++            || count($type->typeArguments) !== count($this->typeArguments)
++        ) {
++            return false;
++        }
++
++        foreach ($this->typeArguments as $i => $argument) {
++            if (!$argument->equals($type->typeArguments[$i])) {
++                return false;
++            }
++        }
++
++        return true;
++    }
++}
+diff --git a/dev/src/Type/ObjectType.php b/dev/src/Type/ObjectType.php
+index 9fb0175..74f91b1 100644
+--- a/dev/src/Type/ObjectType.php
++++ b/dev/src/Type/ObjectType.php
+@@ -14,7 +14,7 @@ use Ministan\TrinaryLogic;
+  * 引き、`$child instanceof $parent` を正しく Yes/No 判定する。provider が無い、または
+  * クラスが未知のときは Maybe に縮退（non-rejecting）。
+  */
+-final class ObjectType implements Type
++class ObjectType implements Type
+ {
+     use SimpleTypeTrait;
+ 
+diff --git a/dev/src/Type/TemplateType.php b/dev/src/Type/TemplateType.php
+new file mode 100644
+index 0000000..d207880
+--- /dev/null
++++ b/dev/src/Type/TemplateType.php
+@@ -0,0 +1,39 @@
++<?php
++
++declare(strict_types=1);
++
++namespace Ministan\Type;
++
++use Ministan\TrinaryLogic;
++
++/**
++ * 型変数 `T`。ジェネリクスの「まだ決まっていない型」を表す。
++ *
++ * `@template T` で宣言され、呼び出し時に具体的な型へ **置換（substitution）** される。
++ * 関係判定は上限境界（bound, 既定 mixed）に委ね、同一性は名前で見る。
++ */
++final class TemplateType implements Type
++{
++    use SimpleTypeTrait;
++
++    public function __construct(
++        public readonly string $name,
++        public readonly Type $bound,
++    ) {
++    }
++
++    public function describe(): string
++    {
++        return $this->name;
++    }
++
++    public function isSuperTypeOf(Type $type): TrinaryLogic
++    {
++        return $this->relateToSpecial($type) ?? $this->bound->isSuperTypeOf($type);
++    }
++
++    public function equals(Type $type): bool
++    {
++        return $type instanceof self && $type->name === $this->name;
++    }
++}
+diff --git a/dev/src/Type/TemplateTypeMap.php b/dev/src/Type/TemplateTypeMap.php
+new file mode 100644
+index 0000000..b5a5a28
+--- /dev/null
++++ b/dev/src/Type/TemplateTypeMap.php
+@@ -0,0 +1,48 @@
++<?php
++
++declare(strict_types=1);
++
++namespace Ministan\Type;
++
++/**
++ * 型変数名 → 具体型 の対応。型の中の {@see TemplateType} を一括置換する。
++ *
++ * `identity(42)` で `T → 42` を作り、戻り値型 `T` を `42` に解決する、といった
++ * substitution の本体。複合型（union・配列・ジェネリック）の中まで再帰する。
++ */
++final class TemplateTypeMap
++{
++    /**
++     * @param array<string, Type> $map
++     */
++    public function __construct(
++        private readonly array $map,
++    ) {
++    }
++
++    public function isEmpty(): bool
++    {
++        return $this->map === [];
++    }
++
++    public function resolve(Type $type): Type
++    {
++        if ($type instanceof TemplateType) {
++            return $this->map[$type->name] ?? $type;
++        }
++
++        if ($type instanceof UnionType) {
++            return TypeCombinator::union(...array_map($this->resolve(...), $type->getTypes()));
++        }
++
++        if ($type instanceof ArrayType) {
++            return new ArrayType($this->resolve($type->keyType), $this->resolve($type->itemType));
++        }
++
++        if ($type instanceof GenericObjectType) {
++            return new GenericObjectType($type->className, array_map($this->resolve(...), $type->typeArguments));
++        }
++
++        return $type;
++    }
++}
+diff --git a/dev/tests/Command/AnnotateCommandTest.php b/dev/tests/Command/AnnotateCommandTest.php
+index 23e59f3..d646f5d 100644
+--- a/dev/tests/Command/AnnotateCommandTest.php
++++ b/dev/tests/Command/AnnotateCommandTest.php
+@@ -40,6 +40,19 @@ final class AnnotateCommandTest extends TestCase
+         self::assertMatchesRegularExpression("/\\\$name\s+:\s+'ada'$/m", $output);
+     }
+ 
++    public function testGenericsInference(): void
++    {
++        ob_start();
++        $exitCode = (new AnnotateCommand())->run([__DIR__ . '/../fixtures/generics.php']);
++        $output = ob_get_clean();
++
++        self::assertSame(0, $exitCode);
++        self::assertMatchesRegularExpression('/\$a\s+:\s+42$/m', $output);          // 汎関数の置換
++        self::assertMatchesRegularExpression("/\\\$b\s+:\s+'hello'$/m", $output);
++        self::assertMatchesRegularExpression('/\$box\s+:\s+Box<int>$/m', $output);   // @var ジェネリック
++        self::assertMatchesRegularExpression('/\$value\s+:\s+int$/m', $output);      // メソッド戻り値の置換
++    }
++
+     public function testPhpDocDrivesInference(): void
+     {
+         ob_start();
+diff --git a/dev/tests/Type/GenericsTest.php b/dev/tests/Type/GenericsTest.php
+new file mode 100644
+index 0000000..d910dc0
+--- /dev/null
++++ b/dev/tests/Type/GenericsTest.php
+@@ -0,0 +1,54 @@
++<?php
++
++declare(strict_types=1);
++
++namespace Ministan\Tests\Type;
++
++use Ministan\Type\ArrayType;
++use Ministan\Type\GenericObjectType;
++use Ministan\Type\IntegerType;
++use Ministan\Type\MixedType;
++use Ministan\Type\StringType;
++use Ministan\Type\TemplateType;
++use Ministan\Type\TemplateTypeMap;
++use PHPUnit\Framework\TestCase;
++
++final class GenericsTest extends TestCase
++{
++    public function testGenericObjectDescribe(): void
++    {
++        $type = new GenericObjectType('Collection', [new IntegerType(), new StringType()]);
++
++        self::assertSame('Collection<int, string>', $type->describe());
++        self::assertSame('Collection', $type->className); // ObjectType を継承
++    }
++
++    public function testSubstitutesTemplate(): void
++    {
++        $map = new TemplateTypeMap(['T' => new IntegerType()]);
++
++        self::assertSame('int', $map->resolve(new TemplateType('T', new MixedType()))->describe());
++    }
++
++    public function testSubstitutesInsideComposites(): void
++    {
++        $map = new TemplateTypeMap(['T' => new IntegerType()]);
++        $t = new TemplateType('T', new MixedType());
++
++        self::assertSame(
++            'array<int, int>',
++            $map->resolve(new ArrayType(new IntegerType(), $t))->describe(),
++        );
++        self::assertSame(
++            'Box<int>',
++            $map->resolve(new GenericObjectType('Box', [$t]))->describe(),
++        );
++    }
++
++    public function testUnmappedTemplateIsLeftAsIs(): void
++    {
++        $map = new TemplateTypeMap(['T' => new IntegerType()]);
++
++        self::assertSame('U', $map->resolve(new TemplateType('U', new MixedType()))->describe());
++    }
++}
+diff --git a/dev/tests/fixtures/generics.php b/dev/tests/fixtures/generics.php
+new file mode 100644
+index 0000000..11d8543
+--- /dev/null
++++ b/dev/tests/fixtures/generics.php
+@@ -0,0 +1,43 @@
++<?php
++
++declare(strict_types=1);
++
++/**
++ * @template T
++ *
++ * @param T $value
++ *
++ * @return T
++ */
++function identity(mixed $value): mixed
++{
++    return $value;
++}
++
++$a = identity(42);      // T → 42
++$b = identity('hello'); // T → 'hello'
++
++/**
++ * @template T
++ */
++class Box
++{
++    /**
++     * @param T $item
++     */
++    public function __construct(private mixed $item)
++    {
++    }
++
++    /**
++     * @return T
++     */
++    public function get(): mixed
++    {
++        return $this->item;
++    }
++}
++
++/** @var Box<int> $box */
++$box = new Box(1);
++$value = $box->get(); // T → int
+diff --git a/examples/looking-glass/generics.php b/examples/looking-glass/generics.php
+new file mode 100644
+index 0000000..11d8543
+--- /dev/null
++++ b/examples/looking-glass/generics.php
+@@ -0,0 +1,43 @@
++<?php
++
++declare(strict_types=1);
++
++/**
++ * @template T
++ *
++ * @param T $value
++ *
++ * @return T
++ */
++function identity(mixed $value): mixed
++{
++    return $value;
++}
++
++$a = identity(42);      // T → 42
++$b = identity('hello'); // T → 'hello'
++
++/**
++ * @template T
++ */
++class Box
++{
++    /**
++     * @param T $item
++     */
++    public function __construct(private mixed $item)
++    {
++    }
++
++    /**
++     * @return T
++     */
++    public function get(): mixed
++    {
++        return $this->item;
++    }
++}
++
++/** @var Box<int> $box */
++$box = new Box(1);
++$value = $box->get(); // T → int

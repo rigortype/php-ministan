@@ -1,0 +1,399 @@
+diff --git a/dev/src/Analyser/NodeScopeResolver.php b/dev/src/Analyser/NodeScopeResolver.php
+index 8915eeb..f8f2cf2 100644
+--- a/dev/src/Analyser/NodeScopeResolver.php
++++ b/dev/src/Analyser/NodeScopeResolver.php
+@@ -6,14 +6,17 @@ namespace Ministan\Analyser;
+ 
+ use Closure;
+ use Ministan\Reflection\PhpDocTypeResolver;
++use Ministan\Reflection\ReflectionProviderStaticAccessor;
+ use Ministan\Reflection\TypeNodeResolver;
+ use Ministan\Type\ArrayType;
+ use Ministan\Type\Constant\ConstantArrayType;
+ use Ministan\Type\MixedType;
++use Ministan\Type\ObjectType;
+ use Ministan\Type\Type;
+ use PhpParser\Node;
+ use PhpParser\Node\Arg;
+ use PhpParser\Node\Expr;
++use PhpParser\Node\Identifier;
+ use PhpParser\Node\Name;
+ use PhpParser\Node\Stmt;
+ 
+@@ -94,6 +97,9 @@ final class NodeScopeResolver
+             $node instanceof Stmt\Global_        => $this->processGlobal($node, $scope),
+             $node instanceof Stmt\Static_        => $this->processStaticVars($node, $scope),
+ 
++            $node instanceof Expr\FuncCall       => $this->processFuncCall($node, $scope),
++            $node instanceof Expr\MethodCall     => $this->processMethodCall($node, $scope),
++
+             $node instanceof Expr\Isset_,
+             $node instanceof Expr\Empty_         => $scope,
+             $node instanceof Expr\BinaryOp\Coalesce => $this->processCoalesce($node, $scope),
+@@ -444,6 +450,80 @@ final class NodeScopeResolver
+         return $scope;
+     }
+ 
++    // --- 呼び出し: 参照渡しの出力引数は変数を「定義」する ---
++
++    private function processFuncCall(Expr\FuncCall $node, Scope $scope): Scope
++    {
++        if (!$node->name instanceof Name) {
++            $scope = $this->processNode($node->name, $scope); // 動的呼び出し $fn()
++        }
++
++        return $this->processCallArgs($node->args, $this->byRefParamsOfFunction($node), $scope);
++    }
++
++    private function processMethodCall(Expr\MethodCall $node, Scope $scope): Scope
++    {
++        $scope = $this->processNode($node->var, $scope); // レシーバは読み取り
++
++        return $this->processCallArgs($node->args, $this->byRefParamsOfMethod($node, $scope), $scope);
++    }
++
++    /**
++     * @param array<Arg|Node\VariadicPlaceholder> $args
++     * @param list<bool> $byRef
++     */
++    private function processCallArgs(array $args, array $byRef, Scope $scope): Scope
++    {
++        foreach ($args as $position => $arg) {
++            if (!$arg instanceof Arg) {
++                continue;
++            }
++
++            if (($byRef[$position] ?? false) && $arg->value instanceof Expr\Variable && is_string($arg->value->name)) {
++                // 参照渡しの出力引数: preg_match(..., $m) の $m を「定義」する。
++                $scope = $scope->assignVariable($arg->value->name, new MixedType());
++            } else {
++                $scope = $this->processNode($arg->value, $scope);
++            }
++        }
++
++        return $scope;
++    }
++
++    /**
++     * @return list<bool>
++     */
++    private function byRefParamsOfFunction(Expr\FuncCall $node): array
++    {
++        $provider = ReflectionProviderStaticAccessor::getInstanceOrNull();
++        if ($node->name instanceof Name && $provider !== null && $provider->hasFunction($node->name->toString())) {
++            return $provider->getFunction($node->name->toString())->byRefParams;
++        }
++
++        return [];
++    }
++
++    /**
++     * @return list<bool>
++     */
++    private function byRefParamsOfMethod(Expr\MethodCall $node, Scope $scope): array
++    {
++        if (!$node->name instanceof Identifier) {
++            return [];
++        }
++
++        $objectType = $scope->getType($node->var);
++        $provider = ReflectionProviderStaticAccessor::getInstanceOrNull();
++        if ($objectType instanceof ObjectType && $provider !== null && $provider->hasClass($objectType->className)) {
++            $class = $provider->getClass($objectType->className);
++            if ($class->hasMethod($node->name->toString())) {
++                return $class->getMethod($node->name->toString())->byRefParams;
++            }
++        }
++
++        return [];
++    }
++
+     private function processCoalesce(Expr\BinaryOp\Coalesce $node, Scope $scope): Scope
+     {
+         $scope = $this->processSilently($node->left, $scope);
+diff --git a/dev/src/Reflection/FunctionReflection.php b/dev/src/Reflection/FunctionReflection.php
+index 115e39f..9824b2a 100644
+--- a/dev/src/Reflection/FunctionReflection.php
++++ b/dev/src/Reflection/FunctionReflection.php
+@@ -16,12 +16,14 @@ final readonly class FunctionReflection
+ {
+     /**
+      * @param list<Type>   $parameterTypes
++     * @param list<bool>   $byRefParams   各パラメータが参照渡し（出力引数）か
+      * @param list<string> $templateNames この関数が宣言する型変数（@template）
+      */
+     public function __construct(
+         public string $name,
+         public Type $returnType,
+         public array $parameterTypes,
++        public array $byRefParams = [],
+         public array $templateNames = [],
+     ) {
+     }
+@@ -31,17 +33,20 @@ final readonly class FunctionReflection
+         $doc = $phpDoc->parse($node->getDocComment()?->getText());
+ 
+         $parameterTypes = [];
++        $byRefParams = [];
+         foreach ($node->params as $param) {
+             $paramName = $param->var instanceof Variable && is_string($param->var->name) ? $param->var->name : null;
+             $parameterTypes[] = $paramName !== null && isset($doc->paramTypes[$paramName])
+                 ? $doc->paramTypes[$paramName]
+                 : $resolver->resolve($param->type);
++            $byRefParams[] = $param->byRef;
+         }
+ 
+         return new self(
+             $name,
+             $doc->returnType ?? $resolver->resolve($node->returnType),
+             $parameterTypes,
++            $byRefParams,
+             $doc->templateNames,
+         );
+     }
+@@ -55,6 +60,10 @@ final readonly class FunctionReflection
+                 static fn ($param): Type => $resolver->resolveNative($param->getType()),
+                 $function->getParameters(),
+             ),
++            array_map(
++                static fn ($param): bool => $param->isPassedByReference(),
++                $function->getParameters(),
++            ),
+         );
+     }
+ }
+diff --git a/dev/src/Reflection/MethodReflection.php b/dev/src/Reflection/MethodReflection.php
+index 6dcc4c8..9404096 100644
+--- a/dev/src/Reflection/MethodReflection.php
++++ b/dev/src/Reflection/MethodReflection.php
+@@ -19,11 +19,13 @@ final readonly class MethodReflection
+ {
+     /**
+      * @param list<Type> $parameterTypes
++     * @param list<bool> $byRefParams   各パラメータが参照渡し（出力引数）か
+      */
+     public function __construct(
+         public string $name,
+         public Type $returnType,
+         public array $parameterTypes,
++        public array $byRefParams = [],
+     ) {
+     }
+ 
+@@ -35,17 +37,20 @@ final readonly class MethodReflection
+         $doc = $phpDoc->parse($node->getDocComment()?->getText(), $classTemplateNames);
+ 
+         $parameterTypes = [];
++        $byRefParams = [];
+         foreach ($node->params as $param) {
+             $name = $param->var instanceof Variable && is_string($param->var->name) ? $param->var->name : null;
+             $parameterTypes[] = $name !== null && isset($doc->paramTypes[$name])
+                 ? $doc->paramTypes[$name]
+                 : $resolver->resolve($param->type);
++            $byRefParams[] = $param->byRef;
+         }
+ 
+         return new self(
+             $node->name->toString(),
+             $doc->returnType ?? $resolver->resolve($node->returnType),
+             $parameterTypes,
++            $byRefParams,
+         );
+     }
+ 
+@@ -58,6 +63,10 @@ final readonly class MethodReflection
+                 static fn ($param): Type => $resolver->resolveNative($param->getType()),
+                 $method->getParameters(),
+             ),
++            array_map(
++                static fn ($param): bool => $param->isPassedByReference(),
++                $method->getParameters(),
++            ),
+         );
+     }
+ }
+diff --git a/dev/src/Reflection/ReflectionProvider.php b/dev/src/Reflection/ReflectionProvider.php
+index 1b9de61..1d7b22b 100644
+--- a/dev/src/Reflection/ReflectionProvider.php
++++ b/dev/src/Reflection/ReflectionProvider.php
+@@ -4,11 +4,13 @@ declare(strict_types=1);
+ 
+ namespace Ministan\Reflection;
+ 
++use Ministan\Analyser\Parsing;
+ use PhpParser\Node;
+ use PhpParser\Node\Stmt\ClassLike;
+ use PhpParser\Node\Stmt\Function_;
+ use ReflectionClass;
+ use ReflectionFunction;
++use Throwable;
+ 
+ /**
+  * クラス・関数のシグネチャを引く窓口。PHPStan の {@see \PHPStan\Reflection\ReflectionProvider}。
+@@ -28,6 +30,9 @@ final class ReflectionProvider
+     /** @var array<string, FunctionReflection> */
+     private array $functions = [];
+ 
++    /** @var array<string, FunctionReflection> スタブで補ったシグネチャ（ネイティブより優先） */
++    private array $stubFunctions = [];
++
+     private TypeNodeResolver $typeNodeResolver;
+ 
+     private PhpDocTypeResolver $phpDocTypeResolver;
+@@ -36,6 +41,33 @@ final class ReflectionProvider
+     {
+         $this->typeNodeResolver = new TypeNodeResolver();
+         $this->phpDocTypeResolver = new PhpDocTypeResolver();
++        $this->loadStubs();
++    }
++
++    private function loadStubs(): void
++    {
++        $file = dirname(__DIR__, 2) . '/stubs/core.php';
++        if (!is_file($file)) {
++            return;
++        }
++
++        try {
++            $ast = Parsing::parse((string) file_get_contents($file));
++        } catch (Throwable) {
++            return;
++        }
++
++        foreach ($ast as $node) {
++            if ($node instanceof Function_) {
++                $name = ($node->namespacedName ?? $node->name)->toString();
++                $this->stubFunctions[strtolower($name)] = FunctionReflection::fromNode(
++                    $name,
++                    $node,
++                    $this->typeNodeResolver,
++                    $this->phpDocTypeResolver,
++                );
++            }
++        }
+     }
+ 
+     /**
+@@ -98,8 +130,9 @@ final class ReflectionProvider
+     public function hasFunction(string $name): bool
+     {
+         $name = ltrim($name, '\\');
++        $key = strtolower($name);
+ 
+-        return isset($this->functions[strtolower($name)]) || function_exists($name);
++        return isset($this->functions[$key]) || isset($this->stubFunctions[$key]) || function_exists($name);
+     }
+ 
+     public function getFunction(string $name): FunctionReflection
+@@ -107,13 +140,9 @@ final class ReflectionProvider
+         $name = ltrim($name, '\\');
+         $key = strtolower($name);
+ 
+-        if (isset($this->functions[$key])) {
+-            return $this->functions[$key];
+-        }
+-
+-        return $this->functions[$key] = FunctionReflection::fromNative(
+-            new ReflectionFunction($name),
+-            $this->typeNodeResolver,
+-        );
++        // 優先順: 解析対象の宣言 > スタブ > ネイティブ。
++        return $this->functions[$key]
++            ?? $this->stubFunctions[$key]
++            ?? ($this->functions[$key] = FunctionReflection::fromNative(new ReflectionFunction($name), $this->typeNodeResolver));
+     }
+ }
+diff --git a/dev/stubs/core.php b/dev/stubs/core.php
+new file mode 100644
+index 0000000..9a33ade
+--- /dev/null
++++ b/dev/stubs/core.php
+@@ -0,0 +1,16 @@
++<?php
++
++// ministan のスタブ。実行されず、シグネチャを読むためだけにパースされる。
++// ネイティブのリフレクションでは表現できない精密な型を、PHPStan の functionMap のように補う。
++
++declare(strict_types=1);
++
++/**
++ * @return list<string>
++ */
++function explode(string $separator, string $string, int $limit = PHP_INT_MAX): array {}
++
++/**
++ * @param string[] $matches
++ */
++function preg_match(string $pattern, string $subject, array &$matches = []): int {}
+diff --git a/dev/tests/AnalyserTest.php b/dev/tests/AnalyserTest.php
+index 19d060f..1562704 100644
+--- a/dev/tests/AnalyserTest.php
++++ b/dev/tests/AnalyserTest.php
+@@ -107,4 +107,12 @@ final class AnalyserTest extends TestCase
+         self::assertCount(1, $errors);
+         self::assertSame('Call to an undefined method Box::close().', $errors[0]->message);
+     }
++
++    public function testByRefOutputParameterDefinesVariable(): void
++    {
++        // preg_match(..., $matches) の $matches は参照渡しの出力引数なので未定義にならない。
++        $errors = $this->analyser()->analyseFile(__DIR__ . '/fixtures/byref.php');
++
++        self::assertSame([], $errors);
++    }
+ }
+diff --git a/dev/tests/Reflection/ReflectionProviderTest.php b/dev/tests/Reflection/ReflectionProviderTest.php
+index bfb2a6e..87873f1 100644
+--- a/dev/tests/Reflection/ReflectionProviderTest.php
++++ b/dev/tests/Reflection/ReflectionProviderTest.php
+@@ -44,6 +44,16 @@ final class ReflectionProviderTest extends TestCase
+         self::assertSame('int', $provider->getFunction('strlen')->returnType->describe());
+     }
+ 
++    public function testStubOverridesNativeSignature(): void
++    {
++        $provider = $this->providerFor('');
++
++        // スタブが explode に精密な戻り値型を与える（ネイティブは array=mixed）。
++        self::assertSame('array<int, string>', $provider->getFunction('explode')->returnType->describe());
++        // preg_match の第 3 引数は参照渡し。
++        self::assertTrue($provider->getFunction('preg_match')->byRefParams[2] ?? false);
++    }
++
+     public function testObjectTypeUsesHierarchyWhenProviderKnown(): void
+     {
+         $provider = $this->providerFor('class A {} class B extends A {}');
+diff --git a/dev/tests/fixtures/byref.php b/dev/tests/fixtures/byref.php
+new file mode 100644
+index 0000000..a1cc148
+--- /dev/null
++++ b/dev/tests/fixtures/byref.php
+@@ -0,0 +1,7 @@
++<?php
++
++declare(strict_types=1);
++
++preg_match('/\d+/', 'a1b2', $matches);
++
++echo $matches[0];
+diff --git a/examples/looking-glass/byref-stubs.php b/examples/looking-glass/byref-stubs.php
+new file mode 100644
+index 0000000..218e9e1
+--- /dev/null
++++ b/examples/looking-glass/byref-stubs.php
+@@ -0,0 +1,15 @@
++<?php
++
++declare(strict_types=1);
++
++function first_number(string $input): string
++{
++    if (preg_match('/(\d+)/', $input, $matches)) {
++        return $matches[0]; // $matches は参照渡しの出力引数 → 未定義にならない
++    }
++
++    return '';
++}
++
++$parts = explode(',', 'a,b,c'); // スタブにより list<string> → array<int, string>
++$first = $parts[0];             // string

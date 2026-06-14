@@ -16,25 +16,25 @@ cd "$(dirname "$0")/.."
 REPO="$(pwd)"
 
 # 章順（tag ラベル : impls 出力ディレクトリ）。先頭 part-00 が base（逆適用の終端＝パッチ無し）。
-# パッチ名は出力ディレクトリの slug（'/' を '-' に）に対応: 05-narrowing -> patches/05-narrowing.patch
+# パッチ名は出力ディレクトリの slug（'/' を '-' に）に対応: wonderland/05-narrowing -> patches/wonderland-05-narrowing.patch
 MAP=(
-  "part-00:00-hello"
-  "part-01:01-php-parser"
-  "part-02:02-scope"
-  "part-03:03-type-system"
-  "part-04:04-type-inference"
-  "part-05:05-narrowing"
-  "part-06:06-reflection"
-  "part-07:07-phpdoc"
-  "part-08:08-rules-and-levels"
-  "part-09:09-tooling"
-  "seasoned-01:seasoned/01-configuration"
-  "seasoned-02:seasoned/02-arrays"
-  "seasoned-03:seasoned/03-generics"
-  "seasoned-04:seasoned/04-control-flow"
-  "seasoned-05:seasoned/05-byref-stubs"
-  "seasoned-06:seasoned/06-performance"
-  "seasoned-07:seasoned/07-precision"
+  "part-00:wonderland/00-hello"
+  "part-01:wonderland/01-php-parser"
+  "part-02:wonderland/02-scope"
+  "part-03:wonderland/03-type-system"
+  "part-04:wonderland/04-type-inference"
+  "part-05:wonderland/05-narrowing"
+  "part-06:wonderland/06-reflection"
+  "part-07:wonderland/07-phpdoc"
+  "part-08:wonderland/08-rules-and-levels"
+  "part-09:wonderland/09-tooling"
+  "seasoned-01:looking-glass/01-configuration"
+  "seasoned-02:looking-glass/02-arrays"
+  "seasoned-03:looking-glass/03-generics"
+  "seasoned-04:looking-glass/04-control-flow"
+  "seasoned-05:looking-glass/05-byref-stubs"
+  "seasoned-06:looking-glass/06-performance"
+  "seasoned-07:looking-glass/07-precision"
 )
 
 # dev/ の現在地を作業コピーへ（vendor/lock/cache は生成物なので除外）。

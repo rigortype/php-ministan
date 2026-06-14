@@ -40,7 +40,7 @@ $ cd dev && composer install && cd ..
 $ dev/bin/ministan analyse examples/hello.php
 
 # 任意の章のスナップショットで動かす（自己完結）
-$ cd impls/02-scope && composer install
+$ cd impls/wonderland/02-scope && composer install
 $ ./bin/ministan analyse examples/with-var-dump.php
 ```
 

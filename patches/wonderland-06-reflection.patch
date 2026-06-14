@@ -1,0 +1,1059 @@
+diff --git a/dev/src/Analyser/Analyser.php b/dev/src/Analyser/Analyser.php
+index 07ae18e..63dd1ac 100644
+--- a/dev/src/Analyser/Analyser.php
++++ b/dev/src/Analyser/Analyser.php
+@@ -4,10 +4,11 @@ declare(strict_types=1);
+ 
+ namespace Ministan\Analyser;
+ 
++use Ministan\Reflection\ReflectionProvider;
++use Ministan\Reflection\ReflectionProviderStaticAccessor;
+ use Ministan\Rules\RuleRegistry;
+ use PhpParser\Error as ParserError;
+ use PhpParser\Node;
+-use PhpParser\ParserFactory;
+ 
+ /**
+  * 解析パイプラインの入口。
+@@ -34,15 +35,16 @@ final class Analyser
+             return [new Error(sprintf('File "%s" was not found.', $file), $file, 0)];
+         }
+ 
+-        $parser = (new ParserFactory())->createForNewestSupportedVersion();
+-
+         try {
+-            $ast = $parser->parse($code) ?? [];
++            $ast = Parsing::parse($code);
+         } catch (ParserError $e) {
+             // 構文エラーがある間はルールを走らせても意味がないので、ここで打ち切る。
+             return [new Error($e->getRawMessage(), $file, $e->getStartLine())];
+         }
+ 
++        // 解析対象の宣言からリフレクションを組み、型オブジェクトから引けるようにする。
++        ReflectionProviderStaticAccessor::set(ReflectionProvider::fromNodes($ast));
++
+         $errors = [];
+         $resolver = new NodeScopeResolver(
+             function (Node $node, Scope $scope) use (&$errors, $file): void {
+diff --git a/dev/src/Analyser/NodeScopeResolver.php b/dev/src/Analyser/NodeScopeResolver.php
+index 7564608..4ec08bc 100644
+--- a/dev/src/Analyser/NodeScopeResolver.php
++++ b/dev/src/Analyser/NodeScopeResolver.php
+@@ -5,12 +5,8 @@ declare(strict_types=1);
+ namespace Ministan\Analyser;
+ 
+ use Closure;
+-use Ministan\Type\BooleanType;
+-use Ministan\Type\FloatType;
+-use Ministan\Type\IntegerType;
++use Ministan\Reflection\TypeNodeResolver;
+ use Ministan\Type\MixedType;
+-use Ministan\Type\NullType;
+-use Ministan\Type\StringType;
+ use Ministan\Type\Type;
+ use PhpParser\Node;
+ use PhpParser\Node\Expr;
+@@ -34,6 +30,8 @@ final class NodeScopeResolver
+ 
+     private TypeSpecifier $typeSpecifier;
+ 
++    private TypeNodeResolver $typeNodeResolver;
++
+     /**
+      * @param callable(Node, Scope): void $nodeCallback
+      */
+@@ -41,6 +39,7 @@ final class NodeScopeResolver
+     {
+         $this->nodeCallback = Closure::fromCallable($nodeCallback);
+         $this->typeSpecifier = new TypeSpecifier();
++        $this->typeNodeResolver = new TypeNodeResolver();
+     }
+ 
+     /**
+@@ -381,30 +380,10 @@ final class NodeScopeResolver
+             ($this->nodeCallback)($param, $scope);
+ 
+             if ($param->var instanceof Expr\Variable && is_string($param->var->name)) {
+-                $scope = $scope->assignVariable($param->var->name, $this->typeFromHint($param->type));
++                $scope = $scope->assignVariable($param->var->name, $this->typeNodeResolver->resolve($param->type));
+             }
+         }
+ 
+         return $scope;
+     }
+-
+-    /**
+-     * パラメータの型宣言を {@see Type} に写す最小版。クラス型・nullable・union は
+-     * リフレクションと PHPDoc を扱う Part 6〜7 で精密化する。
+-     */
+-    private function typeFromHint(?Node $node): Type
+-    {
+-        if ($node instanceof Node\Identifier) {
+-            return match ($node->toLowerString()) {
+-                'int' => new IntegerType(),
+-                'string' => new StringType(),
+-                'float' => new FloatType(),
+-                'bool' => new BooleanType(),
+-                'null' => new NullType(),
+-                default => new MixedType(),
+-            };
+-        }
+-
+-        return new MixedType();
+-    }
+ }
+diff --git a/dev/src/Analyser/Parsing.php b/dev/src/Analyser/Parsing.php
+new file mode 100644
+index 0000000..67408bd
+--- /dev/null
++++ b/dev/src/Analyser/Parsing.php
+@@ -0,0 +1,33 @@
++<?php
++
++declare(strict_types=1);
++
++namespace Ministan\Analyser;
++
++use PhpParser\Node;
++use PhpParser\NodeTraverser;
++use PhpParser\NodeVisitor\NameResolver;
++use PhpParser\ParserFactory;
++
++/**
++ * ソースを AST にし、名前を完全修飾へ解決する。
++ *
++ * php-parser の {@see NameResolver} を通すことで、`use Foo\Bar;` 下の `Bar` が
++ * `Foo\Bar` に解決され、クラス・関数宣言には `namespacedName` が付く。リフレクションが
++ * 正しい FQN で引けるようになる前提。`analyse` と `annotate` で共有する。
++ */
++final class Parsing
++{
++    /**
++     * @return Node[]
++     *
++     * @throws \PhpParser\Error
++     */
++    public static function parse(string $code): array
++    {
++        $parser = (new ParserFactory())->createForNewestSupportedVersion();
++        $ast = $parser->parse($code) ?? [];
++
++        return (new NodeTraverser(new NameResolver()))->traverse($ast);
++    }
++}
+diff --git a/dev/src/Analyser/Scope.php b/dev/src/Analyser/Scope.php
+index a7a49ba..914b331 100644
+--- a/dev/src/Analyser/Scope.php
++++ b/dev/src/Analyser/Scope.php
+@@ -12,10 +12,14 @@ use Ministan\Type\FloatType;
+ use Ministan\Type\IntegerType;
+ use Ministan\Type\MixedType;
+ use Ministan\Type\NullType;
++use Ministan\Type\ObjectType;
+ use Ministan\Type\StringType;
+ use Ministan\Type\Type;
+ use Ministan\Type\TypeCombinator;
++use Ministan\Reflection\ReflectionProviderStaticAccessor;
+ use PhpParser\Node\Expr;
++use PhpParser\Node\Identifier;
++use PhpParser\Node\Name;
+ use PhpParser\Node\Scalar;
+ 
+ /**
+@@ -112,6 +116,13 @@ final readonly class Scope
+                 ? $this->getVariableType($expr->name)
+                 : new MixedType(),
+ 
++            // --- オブジェクト生成・呼び出し（リフレクションを使う）---
++            $expr instanceof Expr\New_ => $expr->class instanceof Name
++                ? new ObjectType($expr->class->toString())
++                : new MixedType(),
++            $expr instanceof Expr\MethodCall => $this->methodCallType($expr),
++            $expr instanceof Expr\FuncCall => $this->funcCallType($expr),
++
+             // --- 文字列連結は常に string ---
+             $expr instanceof Expr\BinaryOp\Concat => new StringType(),
+ 
+@@ -141,6 +152,36 @@ final readonly class Scope
+         };
+     }
+ 
++    private function methodCallType(Expr\MethodCall $expr): Type
++    {
++        if (!$expr->name instanceof Identifier) {
++            return new MixedType();
++        }
++
++        $objectType = $this->getType($expr->var);
++        $provider = ReflectionProviderStaticAccessor::getInstanceOrNull();
++        if (!$objectType instanceof ObjectType || $provider === null || !$provider->hasClass($objectType->className)) {
++            return new MixedType();
++        }
++
++        $class = $provider->getClass($objectType->className);
++        if (!$class->hasMethod($expr->name->toString())) {
++            return new MixedType();
++        }
++
++        return $class->getMethod($expr->name->toString())->returnType;
++    }
++
++    private function funcCallType(Expr\FuncCall $expr): Type
++    {
++        $provider = ReflectionProviderStaticAccessor::getInstanceOrNull();
++        if (!$expr->name instanceof Name || $provider === null || !$provider->hasFunction($expr->name->toString())) {
++            return new MixedType();
++        }
++
++        return $provider->getFunction($expr->name->toString())->returnType;
++    }
++
+     private function constFetchType(Expr\ConstFetch $expr): Type
+     {
+         return match ($expr->name->toLowerString()) {
+diff --git a/dev/src/Command/AnnotateCommand.php b/dev/src/Command/AnnotateCommand.php
+index 72cbe00..570dc28 100644
+--- a/dev/src/Command/AnnotateCommand.php
++++ b/dev/src/Command/AnnotateCommand.php
+@@ -5,12 +5,14 @@ declare(strict_types=1);
+ namespace Ministan\Command;
+ 
+ use Ministan\Analyser\NodeScopeResolver;
++use Ministan\Analyser\Parsing;
+ use Ministan\Analyser\Scope;
++use Ministan\Reflection\ReflectionProvider;
++use Ministan\Reflection\ReflectionProviderStaticAccessor;
+ use PhpParser\Error as ParserError;
+ use PhpParser\Node;
+ use PhpParser\Node\Expr;
+ use PhpParser\Node\Stmt;
+-use PhpParser\ParserFactory;
+ 
+ /**
+  * `ministan annotate <file>` の実装。
+@@ -42,16 +44,16 @@ final class AnnotateCommand
+             return 1;
+         }
+ 
+-        $parser = (new ParserFactory())->createForNewestSupportedVersion();
+-
+         try {
+-            $ast = $parser->parse($code) ?? [];
++            $ast = Parsing::parse($code);
+         } catch (ParserError $e) {
+             fwrite(STDERR, sprintf("%s on line %d\n", $e->getRawMessage(), $e->getStartLine()));
+ 
+             return 1;
+         }
+ 
++        ReflectionProviderStaticAccessor::set(ReflectionProvider::fromNodes($ast));
++
+         /** @var list<array{int, string, string}> $rows */
+         $rows = [];
+         $resolver = new NodeScopeResolver(
+diff --git a/dev/src/Reflection/ClassReflection.php b/dev/src/Reflection/ClassReflection.php
+new file mode 100644
+index 0000000..93a2907
+--- /dev/null
++++ b/dev/src/Reflection/ClassReflection.php
+@@ -0,0 +1,138 @@
++<?php
++
++declare(strict_types=1);
++
++namespace Ministan\Reflection;
++
++use Ministan\Type\MixedType;
++use PhpParser\Node\Stmt\Class_;
++use PhpParser\Node\Stmt\ClassLike;
++use PhpParser\Node\Stmt\Enum_;
++use PhpParser\Node\Stmt\Interface_;
++use ReflectionClass;
++
++/**
++ * クラス／インターフェイスのシグネチャ。継承の解決とメソッド検索を提供する。
++ *
++ * AST 由来（解析対象コードの宣言）と、ネイティブ由来（組み込み・vendor のクラス）の
++ * 二系統を同じ形にまとめる。継承の上位はクラス名で持ち、必要時に {@see ReflectionProvider}
++ * を介して再帰的に辿る。
++ */
++final class ClassReflection
++{
++    /**
++     * @param list<string> $parentNames extends / implements の上位クラス名（FQN）
++     * @param array<string, MethodReflection> $methods 小文字名 → メソッド（直接宣言分）
++     */
++    public function __construct(
++        public readonly string $name,
++        private readonly array $parentNames,
++        private readonly array $methods,
++        private readonly ReflectionProvider $provider,
++        private readonly ?ReflectionClass $native = null,
++    ) {
++    }
++
++    public static function fromNode(string $name, ClassLike $node, TypeNodeResolver $resolver, ReflectionProvider $provider): self
++    {
++        $parents = [];
++        if ($node instanceof Class_) {
++            if ($node->extends !== null) {
++                $parents[] = $node->extends->toString();
++            }
++            foreach ($node->implements as $interface) {
++                $parents[] = $interface->toString();
++            }
++        } elseif ($node instanceof Interface_) {
++            foreach ($node->extends as $interface) {
++                $parents[] = $interface->toString();
++            }
++        } elseif ($node instanceof Enum_) {
++            foreach ($node->implements as $interface) {
++                $parents[] = $interface->toString();
++            }
++        }
++
++        $methods = [];
++        foreach ($node->getMethods() as $method) {
++            $methods[strtolower($method->name->toString())] = MethodReflection::fromNode($method, $resolver);
++        }
++
++        return new self($name, $parents, $methods, $provider);
++    }
++
++    /**
++     * @param ReflectionClass<object> $native
++     */
++    public static function fromNative(ReflectionClass $native, ReflectionProvider $provider): self
++    {
++        $parents = [];
++        $parent = $native->getParentClass();
++        if ($parent !== false) {
++            $parents[] = $parent->getName();
++        }
++        foreach ($native->getInterfaceNames() as $interface) {
++            $parents[] = $interface;
++        }
++
++        return new self($native->getName(), $parents, [], $provider, $native);
++    }
++
++    public function isSubclassOf(string $target): bool
++    {
++        $target = ltrim($target, '\\');
++        if (strcasecmp($this->name, $target) === 0) {
++            return true;
++        }
++
++        foreach ($this->parentNames as $parent) {
++            if (strcasecmp($parent, $target) === 0) {
++                return true;
++            }
++            if ($this->provider->hasClass($parent) && $this->provider->getClass($parent)->isSubclassOf($target)) {
++                return true;
++            }
++        }
++
++        return false;
++    }
++
++    public function hasMethod(string $name): bool
++    {
++        if (isset($this->methods[strtolower($name)])) {
++            return true;
++        }
++
++        if ($this->native !== null) {
++            return $this->native->hasMethod($name);
++        }
++
++        foreach ($this->parentNames as $parent) {
++            if ($this->provider->hasClass($parent) && $this->provider->getClass($parent)->hasMethod($name)) {
++                return true;
++            }
++        }
++
++        return false;
++    }
++
++    public function getMethod(string $name): MethodReflection
++    {
++        $key = strtolower($name);
++        if (isset($this->methods[$key])) {
++            return $this->methods[$key];
++        }
++
++        if ($this->native !== null && $this->native->hasMethod($name)) {
++            return MethodReflection::fromNative($this->native->getMethod($name), new TypeNodeResolver());
++        }
++
++        foreach ($this->parentNames as $parent) {
++            if ($this->provider->hasClass($parent) && $this->provider->getClass($parent)->hasMethod($name)) {
++                return $this->provider->getClass($parent)->getMethod($name);
++            }
++        }
++
++        return new MethodReflection($name, new MixedType(), []);
++    }
++}
+diff --git a/dev/src/Reflection/FunctionReflection.php b/dev/src/Reflection/FunctionReflection.php
+new file mode 100644
+index 0000000..cbb4bd6
+--- /dev/null
++++ b/dev/src/Reflection/FunctionReflection.php
+@@ -0,0 +1,46 @@
++<?php
++
++declare(strict_types=1);
++
++namespace Ministan\Reflection;
++
++use Ministan\Type\Type;
++use PhpParser\Node\Stmt\Function_;
++use ReflectionFunction;
++
++/**
++ * 関数 1 つのシグネチャ。
++ */
++final readonly class FunctionReflection
++{
++    /**
++     * @param list<Type> $parameterTypes
++     */
++    public function __construct(
++        public string $name,
++        public Type $returnType,
++        public array $parameterTypes,
++    ) {
++    }
++
++    public static function fromNode(string $name, Function_ $node, TypeNodeResolver $resolver): self
++    {
++        return new self(
++            $name,
++            $resolver->resolve($node->returnType),
++            array_map(static fn ($param): Type => $resolver->resolve($param->type), $node->params),
++        );
++    }
++
++    public static function fromNative(ReflectionFunction $function, TypeNodeResolver $resolver): self
++    {
++        return new self(
++            $function->getName(),
++            $resolver->resolveNative($function->getReturnType()),
++            array_map(
++                static fn ($param): Type => $resolver->resolveNative($param->getType()),
++                $function->getParameters(),
++            ),
++        );
++    }
++}
+diff --git a/dev/src/Reflection/MethodReflection.php b/dev/src/Reflection/MethodReflection.php
+new file mode 100644
+index 0000000..94a7743
+--- /dev/null
++++ b/dev/src/Reflection/MethodReflection.php
+@@ -0,0 +1,46 @@
++<?php
++
++declare(strict_types=1);
++
++namespace Ministan\Reflection;
++
++use Ministan\Type\Type;
++use PhpParser\Node\Stmt\ClassMethod;
++use ReflectionMethod;
++
++/**
++ * メソッド 1 つのシグネチャ。名前・パラメータ型・戻り値型。
++ */
++final readonly class MethodReflection
++{
++    /**
++     * @param list<Type> $parameterTypes
++     */
++    public function __construct(
++        public string $name,
++        public Type $returnType,
++        public array $parameterTypes,
++    ) {
++    }
++
++    public static function fromNode(ClassMethod $node, TypeNodeResolver $resolver): self
++    {
++        return new self(
++            $node->name->toString(),
++            $resolver->resolve($node->returnType),
++            array_map(static fn ($param): Type => $resolver->resolve($param->type), $node->params),
++        );
++    }
++
++    public static function fromNative(ReflectionMethod $method, TypeNodeResolver $resolver): self
++    {
++        return new self(
++            $method->getName(),
++            $resolver->resolveNative($method->getReturnType()),
++            array_map(
++                static fn ($param): Type => $resolver->resolveNative($param->getType()),
++                $method->getParameters(),
++            ),
++        );
++    }
++}
+diff --git a/dev/src/Reflection/ReflectionProvider.php b/dev/src/Reflection/ReflectionProvider.php
+new file mode 100644
+index 0000000..7b2e253
+--- /dev/null
++++ b/dev/src/Reflection/ReflectionProvider.php
+@@ -0,0 +1,116 @@
++<?php
++
++declare(strict_types=1);
++
++namespace Ministan\Reflection;
++
++use PhpParser\Node;
++use PhpParser\Node\Stmt\ClassLike;
++use PhpParser\Node\Stmt\Function_;
++use ReflectionClass;
++use ReflectionFunction;
++
++/**
++ * クラス・関数のシグネチャを引く窓口。PHPStan の {@see \PHPStan\Reflection\ReflectionProvider}。
++ *
++ * 二段構え:
++ * 1. 解析対象コードの宣言（AST から事前に収集）
++ * 2. 組み込み・vendor のクラス／関数（PHP ネイティブのリフレクションへフォールバック）
++ *
++ * 「対象コードを実行せず読む」のが理想だが、本チュートリアルでは外部シンボルについては
++ * ネイティブのリフレクションに頼る。スタブから組む方式は応用編で。
++ */
++final class ReflectionProvider
++{
++    /** @var array<string, ClassReflection> */
++    private array $classes = [];
++
++    /** @var array<string, FunctionReflection> */
++    private array $functions = [];
++
++    private TypeNodeResolver $typeNodeResolver;
++
++    public function __construct()
++    {
++        $this->typeNodeResolver = new TypeNodeResolver();
++    }
++
++    /**
++     * 解析対象 AST からクラス・関数宣言を収集して provider を組む。
++     * 名前解決済みなら宣言には namespacedName が付いている前提。
++     *
++     * @param Node[] $stmts
++     */
++    public static function fromNodes(array $stmts): self
++    {
++        $provider = new self();
++        $provider->collect($stmts);
++
++        return $provider;
++    }
++
++    /**
++     * @param Node[] $nodes
++     */
++    private function collect(array $nodes): void
++    {
++        foreach ($nodes as $node) {
++            if ($node instanceof Node\Stmt\Namespace_) {
++                $this->collect($node->stmts);
++            } elseif ($node instanceof ClassLike && $node->name !== null) {
++                $name = ($node->namespacedName ?? $node->name)->toString();
++                $this->classes[strtolower($name)] = ClassReflection::fromNode($name, $node, $this->typeNodeResolver, $this);
++            } elseif ($node instanceof Function_) {
++                $name = ($node->namespacedName ?? $node->name)->toString();
++                $this->functions[strtolower($name)] = FunctionReflection::fromNode($name, $node, $this->typeNodeResolver);
++            }
++        }
++    }
++
++    public function hasClass(string $name): bool
++    {
++        $name = ltrim($name, '\\');
++
++        return isset($this->classes[strtolower($name)])
++            || class_exists($name)
++            || interface_exists($name)
++            || enum_exists($name);
++    }
++
++    public function getClass(string $name): ClassReflection
++    {
++        $name = ltrim($name, '\\');
++        $key = strtolower($name);
++
++        if (isset($this->classes[$key])) {
++            return $this->classes[$key];
++        }
++
++        /** @var ReflectionClass<object> $native */
++        $native = new ReflectionClass($name);
++
++        return $this->classes[$key] = ClassReflection::fromNative($native, $this);
++    }
++
++    public function hasFunction(string $name): bool
++    {
++        $name = ltrim($name, '\\');
++
++        return isset($this->functions[strtolower($name)]) || function_exists($name);
++    }
++
++    public function getFunction(string $name): FunctionReflection
++    {
++        $name = ltrim($name, '\\');
++        $key = strtolower($name);
++
++        if (isset($this->functions[$key])) {
++            return $this->functions[$key];
++        }
++
++        return $this->functions[$key] = FunctionReflection::fromNative(
++            new ReflectionFunction($name),
++            $this->typeNodeResolver,
++        );
++    }
++}
+diff --git a/dev/src/Reflection/ReflectionProviderStaticAccessor.php b/dev/src/Reflection/ReflectionProviderStaticAccessor.php
+new file mode 100644
+index 0000000..53df3a3
+--- /dev/null
++++ b/dev/src/Reflection/ReflectionProviderStaticAccessor.php
+@@ -0,0 +1,28 @@
++<?php
++
++declare(strict_types=1);
++
++namespace Ministan\Reflection;
++
++/**
++ * 現在の {@see ReflectionProvider} への静的アクセス点。
++ *
++ * 型オブジェクト（{@see \Ministan\Type\ObjectType}）はスコープ推論のあちこちで生成され、
++ * provider を引数で持ち回すのが難しい。PHPStan も同じ理由で静的アクセサという「継ぎ目」を
++ * 置いている。解析の開始時に {@see set()} され、未設定なら null（= リフレクション無しで
++ * 安全側に倒す）を返す。
++ */
++final class ReflectionProviderStaticAccessor
++{
++    private static ?ReflectionProvider $instance = null;
++
++    public static function set(ReflectionProvider $provider): void
++    {
++        self::$instance = $provider;
++    }
++
++    public static function getInstanceOrNull(): ?ReflectionProvider
++    {
++        return self::$instance;
++    }
++}
+diff --git a/dev/src/Reflection/TypeNodeResolver.php b/dev/src/Reflection/TypeNodeResolver.php
+new file mode 100644
+index 0000000..26bd10e
+--- /dev/null
++++ b/dev/src/Reflection/TypeNodeResolver.php
+@@ -0,0 +1,86 @@
++<?php
++
++declare(strict_types=1);
++
++namespace Ministan\Reflection;
++
++use Ministan\Type\BooleanType;
++use Ministan\Type\Constant\ConstantBooleanType;
++use Ministan\Type\FloatType;
++use Ministan\Type\IntegerType;
++use Ministan\Type\MixedType;
++use Ministan\Type\NeverType;
++use Ministan\Type\NullType;
++use Ministan\Type\ObjectType;
++use Ministan\Type\StringType;
++use Ministan\Type\Type;
++use Ministan\Type\TypeCombinator;
++use PhpParser\Node;
++use PhpParser\Node\Identifier;
++use PhpParser\Node\IntersectionType;
++use PhpParser\Node\Name;
++use PhpParser\Node\NullableType;
++use PhpParser\Node\UnionType as UnionTypeNode;
++use ReflectionNamedType;
++use ReflectionType;
++use ReflectionUnionType;
++
++/**
++ * 型「宣言」を {@see Type} に写す。`int` → IntegerType、`?Foo` → Foo|null、など。
++ *
++ * 二系統の入力を扱う:
++ * - php-parser の型ノード（解析対象コードの宣言）
++ * - PHP ネイティブの {@see ReflectionType}（組み込み・外部クラスのシグネチャ）
++ */
++final class TypeNodeResolver
++{
++    public function resolve(?Node $node): Type
++    {
++        return match (true) {
++            $node === null => new MixedType(),
++            $node instanceof Identifier => $this->fromKeyword($node->toLowerString()),
++            $node instanceof Name => new ObjectType(ltrim($node->toString(), '\\')),
++            $node instanceof NullableType => TypeCombinator::union($this->resolve($node->type), new NullType()),
++            $node instanceof UnionTypeNode => TypeCombinator::union(
++                ...array_map($this->resolve(...), $node->types),
++            ),
++            $node instanceof IntersectionType => new MixedType(), // 交差型は簡略化
++            default => new MixedType(),
++        };
++    }
++
++    public function resolveNative(?ReflectionType $type): Type
++    {
++        if ($type instanceof ReflectionUnionType) {
++            return TypeCombinator::union(...array_map($this->resolveNative(...), $type->getTypes()));
++        }
++
++        if ($type instanceof ReflectionNamedType) {
++            $resolved = $type->isBuiltin()
++                ? $this->fromKeyword(strtolower($type->getName()))
++                : new ObjectType(ltrim($type->getName(), '\\'));
++
++            return $type->allowsNull() && $type->getName() !== 'null' && $type->getName() !== 'mixed'
++                ? TypeCombinator::union($resolved, new NullType())
++                : $resolved;
++        }
++
++        return new MixedType();
++    }
++
++    private function fromKeyword(string $keyword): Type
++    {
++        return match ($keyword) {
++            'int' => new IntegerType(),
++            'string' => new StringType(),
++            'float' => new FloatType(),
++            'bool' => new BooleanType(),
++            'true' => new ConstantBooleanType(true),
++            'false' => new ConstantBooleanType(false),
++            'null', 'void' => new NullType(),
++            'never' => new NeverType(),
++            // array / iterable / object / callable / self / static / parent / mixed は後章で精密化
++            default => new MixedType(),
++        };
++    }
++}
+diff --git a/dev/src/Rules/Methods/CallToUndefinedMethodRule.php b/dev/src/Rules/Methods/CallToUndefinedMethodRule.php
+new file mode 100644
+index 0000000..8053dfb
+--- /dev/null
++++ b/dev/src/Rules/Methods/CallToUndefinedMethodRule.php
+@@ -0,0 +1,62 @@
++<?php
++
++declare(strict_types=1);
++
++namespace Ministan\Rules\Methods;
++
++use Ministan\Analyser\Scope;
++use Ministan\Reflection\ReflectionProviderStaticAccessor;
++use Ministan\Rules\Rule;
++use Ministan\Rules\RuleError;
++use Ministan\Type\ObjectType;
++use PhpParser\Node;
++use PhpParser\Node\Expr\MethodCall;
++use PhpParser\Node\Identifier;
++
++/**
++ * 既知のクラスに対する、存在しないメソッド呼び出しを検出する。
++ *
++ * non-rejecting を厳守する。オブジェクトの型が確定した {@see ObjectType} で、その
++ * クラスがリフレクションで引け、メソッドが確実に無く、`__call` も無い——この全部が
++ * 揃ったときだけ報告する。少しでも不明なら黙る。
++ *
++ * @implements Rule<MethodCall>
++ */
++final class CallToUndefinedMethodRule implements Rule
++{
++    public function processNode(Node $node, Scope $scope): array
++    {
++        assert($node instanceof MethodCall);
++
++        if (!$node->name instanceof Identifier) {
++            return []; // 動的メソッド名 $obj->$m() は追わない
++        }
++
++        $objectType = $scope->getType($node->var);
++        if (!$objectType instanceof ObjectType) {
++            return []; // 型が確定していない → 黙る
++        }
++
++        $provider = ReflectionProviderStaticAccessor::getInstanceOrNull();
++        if ($provider === null || !$provider->hasClass($objectType->className)) {
++            return [];
++        }
++
++        $class = $provider->getClass($objectType->className);
++        $method = $node->name->toString();
++
++        if ($class->hasMethod($method) || $class->hasMethod('__call')) {
++            return [];
++        }
++
++        return [new RuleError(
++            sprintf('Call to an undefined method %s::%s().', $class->name, $method),
++            $node->getStartLine(),
++        )];
++    }
++
++    public function getNodeType(): string
++    {
++        return MethodCall::class;
++    }
++}
+diff --git a/dev/src/Rules/RuleRegistryFactory.php b/dev/src/Rules/RuleRegistryFactory.php
+index a23e403..65ef14c 100644
+--- a/dev/src/Rules/RuleRegistryFactory.php
++++ b/dev/src/Rules/RuleRegistryFactory.php
+@@ -5,6 +5,7 @@ declare(strict_types=1);
+ namespace Ministan\Rules;
+ 
+ use Ministan\Rules\Functions\NoVarDumpRule;
++use Ministan\Rules\Methods\CallToUndefinedMethodRule;
+ use Ministan\Rules\Variables\UndefinedVariableRule;
+ 
+ /**
+@@ -20,6 +21,7 @@ final class RuleRegistryFactory
+         return new RuleRegistry([
+             new NoVarDumpRule(),
+             new UndefinedVariableRule(),
++            new CallToUndefinedMethodRule(),
+         ]);
+     }
+ }
+diff --git a/dev/src/Type/ObjectType.php b/dev/src/Type/ObjectType.php
+index 1c6a105..9fb0175 100644
+--- a/dev/src/Type/ObjectType.php
++++ b/dev/src/Type/ObjectType.php
+@@ -4,15 +4,15 @@ declare(strict_types=1);
+ 
+ namespace Ministan\Type;
+ 
++use Ministan\Reflection\ReflectionProviderStaticAccessor;
+ use Ministan\TrinaryLogic;
+ 
+ /**
+  * あるクラス／インターフェイスのインスタンスを表す型。
+  *
+- * Part 5 では「クラス名」しか知らない素朴な実装。同名なら Yes、別名なら
+- * 継承関係が不明なので Maybe を返す（non-rejecting）。`$x instanceof Foo` の
+- * 絞り込みで使う。継承を踏まえた厳密な部分型判定は、リフレクションを得る
+- * Part 6 で本 ObjectType を強化して実現する。
++ * Part 6 で継承対応に強化。{@see ReflectionProviderStaticAccessor} 経由でクラス階層を
++ * 引き、`$child instanceof $parent` を正しく Yes/No 判定する。provider が無い、または
++ * クラスが未知のときは Maybe に縮退（non-rejecting）。
+  */
+ final class ObjectType implements Type
+ {
+@@ -32,13 +32,27 @@ final class ObjectType implements Type
+     {
+         return $this->relateToSpecial($type)
+             ?? match (true) {
+-                $type instanceof self => $this->className === $type->className
+-                    ? TrinaryLogic::Yes
+-                    : TrinaryLogic::Maybe, // 継承関係は Part 6 まで不明
++                $type instanceof self => $this->isSuperTypeOfClass($type->className),
+                 default => TrinaryLogic::No,
+             };
+     }
+ 
++    private function isSuperTypeOfClass(string $other): TrinaryLogic
++    {
++        if (strcasecmp($this->className, $other) === 0) {
++            return TrinaryLogic::Yes;
++        }
++
++        $provider = ReflectionProviderStaticAccessor::getInstanceOrNull();
++        if ($provider !== null && $provider->hasClass($other)) {
++            return $provider->getClass($other)->isSubclassOf($this->className)
++                ? TrinaryLogic::Yes
++                : TrinaryLogic::No;
++        }
++
++        return TrinaryLogic::Maybe; // 階層が分からなければ狭めも広げもしない
++    }
++
+     public function equals(Type $type): bool
+     {
+         return $type instanceof self && $type->className === $this->className;
+diff --git a/dev/tests/AnalyserTest.php b/dev/tests/AnalyserTest.php
+index c94b7b1..19d060f 100644
+--- a/dev/tests/AnalyserTest.php
++++ b/dev/tests/AnalyserTest.php
+@@ -6,6 +6,7 @@ namespace Ministan\Tests;
+ 
+ use Ministan\Analyser\Analyser;
+ use Ministan\Rules\Functions\NoVarDumpRule;
++use Ministan\Rules\Methods\CallToUndefinedMethodRule;
+ use Ministan\Rules\RuleRegistry;
+ use Ministan\Rules\Variables\UndefinedVariableRule;
+ use PHPUnit\Framework\TestCase;
+@@ -17,6 +18,7 @@ final class AnalyserTest extends TestCase
+         return new Analyser(new RuleRegistry([
+             new NoVarDumpRule(),
+             new UndefinedVariableRule(),
++            new CallToUndefinedMethodRule(),
+         ]));
+     }
+ 
+@@ -90,4 +92,19 @@ final class AnalyserTest extends TestCase
+ 
+         self::assertSame([], $errors);
+     }
++
++    public function testDefinedMethodCallIsAccepted(): void
++    {
++        $errors = $this->analyser()->analyseFile(__DIR__ . '/fixtures/method-call.php');
++
++        self::assertSame([], $errors);
++    }
++
++    public function testUndefinedMethodIsReported(): void
++    {
++        $errors = $this->analyser()->analyseFile(__DIR__ . '/fixtures/undefined-method.php');
++
++        self::assertCount(1, $errors);
++        self::assertSame('Call to an undefined method Box::close().', $errors[0]->message);
++    }
+ }
+diff --git a/dev/tests/Reflection/ReflectionProviderTest.php b/dev/tests/Reflection/ReflectionProviderTest.php
+new file mode 100644
+index 0000000..bfb2a6e
+--- /dev/null
++++ b/dev/tests/Reflection/ReflectionProviderTest.php
+@@ -0,0 +1,58 @@
++<?php
++
++declare(strict_types=1);
++
++namespace Ministan\Tests\Reflection;
++
++use Ministan\Analyser\Parsing;
++use Ministan\Reflection\ReflectionProvider;
++use Ministan\Reflection\ReflectionProviderStaticAccessor;
++use Ministan\TrinaryLogic;
++use Ministan\Type\ObjectType;
++use PHPUnit\Framework\TestCase;
++
++final class ReflectionProviderTest extends TestCase
++{
++    private function providerFor(string $code): ReflectionProvider
++    {
++        return ReflectionProvider::fromNodes(Parsing::parse("<?php\n" . $code));
++    }
++
++    public function testCollectsClassAndMethodReturnTypeFromSource(): void
++    {
++        $provider = $this->providerFor('class Foo { public function bar(): int { return 1; } }');
++
++        self::assertTrue($provider->hasClass('Foo'));
++        $class = $provider->getClass('Foo');
++        self::assertTrue($class->hasMethod('bar'));
++        self::assertSame('int', $class->getMethod('bar')->returnType->describe());
++    }
++
++    public function testResolvesInheritedMethodsAcrossSource(): void
++    {
++        $provider = $this->providerFor('class A { public function a(): string { return ""; } } class B extends A {}');
++
++        self::assertTrue($provider->getClass('B')->hasMethod('a'));
++        self::assertTrue($provider->getClass('B')->isSubclassOf('A'));
++    }
++
++    public function testNativeFunctionFallback(): void
++    {
++        $provider = $this->providerFor('');
++
++        self::assertTrue($provider->hasFunction('strlen'));
++        self::assertSame('int', $provider->getFunction('strlen')->returnType->describe());
++    }
++
++    public function testObjectTypeUsesHierarchyWhenProviderKnown(): void
++    {
++        $provider = $this->providerFor('class A {} class B extends A {}');
++        ReflectionProviderStaticAccessor::set($provider);
++
++        $a = new ObjectType('A');
++        $b = new ObjectType('B');
++
++        self::assertSame(TrinaryLogic::Yes, $a->isSuperTypeOf($b)); // A は B の上位
++        self::assertSame(TrinaryLogic::No, $b->isSuperTypeOf($a));  // 逆は成り立たない
++    }
++}
+diff --git a/dev/tests/fixtures/method-call.php b/dev/tests/fixtures/method-call.php
+new file mode 100644
+index 0000000..8d3655a
+--- /dev/null
++++ b/dev/tests/fixtures/method-call.php
+@@ -0,0 +1,14 @@
++<?php
++
++declare(strict_types=1);
++
++class Box
++{
++    public function open(): string
++    {
++        return 'open';
++    }
++}
++
++$box = new Box();
++echo $box->open();
+diff --git a/dev/tests/fixtures/undefined-method.php b/dev/tests/fixtures/undefined-method.php
+new file mode 100644
+index 0000000..d91f3ef
+--- /dev/null
++++ b/dev/tests/fixtures/undefined-method.php
+@@ -0,0 +1,14 @@
++<?php
++
++declare(strict_types=1);
++
++class Box
++{
++    public function open(): string
++    {
++        return 'open';
++    }
++}
++
++$box = new Box();
++$box->close(); // 未定義メソッド
+diff --git a/examples/reflection.php b/examples/reflection.php
+new file mode 100644
+index 0000000..2453890
+--- /dev/null
++++ b/examples/reflection.php
+@@ -0,0 +1,17 @@
++<?php
++
++declare(strict_types=1);
++
++class Greeter
++{
++    public function greet(string $name): string
++    {
++        return 'Hello, ' . $name;
++    }
++}
++
++$greeter = new Greeter();
++$message = $greeter->greet('world'); // string（メソッド戻り値）
++$length = strlen($message);          // int（組み込み関数の戻り値）
++
++$greeter->shout('!'); // 未定義メソッド → エラー

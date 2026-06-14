@@ -3,7 +3,7 @@
 # 遡及修正のあと、build-impls.sh が「逆適用に失敗」と言った *導入章* のパッチを
 # dev/ の現状に合わせて再生成する。git 履歴は書き換えない。
 #
-# 使い方:  tools/refresh-patch.sh <章slug>      （例: 05-narrowing / 08-rules-and-levels / seasoned-01-configuration）
+# 使い方:  tools/refresh-patch.sh <章slug>      （例: wonderland-05-narrowing / wonderland-08-rules-and-levels / looking-glass-01-configuration）
 #
 # 仕組み（循環を避け、既に取り込んだ過去の修正も保つ）:
 #   一時 git リポジトリに dev/ を置き、現在の patches/ を上から **3way で逆適用** して各章ツリーを
@@ -17,11 +17,11 @@ REPO="$(pwd)"
 slug="${1:?使い方: tools/refresh-patch.sh <章slug 例: 05-narrowing>}"
 
 MAP=(
-  "part-00:00-hello" "part-01:01-php-parser" "part-02:02-scope" "part-03:03-type-system"
-  "part-04:04-type-inference" "part-05:05-narrowing" "part-06:06-reflection" "part-07:07-phpdoc"
-  "part-08:08-rules-and-levels" "part-09:09-tooling" "seasoned-01:seasoned/01-configuration"
-  "seasoned-02:seasoned/02-arrays" "seasoned-03:seasoned/03-generics" "seasoned-04:seasoned/04-control-flow"
-  "seasoned-05:seasoned/05-byref-stubs" "seasoned-06:seasoned/06-performance" "seasoned-07:seasoned/07-precision"
+  "part-00:wonderland/00-hello" "part-01:wonderland/01-php-parser" "part-02:wonderland/02-scope" "part-03:wonderland/03-type-system"
+  "part-04:wonderland/04-type-inference" "part-05:wonderland/05-narrowing" "part-06:wonderland/06-reflection" "part-07:wonderland/07-phpdoc"
+  "part-08:wonderland/08-rules-and-levels" "part-09:wonderland/09-tooling" "seasoned-01:looking-glass/01-configuration"
+  "seasoned-02:looking-glass/02-arrays" "seasoned-03:looking-glass/03-generics" "seasoned-04:looking-glass/04-control-flow"
+  "seasoned-05:looking-glass/05-byref-stubs" "seasoned-06:looking-glass/06-performance" "seasoned-07:looking-glass/07-precision"
 )
 
 idx=-1

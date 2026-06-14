@@ -57,40 +57,40 @@
 
 「分からないから一応エラー」を積み重ねた解析器は誰にも使われません。**偽陽性を出さないこと**を
 最優先に置く —— この約束が、レベル段階制や `mixed` の意味論として全章に効いてきます。
-詳しくは [Part 0](00-overview.md)。
+詳しくは [Part 0](wonderland/00-overview.md)。
 
 ## 二部構成の地図
 
-### The Little ministan（基礎編） —— 芯を通す
+### ministan in PHP's Wonderland（基礎編） —— 芯を通す
 
 パース → スコープ → 型推論 → 絞り込み → ルール → 報告 の一本道を、最小核で通します。
 
 | Part | テーマ | 完成する機能 |
 |------|--------|--------------|
-| [0](00-overview.md) | 全体像と Hello World | 解析パイプラインを通し、構文エラーを報告 |
-| [1](01-php-parser.md) | PHP-Parser と AST | 構文ベースのルール（`Rule` インターフェイス） |
-| [2](02-scope.md) | Scope と変数追跡 | 未定義変数の使用検出 |
-| [3](03-type-system.md) | 型システムの基礎 | `Type` と三値論理・定数型 |
-| [4](04-type-inference.md) | 型推論 | `annotate` で推論型を表示 |
-| [5](05-narrowing.md) | Union と絞り込み | `instanceof`／`is_*`／`=== null` で narrowing |
-| [6](06-reflection.md) | リフレクション | 戻り値推論・未定義メソッド検出 |
-| [7](07-phpdoc.md) | PHPDoc | `@param`／`@return`／`@var` を型に |
-| [8](08-rules-and-levels.md) | ルールとレベル | 引数／戻り値の型不一致・level 0–max |
-| [9](09-tooling.md) | ツール化 | ディレクトリ再帰・JSON 出力・baseline |
+| [0](wonderland/00-overview.md) | 全体像と Hello World | 解析パイプラインを通し、構文エラーを報告 |
+| [1](wonderland/01-php-parser.md) | PHP-Parser と AST | 構文ベースのルール（`Rule` インターフェイス） |
+| [2](wonderland/02-scope.md) | Scope と変数追跡 | 未定義変数の使用検出 |
+| [3](wonderland/03-type-system.md) | 型システムの基礎 | `Type` と三値論理・定数型 |
+| [4](wonderland/04-type-inference.md) | 型推論 | `annotate` で推論型を表示 |
+| [5](wonderland/05-narrowing.md) | Union と絞り込み | `instanceof`／`is_*`／`=== null` で narrowing |
+| [6](wonderland/06-reflection.md) | リフレクション | 戻り値推論・未定義メソッド検出 |
+| [7](wonderland/07-phpdoc.md) | PHPDoc | `@param`／`@return`／`@var` を型に |
+| [8](wonderland/08-rules-and-levels.md) | ルールとレベル | 引数／戻り値の型不一致・level 0–max |
+| [9](wonderland/09-tooling.md) | ツール化 | ディレクトリ再帰・JSON 出力・baseline |
 
-### The Seasoned ministan（応用編） —— 実用の肉付け
+### ministan Through PHP's Looking-Glass（応用編） —— 実用の肉付け
 
 基礎編を前提に、現場で効く精度と仕組みを足します（意図的に難度を上げた巻です）。
 
 | S | テーマ | 完成する機能 |
 |---|--------|--------------|
-| [1](seasoned/01-configuration.md) | 設定と拡張 | NEON 設定・ignoreErrors・カスタムルール |
-| [2](seasoned/02-arrays.md) | 配列を深める | constant array shape・配列アクセス・`foreach` 要素型 |
-| [3](seasoned/03-generics.md) | ジェネリクス | `@template`・型引数・型変数の置換 |
-| [4](seasoned/04-control-flow.md) | 制御フローと高度な narrowing | 早期 return・`assert`・`match` の腕 |
-| [5](seasoned/05-byref-stubs.md) | 参照渡しとスタブ | by-ref 出力引数・スタブによる補完 |
-| [6](seasoned/06-performance.md) | パフォーマンス | 結果キャッシュ |
-| [7](seasoned/07-precision.md) | 推論と検査の精度向上 | match 式結果型・union 吸収・ループ型ワイドニング・名前付き引数 |
+| [1](looking-glass/01-configuration.md) | 設定と拡張 | NEON 設定・ignoreErrors・カスタムルール |
+| [2](looking-glass/02-arrays.md) | 配列を深める | constant array shape・配列アクセス・`foreach` 要素型 |
+| [3](looking-glass/03-generics.md) | ジェネリクス | `@template`・型引数・型変数の置換 |
+| [4](looking-glass/04-control-flow.md) | 制御フローと高度な narrowing | 早期 return・`assert`・`match` の腕 |
+| [5](looking-glass/05-byref-stubs.md) | 参照渡しとスタブ | by-ref 出力引数・スタブによる補完 |
+| [6](looking-glass/06-performance.md) | パフォーマンス | 結果キャッシュ |
+| [7](looking-glass/07-precision.md) | 推論と検査の精度向上 | match 式結果型・union 吸収・ループ型ワイドニング・名前付き引数 |
 
 ## 読み方 —— `dev/` と `impls/`
 
@@ -98,7 +98,7 @@
 （その章まで書いたときのコード）です。任意の章は、それだけで動かせます:
 
 ```console
-$ cd impls/02-scope && composer install
+$ cd impls/wonderland/02-scope && composer install
 $ ./bin/ministan analyse examples/with-var-dump.php
  examples/with-var-dump.php:12
    Called var_dump().
@@ -115,4 +115,4 @@ ministan は最小核です。`Scope`・`Type`・`TypeSpecifier`・`NodeScopeRes
 …という名前も役割も、本物の [PHPStan のソース](https://github.com/phpstan/phpstan-src)と
 地続きです。読み終えたら、ぜひ本物を開いてみてください —— きっと、もう怖くありません。
 
-では、[Part 0](00-overview.md) から。良い旅を。
+では、[Part 0](wonderland/00-overview.md) から。良い旅を。

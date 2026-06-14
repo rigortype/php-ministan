@@ -4,13 +4,11 @@ declare(strict_types=1);
 
 namespace Ministan\Reflection;
 
-use Ministan\Analyser\Parsing;
 use PhpParser\Node;
 use PhpParser\Node\Stmt\ClassLike;
 use PhpParser\Node\Stmt\Function_;
 use ReflectionClass;
 use ReflectionFunction;
-use Throwable;
 
 /**
  * クラス・関数のシグネチャを引く窓口。PHPStan の {@see \PHPStan\Reflection\ReflectionProvider}。
@@ -30,9 +28,6 @@ final class ReflectionProvider
     /** @var array<string, FunctionReflection> */
     private array $functions = [];
 
-    /** @var array<string, FunctionReflection> スタブで補ったシグネチャ（ネイティブより優先） */
-    private array $stubFunctions = [];
-
     private TypeNodeResolver $typeNodeResolver;
 
     private PhpDocTypeResolver $phpDocTypeResolver;
@@ -41,33 +36,6 @@ final class ReflectionProvider
     {
         $this->typeNodeResolver = new TypeNodeResolver();
         $this->phpDocTypeResolver = new PhpDocTypeResolver();
-        $this->loadStubs();
-    }
-
-    private function loadStubs(): void
-    {
-        $file = dirname(__DIR__, 2) . '/stubs/core.php';
-        if (!is_file($file)) {
-            return;
-        }
-
-        try {
-            $ast = Parsing::parse((string) file_get_contents($file));
-        } catch (Throwable) {
-            return;
-        }
-
-        foreach ($ast as $node) {
-            if ($node instanceof Function_) {
-                $name = ($node->namespacedName ?? $node->name)->toString();
-                $this->stubFunctions[strtolower($name)] = FunctionReflection::fromNode(
-                    $name,
-                    $node,
-                    $this->typeNodeResolver,
-                    $this->phpDocTypeResolver,
-                );
-            }
-        }
     }
 
     /**
@@ -130,9 +98,8 @@ final class ReflectionProvider
     public function hasFunction(string $name): bool
     {
         $name = ltrim($name, '\\');
-        $key = strtolower($name);
 
-        return isset($this->functions[$key]) || isset($this->stubFunctions[$key]) || function_exists($name);
+        return isset($this->functions[strtolower($name)]) || function_exists($name);
     }
 
     public function getFunction(string $name): FunctionReflection
@@ -140,9 +107,13 @@ final class ReflectionProvider
         $name = ltrim($name, '\\');
         $key = strtolower($name);
 
-        // 優先順: 解析対象の宣言 > スタブ > ネイティブ。
-        return $this->functions[$key]
-            ?? $this->stubFunctions[$key]
-            ?? ($this->functions[$key] = FunctionReflection::fromNative(new ReflectionFunction($name), $this->typeNodeResolver));
+        if (isset($this->functions[$key])) {
+            return $this->functions[$key];
+        }
+
+        return $this->functions[$key] = FunctionReflection::fromNative(
+            new ReflectionFunction($name),
+            $this->typeNodeResolver,
+        );
     }
 }
