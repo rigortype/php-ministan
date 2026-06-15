@@ -7,11 +7,11 @@ namespace Ministan\Type;
 use Ministan\TrinaryLogic;
 
 /**
- * 単純な値型（int, string, null …）が共有する定型処理。
+ * Boilerplate shared by simple value types (int, string, null …).
  *
- * - `accepts` は `isSuperTypeOf` に委譲する（これらの型では代入可能性＝部分型関係）。
- * - `equals` は同じクラスかどうか。定数型は値も比べるので個別に上書きする。
- * - `relateToSpecial` は、どの型にも共通の「上端 mixed・下端 never・union」との関係を返す。
+ * - `accepts` delegates to `isSuperTypeOf` (for these types, assignability = the subtype relation).
+ * - `equals` checks whether the class is the same. Constant types also compare values, so they override it individually.
+ * - `relateToSpecial` returns the relation to the cases common to every type: the top mixed, the bottom never, and union.
  */
 trait SimpleTypeTrait
 {
@@ -26,12 +26,12 @@ trait SimpleTypeTrait
     }
 
     /**
-     * 全型に共通する相手との関係:
-     * - never はあらゆる型の部分型（= Yes）
-     * - mixed はどの型でもありうる（= Maybe）
-     * - union は各メンバとの関係の extreme-identity（全 Yes→Yes・全 No→No・混在→Maybe）
+     * The relation to operands common to all types:
+     * - never is a subtype of every type (= Yes)
+     * - mixed could be any type (= Maybe)
+     * - for a union, the extreme-identity of the relation to each member (all Yes→Yes, all No→No, mixed→Maybe)
      *
-     * いずれでもなければ null を返し、呼び出し側の固有判定に委ねる。
+     * If it is none of these, return null and defer to the caller's own decision.
      */
     protected function relateToSpecial(Type $type): ?TrinaryLogic
     {
@@ -44,8 +44,8 @@ trait SimpleTypeTrait
         }
 
         if ($type instanceof UnionType) {
-            // 部分一致（一部メンバだけ適合）は No に潰さず Maybe にする。さもないと
-            // union の一部不適合を低レベルで誤検出してしまう（高レベルでのみ咎める）。
+            // A partial match (only some members fit) becomes Maybe rather than collapsing to No.
+            // Otherwise we would falsely flag a partially-unfitting union at a low level (only blame it at a high level).
             $results = [];
             foreach ($type->getTypes() as $member) {
                 $results[] = $this->isSuperTypeOf($member);

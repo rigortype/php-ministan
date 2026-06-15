@@ -30,17 +30,18 @@ use PhpParser\Node\Name;
 use PhpParser\Node\Scalar;
 
 /**
- * ある地点で「いま何が分かっているか」を表す不変オブジェクト。
+ * An immutable object representing "what is known at a given point".
  *
- * Part 2 では「変数が定義済みか」だけを持っていた。Part 4 でそれを **変数→型** の
- * 対応へ育て、さらに {@see getType()} で任意の式の型を推論できるようにする。
- * これが PHPStan の `Scope::getType()` に対応する、型推論の本体。
+ * In Part 2 it held only "whether a variable is defined". Part 4 grows that into a
+ * **variable -> type** mapping and, via {@see getType()}, lets it infer the type of
+ * any expression. This is the heart of type inference, corresponding to PHPStan's
+ * `Scope::getType()`.
  */
 final readonly class Scope
 {
     /**
-     * @param array<string, Type> $variableTypes 定義済み変数名 → その型
-     * @param Type|null $functionReturnType 現在いる関数／メソッドの宣言戻り値型（無ければ null）
+     * @param array<string, Type> $variableTypes defined variable name -> its type
+     * @param Type|null $functionReturnType the declared return type of the current function/method (null if none)
      */
     private function __construct(
         private array $variableTypes,
@@ -74,7 +75,7 @@ final readonly class Scope
     }
 
     /**
-     * 変数の型。未定義なら mixed に縮退する（non-rejecting）。
+     * The type of a variable. If undefined, it collapses to mixed (non-rejecting).
      */
     public function getVariableType(string $name): Type
     {
@@ -86,7 +87,7 @@ final readonly class Scope
         return new self([...$this->variableTypes, $name => $type], $this->functionReturnType);
     }
 
-    /** 関数本体に入るとき、宣言された戻り値型を覚えておく（戻り値検査が使う）。 */
+    /** When entering a function body, remember the declared return type (used by return-type checking). */
     public function withFunctionReturnType(Type $type): self
     {
         return new self($this->variableTypes, $type);
@@ -98,9 +99,10 @@ final readonly class Scope
     }
 
     /**
-     * 2 つのスコープを合流する。両方で定義された変数は型を **union** で合併する
-     * （then で int・else で string なら、合流後は int|string）。片方だけの変数は
-     * 楽観的に残し、偽陽性を出さない。
+     * Merges two scopes. A variable defined in both has its types combined with a
+     * **union** (int in the then-branch and string in the else-branch becomes
+     * int|string after the merge). A variable present in only one branch is kept
+     * optimistically, so no false positives are produced.
      */
     public function mergeWith(self $other): self
     {
@@ -115,32 +117,34 @@ final readonly class Scope
     }
 
     /**
-     * 式の型を推論する。型システムが初めて「動いて見える」場所。
+     * Infers the type of an expression. The first place where the type system
+     * "visibly comes to life".
      *
-     * Part 4 ではリテラル・定数・変数参照・基本的な二項/単項演算を扱う。
-     * メソッド呼び出しや配列アクセスは、リフレクション（Part 6）以降で精密化する。
+     * Part 4 handles literals, constants, variable references, and basic
+     * binary/unary operations. Method calls and array access are refined from
+     * reflection (Part 6) onward.
      */
     public function getType(Expr $expr): Type
     {
         return match (true) {
-            // --- リテラル → 定数型 ---
+            // --- literal -> constant type ---
             $expr instanceof Scalar\Int_    => new ConstantIntegerType($expr->value),
             $expr instanceof Scalar\String_ => new ConstantStringType($expr->value),
-            $expr instanceof Scalar\Float_  => new FloatType(), // 定数 float 型は後章
+            $expr instanceof Scalar\Float_  => new FloatType(), // constant float type comes in a later chapter
 
             // --- true / false / null ---
             $expr instanceof Expr\ConstFetch => $this->constFetchType($expr),
 
-            // --- 変数参照 ---
+            // --- variable reference ---
             $expr instanceof Expr\Variable => is_string($expr->name)
                 ? $this->getVariableType($expr->name)
                 : new MixedType(),
 
-            // --- 配列リテラルとアクセス ---
+            // --- array literals and access ---
             $expr instanceof Expr\Array_ => $this->arrayLiteralType($expr),
             $expr instanceof Expr\ArrayDimFetch => $this->arrayDimType($expr),
 
-            // --- オブジェクト生成・呼び出し（リフレクションを使う）---
+            // --- object construction and calls (these use reflection) ---
             $expr instanceof Expr\New_ => $expr->class instanceof Name
                 ? new ObjectType($expr->class->toString())
                 : new MixedType(),
@@ -148,10 +152,10 @@ final readonly class Scope
             $expr instanceof Expr\FuncCall => $this->funcCallType($expr),
             $expr instanceof Expr\Match_ => $this->matchType($expr),
 
-            // --- 文字列連結は常に string ---
+            // --- string concatenation is always string ---
             $expr instanceof Expr\BinaryOp\Concat => new StringType(),
 
-            // --- 算術 ---
+            // --- arithmetic ---
             $expr instanceof Expr\BinaryOp\Plus,
             $expr instanceof Expr\BinaryOp\Minus,
             $expr instanceof Expr\BinaryOp\Mul => $this->arithmeticType($expr),
@@ -159,7 +163,7 @@ final readonly class Scope
             $expr instanceof Expr\UnaryMinus,
             $expr instanceof Expr\UnaryPlus => $this->toNumeric($this->getType($expr->expr)),
 
-            // --- 比較・論理は常に bool ---
+            // --- comparison and logical operators are always bool ---
             $expr instanceof Expr\BinaryOp\Identical,
             $expr instanceof Expr\BinaryOp\NotIdentical,
             $expr instanceof Expr\BinaryOp\Equal,
@@ -172,7 +176,7 @@ final readonly class Scope
             $expr instanceof Expr\BinaryOp\BooleanOr,
             $expr instanceof Expr\BooleanNot => new BooleanType(),
 
-            // --- 分からないものは mixed に縮退 ---
+            // --- anything unknown collapses to mixed ---
             default => new MixedType(),
         };
     }
@@ -186,7 +190,7 @@ final readonly class Scope
 
         foreach ($expr->items as $item) {
             if (!$item instanceof ArrayItem || $item->unpack) {
-                $isConstant = false; // スプレッド ...$a は静的に分からない
+                $isConstant = false; // a spread ...$a cannot be known statically
                 continue;
             }
 
@@ -200,7 +204,7 @@ final readonly class Scope
                 if ($keyType instanceof ConstantIntegerType) {
                     $nextInt = max($nextInt, $keyType->value + 1);
                 } elseif (!$keyType instanceof ConstantStringType) {
-                    $isConstant = false; // キーが定数でなければ shape にできない
+                    $isConstant = false; // if the key is not constant, it cannot form a shape
                 }
             }
 
@@ -221,7 +225,7 @@ final readonly class Scope
     private function arrayDimType(Expr\ArrayDimFetch $expr): Type
     {
         if ($expr->dim === null) {
-            return new MixedType(); // $arr[] は書き込み専用構文
+            return new MixedType(); // $arr[] is write-only syntax
         }
 
         $arrayType = $this->getType($expr->var);
@@ -255,7 +259,7 @@ final readonly class Scope
 
         $returnType = $class->getMethod($expr->name->toString())->returnType;
 
-        // ジェネリッククラスなら、型引数で戻り値の型変数を置換する（Collection<int>::get(): T → int）。
+        // For a generic class, substitute the return value's type variables with the type arguments (Collection<int>::get(): T -> int).
         if ($objectType instanceof GenericObjectType && $class->templateNames !== []) {
             $map = [];
             foreach ($class->templateNames as $i => $templateName) {
@@ -282,7 +286,7 @@ final readonly class Scope
             return $function->returnType;
         }
 
-        // 実引数から型変数を推論し（identity(42) なら T → 42）、戻り値型を置換する。
+        // Infer the type variables from the actual arguments (identity(42) gives T -> 42), then substitute them into the return type.
         $map = [];
         foreach ($expr->args as $position => $arg) {
             if (!$arg instanceof Arg) {
@@ -298,8 +302,9 @@ final readonly class Scope
     }
 
     /**
-     * match 式の結果型 = 各腕の本体の型の union。各腕は、その条件で絞り込んだ
-     * スコープで評価する（`$x instanceof Foo => $x->bar()` の bar() を解決できる）。
+     * The result type of a match expression = the union of each arm body's type.
+     * Each arm is evaluated in the scope narrowed by its condition (so bar() in
+     * `$x instanceof Foo => $x->bar()` can be resolved).
      */
     private function matchType(Expr\Match_ $expr): Type
     {

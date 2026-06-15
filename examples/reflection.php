@@ -11,7 +11,7 @@ class Greeter
 }
 
 $greeter = new Greeter();
-$message = $greeter->greet('world'); // string（メソッド戻り値）
-$length = strlen($message);          // int（組み込み関数の戻り値）
+$message = $greeter->greet('world'); // string (method return value)
+$length = strlen($message);          // int (return value of a built-in function)
 
-$greeter->shout('!'); // 未定義メソッド → エラー
+$greeter->shout('!'); // undefined method → error

@@ -11,4 +11,4 @@ class Box
 }
 
 $box = new Box();
-$box->close(); // 未定義メソッド
+$box->close(); // undefined method

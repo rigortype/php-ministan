@@ -24,8 +24,8 @@ final class PrecisionTest extends TestCase
 
     public function testMatchResultTypeSatisfiesDeclaredReturn(): void
     {
-        // area(): int は match(...) を返す。match 式の結果型が int と推論できれば、
-        // 最も厳しい level 9 でも戻り値検査を通る。
+        // area(): int returns match(...). If the match expression's result type is inferred
+        // as int, the return-type check passes even at the strictest level 9.
         self::assertSame([], $this->messages('narrowing.php', 9));
     }
 
@@ -42,7 +42,7 @@ final class PrecisionTest extends TestCase
         (new AnnotateCommand())->run([__DIR__ . '/../fixtures/precision.php']);
         $output = ob_get_clean();
 
-        // $current = $prev は、前周で $prev が 'item' になりうるため 'item' を含む union。
+        // $current = $prev is a union containing 'item', since on the previous iteration $prev could become 'item'.
         self::assertMatchesRegularExpression("/\\\$current\s+:\s+'item'\|'start'$/m", $output);
     }
 }

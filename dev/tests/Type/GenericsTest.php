@@ -20,7 +20,7 @@ final class GenericsTest extends TestCase
         $type = new GenericObjectType('Collection', [new IntegerType(), new StringType()]);
 
         self::assertSame('Collection<int, string>', $type->describe());
-        self::assertSame('Collection', $type->className); // ObjectType を継承
+        self::assertSame('Collection', $type->className); // inherits from ObjectType
     }
 
     public function testSubstitutesTemplate(): void

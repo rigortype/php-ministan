@@ -12,18 +12,18 @@ use PhpParser\Node\Stmt\Interface_;
 use ReflectionClass;
 
 /**
- * クラス／インターフェイスのシグネチャ。継承の解決とメソッド検索を提供する。
+ * The signature of a class or interface. Provides inheritance resolution and method lookup.
  *
- * AST 由来（解析対象コードの宣言）と、ネイティブ由来（組み込み・vendor のクラス）の
- * 二系統を同じ形にまとめる。継承の上位はクラス名で持ち、必要時に {@see ReflectionProvider}
- * を介して再帰的に辿る。
+ * It unifies two sources into one shape: AST-derived declarations (the code under analysis)
+ * and native-derived classes (built-in and vendor classes). Supertypes are held as class
+ * names and walked recursively through {@see ReflectionProvider} when needed.
  */
 final class ClassReflection
 {
     /**
-     * @param list<string> $parentNames extends / implements の上位クラス名（FQN）
-     * @param array<string, MethodReflection> $methods 小文字名 → メソッド（直接宣言分）
-     * @param list<string> $templateNames このクラスが宣言する型変数（@template）
+     * @param list<string> $parentNames supertype class names from extends / implements (FQN)
+     * @param array<string, MethodReflection> $methods lowercased name => method (directly declared ones)
+     * @param list<string> $templateNames the type variables this class declares (@template)
      */
     public function __construct(
         public readonly string $name,

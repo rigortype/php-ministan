@@ -11,12 +11,13 @@ use PhpParser\Node;
 use PhpParser\Node\Expr\Variable;
 
 /**
- * 定義されていない変数の**読み取り**を検出する。PHPStan level 0 の代表選手。
+ * Detects a **read** of an undefined variable. A flagship of PHPStan level 0.
  *
- * このルールは木の走査を知らない。ただ「いまこの地点の {@see Scope} に、この変数は
- * 定義済みとして載っているか？」を問うだけ。読み取りか書き込みかの区別、isset() の
- * 内側か否か、といった文脈判断は {@see \Ministan\Analyser\NodeScopeResolver} が担い、
- * このルールには「報告すべき読み取り地点」でのみ Variable ノードが渡る。
+ * This rule knows nothing about tree traversal. It only asks "is this variable listed as defined
+ * in the {@see Scope} at this point?" Contextual judgments such as distinguishing a read from a
+ * write, or whether we are inside an isset(), are handled by
+ * {@see \Ministan\Analyser\NodeScopeResolver}, and this rule is handed a Variable node only at a
+ * "read location that should be reported".
  *
  * @implements Rule<Variable>
  */
@@ -31,7 +32,7 @@ final class UndefinedVariableRule implements Rule
     {
         assert($node instanceof Variable);
 
-        // 可変変数 $$name は静的に名前が定まらない → 追わない（non-rejecting）。
+        // A variable variable $$name has no statically determined name -> do not follow (non-rejecting).
         if (!is_string($node->name)) {
             return [];
         }
