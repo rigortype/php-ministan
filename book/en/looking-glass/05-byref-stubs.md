@@ -11,7 +11,7 @@ preg_match('/\d+/', $input, $matches);
 //                           ^^^^^^^^ Undefined variable: $matches
 ```
 
-`$matches` is a **by-ref output parameter** — `preg_match` writes the captured groups into it. But to the analyzer it looked like a *read*, so it cried “undefined.” This chapter clears that false positive, and while we’re here, adds a way to **supply missing signatures from outside** — **stubs**.
+`$matches` is a **by-ref output parameter** — `preg_match` writes the captured groups into it. But to the analyzer it looked like a read, so it reported `$matches` as undefined. This chapter clears that false positive, and while we’re here, adds a way to **supply missing signatures from outside** — **stubs**.
 
 ## Teaching reflection about by-reference
 
@@ -38,11 +38,11 @@ $ dev/bin/ministan analyse examples/looking-glass/byref-stubs.php
 [OK] No errors   # $matches is no longer treated as undefined
 ```
 
-That collects the homework left over from basics Part 8.
+That settles the deferred case from basics Part 8.
 
 ## Stubs — supplying a signature from outside
 
-Some types native reflection simply can’t express. The return type of `explode()` is, natively, `array` (which in ministan means `mixed`) — but it really is `list<string>`. PHPStan and Psalm fill this gap with **stubs** — PHPDoc-annotated declarations parsed but never run. Psalm popularized the approach with its `.phpstub` files; ministan takes the same route.
+Some types native reflection simply can’t express. The return type of `explode()` is, natively, just `array` — with no element type, ministan can say nothing about what’s inside, so it’s effectively `mixed` — but it really is `list<string>`. PHPStan and Psalm fill this gap with **stubs** — PHPDoc-annotated declarations parsed but never run. Psalm popularized the approach with its `.phpstub` files; ministan takes the same route.
 
 [`stubs/core.php`](../../../impls/looking-glass/05-byref-stubs/stubs/core.php) is **never executed**. It is **parsed**, purely to read its signatures:
 
@@ -69,9 +69,9 @@ $ dev/bin/ministan annotate examples/looking-glass/byref-stubs.php
 ## Summary
 
 - Give reflection a notion of by-reference parameters, and treat a variable in such a position as a **definition** rather than a read.
-- With that, the `$m` in `preg_match(..., $m)` is no longer flagged as undefined (the basics Part 8 homework, collected).
+- With that, the `$m` in `preg_match(..., $m)` is no longer flagged as undefined (the deferred case from basics Part 8, now handled).
 - **Stubs** supply the signatures native reflection lacks, and take priority over native reflection.
-- A stub is never run, only **parsed** — a PHPDoc-annotated declaration that supplies a signature from outside (the same idea as Psalm’s `.phpstub`).
+- A stub is never run, only **parsed** — a PHPDoc-annotated declaration that supplies a signature from outside.
 
 > Simplifications: we skip type-matching for named arguments (mapping them back to positions), and refining the *output* type of a by-reference argument (turning `@param string[] $matches` into the type of `$matches`).
 

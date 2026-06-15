@@ -8,8 +8,9 @@ PHP has no language-level generics, but PHPDoc expresses them through `@template
 an analyzer can read that annotation is the dividing line of modern PHP static analysis.
 
 > Unlike Java’s erasure or C#’s reified generics, PHP’s `@template` is **PHPDoc — a comment** —
-> so the runtime recognizes literally nothing. The type arguments live **only in the static-
-> analysis layer**, independent of how methods actually resolve at runtime. That makes
+> so the runtime recognizes literally nothing. The type arguments live
+> **only in the static-analysis layer**, independent of how methods actually resolve at runtime.
+> That makes
 > guaranteeing type safety the *analyzer’s* job — the role TypeScript’s `<T>` hands to the
 > compiler is, in PHP, carried by PHPStan and ministan.
 

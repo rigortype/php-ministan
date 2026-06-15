@@ -2,7 +2,7 @@
 
 > *The code for this chapter lives in the snapshot [`impls/wonderland/08-rules-and-levels`](../../../impls/wonderland/08-rules-and-levels) — a slice of the live `dev/` tree taken at `git tag part-08`.*
 
-> **Further reading** (optional): TAPL chapter 15 builds **subtyping** as a relation that either holds or doesn’t — a *binary* verdict. This chapter adds a third answer, **Maybe** (`TrinaryLogic`), and then makes the level decide what to do with it. A sound type system, by design, will reject some programs that would have run fine; ministan’s level system is how we tame that trade-off instead of paying for it everywhere at once.
+> **Further reading** (optional): TAPL chapter 15 builds **subtyping** as a relation that either holds or doesn’t — a *binary* verdict. This chapter adds a third answer, **Maybe** (`TrinaryLogic`), and then makes the level decide what to do with it. Any sound static type system is necessarily conservative — it must reject some programs that would in fact have run fine; ministan’s level system is how we tame that trade-off instead of paying for it everywhere at once.
 
 By now we can infer types. It’s time to put types to **use** in rules — catching type
 mismatches in arguments and return values — and to implement what PHPStan is really known for:
@@ -39,7 +39,7 @@ first-class citizen” — is exactly what pays off here.
 </picture>
 
 > Reference note: this is exactly the non-rejecting promise from Part 0, made mechanical. That
-> trade-off — see the note above — is exactly what levels make adjustable, and
+> trade-off is exactly what levels make adjustable, and
 > gradual typing (Siek & Taha, 2006) buys it back by letting the unknown pass. ministan goes
 > one step further and puts “**don’t know = Maybe = stay silent**” (never object to a `Maybe`
 > until the high levels) at the center of the machine, so false positives are hard to produce
@@ -135,13 +135,14 @@ $ dev/bin/ministan analyse --level=6 examples/level.php
 ```
 
 The same code starts to say more, the higher the level. Turn ministan on its own source and,
-at the default level 5, every file passes; at level 9 the places that “pass a `mixed`” rise to
-the surface — which is precisely the work of stamping out `mixed` in PHPStan.
+at the default level 5, every file passes; at level 9 — well past the strict threshold — the places that “pass a `mixed`” rise to
+the surface — which is precisely the work of **driving `mixed` out of a codebase**, the way
+PHPStan’s top levels do.
 
 ## Summary
 
-- `RuleLevelHelper` is what “objects to a Maybe according to the level” — that is what a level
-  really is.
+- A level is just a policy on `Maybe`: `RuleLevelHelper` decides, per level, whether to object
+  to it.
 - We detect argument and return-value type mismatches by holding the inferred type against the
   declared one with `isAcceptable()`.
 - We flowed narrowing into the right operand of `&&` and `||`, clearing a false positive

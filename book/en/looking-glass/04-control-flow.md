@@ -49,9 +49,9 @@ assert(is_int($value));
 $r = $value + 1; // $value is int → $r : int
 ```
 
-## `match` arms — collecting on S2’s homework
+## `match` arms — the narrowing S2 left open
 
-Back in S2, we couldn’t narrow the arm in `match (true) { $x instanceof Foo => $x->bar() }`, and self-analysis called us out for it. We collect on that homework here. Each arm is analyzed in a scope narrowed by its own condition ([`processMatch`](../../../impls/looking-glass/04-control-flow/src/Analyser/NodeScopeResolver.php)):
+Back in S2, we couldn’t narrow the arm in `match (true) { $x instanceof Foo => $x->bar() }`, and running ministan on itself surfaced the bug. We fix it here. Each arm is analyzed in a scope narrowed by its own condition ([`processMatch`](../../../impls/looking-glass/04-control-flow/src/Analyser/NodeScopeResolver.php)):
 
 ```php
 $matchesTrue = $node->cond instanceof Expr\ConstFetch && $node->cond->name->toLowerString() === 'true';
@@ -67,7 +67,7 @@ foreach ($node->arms as $arm) {
 }
 ```
 
-Because we’d already built `if`-narrowing, `match` just calls it once per arm. Again, small parts holding up complex behavior.
+Because we’d already built `if`-narrowing, `match` just calls it once per arm.
 
 ```console
 $ dev/bin/ministan analyse examples/looking-glass/narrowing.php
@@ -86,7 +86,7 @@ $ dev/bin/ministan annotate examples/looking-glass/narrowing.php
 
 - **Leaving terminating branches (return / throw) out of the merge** is what makes narrowing after an early return work.
 - `assert()` narrows the scope that follows it — the statement itself does the work, with no `if` needed.
-- We narrow each `match` arm by its condition, collecting on S2’s homework.
+- We narrow each `match` arm by its condition, settling what S2 left open.
 - All three are just combinations of the `TypeSpecifier` parts from Part 5 — small parts holding up complex control flow.
 
 > Simplifications: we’re leaving loop fixed-point analysis (re-analyzing the loop body until it stabilizes) and inference of the **result type of a `match` *expression*** for later. The first needs reachability analysis; the second needs evaluating each arm with its narrowing folded in.

@@ -72,7 +72,7 @@ interface Type
 }
 ```
 
-`isSuperTypeOf` (am I a superset of the other?) and `accepts` (can a value of the other type be
+`isSuperTypeOf` (does my set of values **include** the other’s? — am I the wider type?) and `accepts` (can a value of the other type be
 used where mine is expected? — assignability) are subtly different questions, but for simple
 value types they coincide. So we factor
 the shared work into
@@ -83,7 +83,7 @@ let `accepts` delegate to `isSuperTypeOf`. The relation to the top (`mixed`) and
 ```php
 protected static function relateToTopAndBottom(Type $type): ?TrinaryLogic
 {
-    if ($type instanceof NeverType) return TrinaryLogic::Yes;  // never is a subtype of every type
+    if ($type instanceof NeverType) return TrinaryLogic::Yes;  // never is a subtype of every type → anything is its supertype
     if ($type instanceof MixedType) return TrinaryLogic::Maybe; // mixed might be this type
     return null; // otherwise, fall through to each type's own decision
 }
@@ -113,15 +113,17 @@ follow the set intuition exactly:
 
 ```php
 match (true) {
-    $type instanceof self        => $this->value === $type->value ? Yes : No, // 42 ⊇ 42, 42 ⊉ 43
+    $type instanceof self        => $this->value === $type->value ? Yes : No, // 42 contains 42 (Yes); 42 doesn't contain 43 (No)
     $type instanceof IntegerType => TrinaryLogic::Maybe, // a general int just might be 42
     default                      => TrinaryLogic::No,
 };
 ```
 
-`int ⊇ 42` is Yes (`42` is always an `int`). The other way around, `42 ⊇ int` is Maybe (an
-`int` *might* happen to be `42`, but it needn’t be). That asymmetry is what captures the
-direction of the relation correctly.
+`int.isSuperTypeOf(42)` is Yes — every value of `42` is an `int`. Swap the operands and the
+answer flips: `42.isSuperTypeOf(int)` is Maybe — a value typed `int` might happen to be `42`,
+but need not be. The relation is **directional**: the answer depends on which type asks. (Read
+as plain sets, `int ⊇ {42}` holds while `{42} ⊇ int` does not; the Maybe is the static analyzer
+hedging about a value whose exact identity it can’t see.)
 
 ## Pinning the relations down with tests
 

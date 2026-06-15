@@ -8,7 +8,7 @@ By now the core runs end to end. This chapter is the finish — we go back and t
 
 ## A union absorbs its subtypes
 
-`int|0` ought to be just `int`. `0` is a subtype of `int`: `int.isSuperTypeOf(0)` is Yes — `int` contains `0` — and the wider type is the supertype. TypeScript folds unions like this automatically; ministan’s `mergeWith`, though, has only ever **dropped exact duplicates** and never folded subtypes, so redundant unions like `int|0` were left lying around. So we teach `TypeCombinator::union()` to **absorb subtypes** ([`TypeCombinator`](../../../impls/looking-glass/07-precision/src/Type/TypeCombinator.php)):
+`int|0` ought to be just `int`, because `0` is a subtype of `int`: `int.isSuperTypeOf(0)` is Yes — every `0` is an `int`, so the wider member, `int`, already covers it. TypeScript folds unions like this automatically; ministan’s `mergeWith`, though, has only ever **dropped exact duplicates** and never folded subtypes, so redundant unions like `int|0` were left lying around. We teach `TypeCombinator::union()` to **absorb subtypes** instead ([`TypeCombinator`](../../../impls/looking-glass/07-precision/src/Type/TypeCombinator.php)):
 
 ```php
 // If an existing member is a supertype of $type, $type is redundant (given int, we don't need 0).
@@ -24,7 +24,7 @@ $result[] = $type;
 
 Now a merge result no longer balloons, and the result type of a `match` and the like comes out tidy.
 
-> **Note on the reading.** Order types by the subtype relation and you get a **lattice** (the type-lattice figure back in Part 3). A union is its **join** — the least upper bound — and since `mixed`, the top, absorbs anything, `int|mixed` collapses to `mixed`. The theory of join and meet is TAPL chapter 16, “Metatheory of Subtyping.”
+> **Reference note:** Order types by the subtype relation and you get a **lattice** (the type-lattice figure back in Part 3). A union is its **join** — the least upper bound — and since `mixed`, the top, absorbs anything, `int|mixed` collapses to `mixed`. The theory of join and meet is TAPL chapter 16, “Metatheory of Subtyping.”
 
 ## The result type of a `match` expression
 
@@ -56,7 +56,7 @@ return $widened->mergeWith($result);
 
 The crux is the **silent pass**. So that rules never fire twice, the discovery pass switches the callbacks off for its duration. That way we can take the second lap’s types into account without reporting anything twice.
 
-> Why is it safe to stop after two laps? Because each merge only ever widens a type, a later lap can’t undo an earlier widening; we stop after the second lap as a deliberate approximation — a true fixed point would keep iterating until nothing changes.
+> Why two laps? Monotonicity guarantees the iteration would terminate at a fixed point, but reaching it can take many laps. We deliberately stop after the second: one extra lap folds in the common case — a value fed forward from the previous iteration — and because types only ever widen, stopping early can leave a type too wide, never wrongly narrow.
 
 ```php
 $prev = 'start';
@@ -66,11 +66,11 @@ foreach ($items as $item) {
 }
 ```
 
-> **Note on the reading.** This approximation — “types only ever widen (they are monotone), so it bottoms out in finitely many steps” — is the idea behind the **widening** operator in **abstract interpretation**, program analysis’s standard trick for forcing a path to the fixed point. Ruby’s type analysis, TypeProf, is of the same lineage. It is a tool of the *analysis algorithm*, sitting outside the static typing rules that TAPL lays down — a frontier the type-theory textbook doesn’t reach.
+> **Reference note:** This approximation — “types only ever widen (they are monotone), so it bottoms out in finitely many steps” — is the idea behind the **widening** operator in **abstract interpretation**, program analysis’s standard trick for forcing a path to the fixed point. Ruby’s type analysis, TypeProf, is of the same lineage. It is a tool of the *analysis algorithm*, sitting outside the static typing rules that TAPL lays down — a frontier the type-theory textbook doesn’t reach.
 
 ## Type matching for named arguments
 
-In S5 we set named arguments aside because “the positions break down.” Hand the parameter **names** to reflection, though, and we can reverse-look-up the position from the name ([`ArgumentTypeChecker`](../../../impls/looking-glass/07-precision/src/Rules/ArgumentTypeChecker.php)):
+In S5 we set named arguments aside because “the positions break down.” Hand the parameter **names** to reflection, though, and we can reverse-look-up the position from the name ([`ArgumentTypeChecker`](../../../impls/looking-glass/07-precision/src/Rules/ArgumentTypeChecker.php)): in `box(size: 'big')`, the name `size` resolves to `box`’s second parameter, and the type is checked at that position.
 
 ```php
 $index = $arg->name !== null
@@ -95,7 +95,7 @@ $ dev/bin/ministan analyse examples/looking-glass/precision.php
 
 ## End of the second volume — and on to PHPStan
 
-From the single line `Hello, World.`, we have come all this way. The basics volume threaded the core — parse → scope → inference → narrowing → rules → report — and the advanced volume put working flesh on it: configuration (NEON) and extension, array types, generics, control-flow narrowing, by-ref parameters and stubs, the result cache, and now the sharpening of inference and checking.
+From the single line `Hello, World.`, we have come all this way. The basics volume threaded the core — parse → scope → inference → narrowing → rules → report — and the advanced volume fleshed it out: configuration (NEON) and extension, array types, generics, control-flow narrowing, by-ref parameters and stubs, the result cache, and now the sharpening of inference and checking.
 
 ministan analyzes itself and passes clean. Small as it is, it is a real static analyzer, whole.
 

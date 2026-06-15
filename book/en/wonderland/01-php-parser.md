@@ -26,7 +26,7 @@ Stmt\Expression
 
 Our rule only has to look for “an `Expr\FuncCall` whose name is `var_dump`.” Unlike grepping
 for `var_dump` with a regular expression, an AST never trips over a **`var_dump` sitting in a
-comment or a string literal**. That is the worth of standing on top of a real parse.
+comment or a string literal**. That's the payoff of standing on a real parse.
 
 ## The `Rule` interface
 
@@ -156,7 +156,7 @@ $visitor = new RuleApplyingVisitor($this->registry, $file);
 return $visitor->getErrors();
 ```
 
-> This `RuleApplyingVisitor` is the larva of what PHPStan calls `NodeScopeResolver`. For now
+> This `RuleApplyingVisitor` is an early, stripped-down `NodeScopeResolver`. For now
 > it only “visits a node and applies rules,” but in Part 2 we grow it to carry a
 > **`Scope` (the type of each variable at each point)** as it descends the tree.
 

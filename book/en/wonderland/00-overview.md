@@ -42,7 +42,7 @@ PHP checks type declarations **at runtime**: call a function declared `function 
 with a string, and you get a `TypeError` on that line. What a static analyzer does is find them **before** that — without
 running the code, tracing the possible types of values on paper. Even on a path your tests
 never exercise, it catches the `$user->nmae` typo or the swapped type **before you ship**.
-That’s the worth of “without running it.”
+That’s what “without running it” buys you.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="../figures/00-pipeline-dark.svg">

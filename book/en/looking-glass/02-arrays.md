@@ -71,24 +71,24 @@ $ dev/bin/ministan annotate array.php
      4  $id     : 42
      5  $name   : 'ada'
      6  $nums   : array{0: 1, 1: 2, 2: 3}
-     8  $double : int        ← the foreach element $n is known to be int
+     8  $double : int        ← `$double = $n * 2`, and the `foreach` element `$n` is int
 ```
 
-## Self-analysis set the next homework
+## What self-analysis flagged
 
-When we wrote this chapter’s code and ran it on itself, it scolded us:
+When we wrote this chapter’s code and ran it on ministan’s own source, it flagged one of its own lines:
 
 ```
 Call to an undefined method Ministan\Type\Type::getIterableValueType().
 ```
 
-Inside the **arm of a `match (true)`** — `match (true) { $x instanceof ArrayType => $x->getIterableValueType() }` — we weren’t narrowing `$x` (whereas an `if ($x instanceof …)` would narrow it). For now we sidestepped it by rewriting the code with an `if`, but **narrowing inside a match arm** became homework for a later chapter — having the analyzer write its own roadmap is the real pleasure of dogfooding.
+Inside the **arm of a `match (true)`** — `match (true) { $x instanceof ArrayType => $x->getIterableValueType() }` — we weren’t narrowing `$x` (whereas an `if ($x instanceof …)` would narrow it). For now we sidestepped it by rewriting the code with an `if`, but **narrowing inside a match arm** became a task for a later chapter — having the analyzer hand you its own to-do list is the quiet reward of dogfooding.
 
 ## Summary
 
 - `ConstantArrayType` keeps the value type per key, so `$row['id']` is inferred pinpoint-precisely.
 - Array literals become a shape when every key is constant, and fall back to `ArrayType` otherwise.
 - The element and key types of a `foreach` are derived from the array type.
-- Self-analysis handed us the next piece of homework: narrowing inside a `match` arm.
+- Self-analysis left us one item open: narrowing inside a `match` arm.
 
 Next, in S3, we step into **generics** (`@template T`) — the chapter where the type system’s design decisions are tested in earnest.

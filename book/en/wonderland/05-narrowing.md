@@ -17,15 +17,15 @@ function f(int|null $x): int
 ```
 
 `$x` is `int|null`. But once we’re past `if ($x === null) return;`, it should have **narrowed**
-to `int`. Making that happen is the work of this chapter: **type narrowing**, and the vessel
+to `int`. Making that happen is the work of this chapter: **type narrowing**, and the type
 it merges into — the **`UnionType`**.
 
 ## First, the union type — `UnionType`
 
 We need a **union type** (`int\|string`, “one of these”) to stand for “int or string”
 ([`UnionType`](../../../impls/wonderland/05-narrowing/src/Type/UnionType.php)). The subtype
-check is straightforward: when the operand is a single type, it’s enough that **any one member
-accepts it (OR)**:
+check is straightforward: **when the operand is a single type**, it’s enough that any one member
+is a supertype of it (OR).
 
 ```php
 // For a single type, it suffices that any one member accepts it (OR).
@@ -61,7 +61,7 @@ TypeCombinator::remove($intOrNull, new NullType()); // int
 takes a condition and returns the scope for each side — the world where it held, and the world where it didn’t
 (the counterpart to PHPStan’s class of the same name). Its result is a
 [`SpecifiedTypes`](../../../impls/wonderland/05-narrowing/src/Analyser/SpecifiedTypes.php) — a
-truthy / falsy pair.
+pair of scopes, the truthy one and the falsy one.
 
 ```php
 public function specify(Expr $condition, Scope $scope): SpecifiedTypes
@@ -78,7 +78,8 @@ public function specify(Expr $condition, Scope $scope): SpecifiedTypes
 }
 ```
 
-A type predicate such as `is_int($x)` narrows both branches symmetrically:
+A type predicate such as `is_int($x)` narrows **both sides** — the true branch to `int`, the
+false branch to everything-but-`int`:
 
 ```php
 $truthy = $scope->assignVariable($name, $narrowed);                                  // true: int

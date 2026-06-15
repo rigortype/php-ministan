@@ -5,7 +5,7 @@
 > **Further reading** (optional): TAPL chapters 9 and 11 develop the **typing context** (Γ) that threads through every typing rule. `Scope` is the same idea in code — a map from a variable to “what we know about it right here.” In Part 2 that knowledge is just “is it defined,” but once Part 3 puts types on it, `Scope` becomes a typing environment in the full sense.
 
 Part 1’s rules looked only at the *shape* of the AST. This chapter brings in **context** for
-the first time — a vessel that carries “what, exactly, do we know at this point?” That vessel
+the first time — the object that carries “what, exactly, do we know at this point?” That object
 is **`Scope`**. Our subject is PHPStan’s level-0 headline act, **detecting undefined
 variables**.
 
@@ -25,7 +25,7 @@ way to here?* That depends on **where in the tree we are** and **what happened o
 that led there**. Part 1’s walk — looking at each node in isolation — cannot answer it, even
 in principle.
 
-So we carry a “set of defined variables” down the tree as we descend. That carrier is `Scope`.
+So we carry a “set of defined variables” down the tree as we descend. That object is `Scope`.
 
 ## `Scope` is immutable
 

@@ -59,7 +59,7 @@ Classes, methods, and functions each get wrapped in
 maps a type declaration onto a `Type`. It handles both php-parser’s type nodes and PHP’s native `ReflectionType` (turning `?Foo`
 into `Foo|null`, for instance — this is where Part 5’s `UnionType` starts to earn its keep).
 
-> Reading note: TAPL’s simply typed lambda-calculus gives a function the type
+> Reference note: TAPL’s simply typed lambda-calculus gives a function the type
 > `T₁ → T₂` — a pair of “the argument type” and “the result type.”
 > `MethodReflection` and `FunctionReflection` bundle the same thing — a list of parameter
 > types plus a return type — except that each one is **looked up**, method by method, from the
@@ -68,11 +68,10 @@ into `Foo|null`, for instance — this is where Part 5’s `UnionType` starts to
 ## How a type object reaches the provider — the static-accessor seam
 
 `ObjectType` gets constructed all over the inference machinery, so we can’t thread the
-provider through as an argument everywhere. Just as PHPStan does, we lay down a **static
-accessor** as a seam
+provider through as an argument everywhere. Just as PHPStan does, we put a `static accessor` in between
 ([`ReflectionProviderStaticAccessor`](../../../impls/wonderland/06-reflection/src/Reflection/ReflectionProviderStaticAccessor.php)).
-We `set()` it at the start of analysis; if it was never set, it returns null — that is,
-no reflection, which is the safe side.
+We `set()` it at the start of analysis; if it was never set, it returns null — meaning no
+reflection is available, which is the safe default.
 
 With this in hand we can promote the naive `ObjectType` of Part 5 to one that
 **understands inheritance**:
@@ -134,7 +133,7 @@ We can infer the return value of a method and of the built-in `strlen()` alike.
 > `$user->name`, facades, `Collection` macros — these run on **magic methods**
 > (`__call` / `__get` / `__callStatic`) and other runtime machinery, and their signatures
 > can’t be traced *statically*. On unknowns like these, ministan (and plain PHPStan) collapses
-> to `mixed` and **stays quiet** — which is exactly why undefined-method detection backs off
+> to `mixed` and **stays quiet** — which is exactly why undefined-method detection stops
 > the moment a `__call` is present. To analyze something like Eloquent precisely, you need
 > **stubs or extensions** that translate the magic into types (for PHPStan that’s an extension
 > such as larastan; for ministan, we take up stubs in the advanced volume, S5). “All of my

@@ -2,7 +2,7 @@
 
 > *The code for this chapter lives in the snapshot [`impls/wonderland/09-tooling`](../../../impls/wonderland/09-tooling) — a slice of the live `dev/` tree taken at `git tag part-09`.*
 
-The last chapter of the basics volume. The core of the type checker is done. What remains is the final step that turns it into a **tool people can actually use** — directory recursion, multiple output formats, and a baseline.
+This is the last chapter of the basics volume, and the core of the type checker is done. What remains is the work that turns it into a **tool people can actually use** — directory recursion, multiple output formats, and a baseline.
 
 ## A whole directory at once
 

@@ -3,9 +3,9 @@
 > *The code for this chapter lives in the snapshot [`impls/looking-glass/01-configuration`](../../../impls/looking-glass/01-configuration) — a slice of the live `dev/` tree taken at `git tag seasoned-01`.*
 
 **Welcome to ministan Through PHP’s Looking-Glass — the advanced volume.** The second book starts
-here. We take the ministan whose core we threaded through in the basics — parse → scope → type
-inference → narrowing → rules → report — and, on top of it, add the precision and machinery that
-pay off in the field. (We assume you’ve finished the basics volume.) For what S1 through S7 cover,
+here. This volume assumes you’ve finished the basics. We take the ministan whose core we threaded
+through there — parse → scope → type inference → narrowing → rules → report — and add the precision
+and machinery that pay off in the field. For what S1 through S7 cover,
 see “[The map — two volumes](../README.md)” in the front matter. This volume is harder
 by design, and the first step toward everyday use is configuration — the doorway to it.
 
