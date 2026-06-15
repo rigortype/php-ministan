@@ -1,0 +1,83 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 700 500" width="700" height="500" role="img" aria-label="What a level really is" style="font-family:&#39;Inter&#39;,system-ui,sans-serif;fill:#0E1116">
+  <defs>
+    <marker id="arr" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="context-stroke"></path>
+    </marker>
+  </defs>
+
+  <rect x="0" y="0" width="700" height="500" style="fill:#F6F4EE"></rect>
+
+
+  <rect x="40" y="40" width="296" height="88" rx="7" style="fill:#FFFFFF;stroke:#C9C4B7;stroke-width:1.5"></rect>
+  <text x="60" y="78" style="font-family:&#39;JetBrains Mono&#39;,ui-monospace,Menlo,Consolas,monospace;font-size:17px;fill:#0E1116">int.accepts(mixed)</text>
+  <text x="60" y="108" style="font-family:&#39;JetBrains Mono&#39;,ui-monospace,Menlo,Consolas,monospace;font-size:17px;fill:#8A5F12;font-weight:700">= Maybe<tspan style="font-family:&#39;Inter&#39;,sans-serif;font-size:12px;font-weight:400;fill:#585F6B">　(maybe int)</tspan></text>
+
+
+  <circle cx="372" cy="58" r="6" style="fill:#E1EEDD;stroke:#2E6F3F;stroke-width:1.5"></circle>
+  <text x="388" y="63" style="font-size:12.5px;fill:#2A2F38"><tspan style="font-family:&#39;JetBrains Mono&#39;,ui-monospace,Menlo,monospace;font-weight:600;fill:#2E6F3F">Yes</tspan>　→　always OK</text>
+  <circle cx="372" cy="86" r="6" style="fill:#F8E5E2;stroke:#B5302B;stroke-width:1.5"></circle>
+  <text x="388" y="91" style="font-size:12.5px;fill:#2A2F38"><tspan style="font-family:&#39;JetBrains Mono&#39;,ui-monospace,Menlo,monospace;font-weight:600;fill:#B5302B">No</tspan>　→　always an error</text>
+  <circle cx="372" cy="114" r="6" style="fill:#F4E6C7;stroke:#8A5F12;stroke-width:1.5"></circle>
+  <text x="388" y="119" style="font-size:12.5px;fill:#2A2F38;font-weight:600"><tspan style="font-family:&#39;JetBrains Mono&#39;,ui-monospace,Menlo,monospace;fill:#8A5F12">Maybe</tspan>　→　the level decides</text>
+
+
+  <path d="M150,128 L150,176 Q150,196 240,205 L498,205" marker-end="url(#arr)" style="fill:none;stroke:#8A5F12;stroke-width:1.8"></path>
+  <text x="300" y="198" style="font-size:11px;fill:#8A5F12">the level decides a Maybe&#39;s fate</text>
+
+
+  <rect x="70" y="222" width="436" height="58" rx="4" style="fill:#E1EEDD"></rect>
+  <rect x="506" y="222" width="124" height="58" rx="4" style="fill:#F8E5E2"></rect>
+  <text x="288" y="248" text-anchor="middle" style="font-size:13px;font-weight:600;fill:#2E6F3F">Waved through (OK)</text>
+  <text x="288" y="268" text-anchor="middle" style="font-size:11px;fill:#2E6F3F">Low levels — let Maybe slip by</text>
+  <text x="568" y="248" text-anchor="middle" style="font-size:13px;font-weight:600;fill:#B5302B">Objected to</text>
+  <text x="568" y="268" text-anchor="middle" style="font-size:11px;fill:#B5302B">High levels — error</text>
+
+
+  <line x1="70" y1="280" x2="638" y2="280" marker-end="url(#arr)" style="fill:none;stroke:#2A2F38;stroke-width:2"></line>
+  <text x="640" y="284" style="font-size:12px;fill:#585F6B">level</text>
+  <g style="stroke:#585F6B;stroke-width:1.2">
+    <line x1="70" y1="276" x2="70" y2="288"></line>
+    <line x1="132" y1="276" x2="132" y2="288"></line>
+    <line x1="195" y1="276" x2="195" y2="288"></line>
+    <line x1="257" y1="276" x2="257" y2="288"></line>
+    <line x1="319" y1="276" x2="319" y2="288"></line>
+    <line x1="381" y1="276" x2="381" y2="288"></line>
+    <line x1="443" y1="276" x2="443" y2="288"></line>
+    <line x1="568" y1="276" x2="568" y2="288"></line>
+  </g>
+  <g style="font-family:&#39;JetBrains Mono&#39;,ui-monospace,Menlo,monospace;font-size:11.5px;fill:#585F6B" text-anchor="middle">
+    <text x="70" y="302">0</text>
+    <text x="132" y="302">1</text>
+    <text x="195" y="302">2</text>
+    <text x="257" y="302">3</text>
+    <text x="319" y="302">4</text>
+    <text x="381" y="302">5</text>
+    <text x="443" y="302">6</text>
+    <text x="568" y="302">8</text>
+  </g>
+
+
+  <line x1="506" y1="210" x2="506" y2="312" style="stroke:#7A2A2A;stroke-width:2.2;stroke-dasharray:5 3"></line>
+  <circle cx="506" cy="280" r="5.5" style="fill:#F6F4EE;stroke:#7A2A2A;stroke-width:2.2"></circle>
+  <text x="506" y="302" text-anchor="middle" style="font-family:&#39;JetBrains Mono&#39;,ui-monospace,Menlo,monospace;font-size:12px;font-weight:700;fill:#7A2A2A">7</text>
+  <text x="506" y="328" text-anchor="middle" style="font-size:12px;font-weight:600;fill:#7A2A2A">Threshold (switch)</text>
+  <text x="506" y="343" text-anchor="middle" style="font-size:11px;fill:#585F6B">* one simplified example in ministan</text>
+
+
+  <text x="40" y="378" style="font-size:12.5px;font-weight:600;fill:#0E1116">Levels add rules</text>
+  <g style="font-size:12px;fill:#2A2F38">
+    <text x="40" y="400"><tspan style="font-family:&#39;JetBrains Mono&#39;,ui-monospace,Menlo,monospace;font-weight:600;fill:#0E1116">0</tspan> — var_dump, undefined method</text>
+    <text x="40" y="420"><tspan style="font-family:&#39;JetBrains Mono&#39;,ui-monospace,Menlo,monospace;font-weight:600;fill:#0E1116">1</tspan> — undefined variable</text>
+    <text x="40" y="440"><tspan style="font-family:&#39;JetBrains Mono&#39;,ui-monospace,Menlo,monospace;font-weight:600;fill:#0E1116">5</tspan> — argument types</text>
+    <text x="40" y="460"><tspan style="font-family:&#39;JetBrains Mono&#39;,ui-monospace,Menlo,monospace;font-weight:600;fill:#0E1116">6</tspan> — return types</text>
+  </g>
+
+
+  <rect x="378" y="362" width="284" height="106" rx="7" style="fill:#EFEBE0;stroke:#C9C4B7;stroke-width:1.3"></rect>
+  <text x="396" y="386" style="font-size:12.5px;font-weight:600;fill:#0E1116">Strictness has two dials</text>
+  <text x="396" y="410" style="font-size:12px;fill:#2A2F38"><tspan style="font-weight:700">(1)</tspan> more rules apply</text>
+  <text x="396" y="436" style="font-size:12px;fill:#2A2F38"><tspan style="font-weight:700">(2)</tspan> <tspan style="font-family:&#39;JetBrains Mono&#39;,ui-monospace,Menlo,monospace;font-size:11px">RuleLevelHelper</tspan> grows</text>
+  <text x="420" y="454" style="font-size:12px;fill:#2A2F38">stricter about mixed</text>
+
+  <text x="40" y="490" style="font-family:&#39;Source Serif 4&#39;,Georgia,serif;font-style:italic;font-size:13.5px;fill:#585F6B">The three-valued Maybe is judged against a level threshold — waved through, or objected to.</text>
+</svg>

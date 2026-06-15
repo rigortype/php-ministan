@@ -1,0 +1,36 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 700 340" width="700" height="340" role="img" aria-label="constant array shape: remember a value type per key, so indexed access lands pinpoint" style="font-family:'Inter',system-ui,sans-serif;fill:#F4F0E2">
+  <defs>
+    <marker id="arr" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="context-stroke"></path>
+    </marker>
+  </defs>
+
+  <rect x="0" y="0" width="700" height="340" style="fill:#1A1D23"></rect>
+
+  <line x1="360" y1="28" x2="360" y2="258" style="stroke:#454A54;stroke-width:1.2;stroke-dasharray:3 4"></line>
+
+  <text x="40" y="40" style="font-size:12.5px;font-weight:600;fill:#8AB6E6">constant array shape (ministan)</text>
+  <rect x="38" y="54" width="288" height="130" rx="8" style="fill:#22262E;stroke:#454A54;stroke-width:1.5"></rect>
+  <g style="font-family:'JetBrains Mono',ui-monospace,Menlo,Consolas,monospace;font-size:13.5px">
+    <text x="54" y="84" style="fill:#F4F0E2">array{</text>
+    <text x="70" y="114" style="fill:#F4F0E2">'id'   =&gt; <tspan style="fill:#8AB6E6;font-weight:700">42</tspan></text>
+    <text x="70" y="142" style="fill:#F4F0E2">'name' =&gt; <tspan style="fill:#8AB6E6;font-weight:700">'ada'</tspan></text>
+    <text x="54" y="170" style="fill:#F4F0E2">}</text>
+  </g>
+  <text x="44" y="222" style="font-family:'JetBrains Mono',ui-monospace,Menlo,Consolas,monospace;font-size:14px;fill:#F4F0E2">$row['id']</text>
+  <line x1="150" y1="217" x2="190" y2="217" marker-end="url(#arr)" style="fill:none;stroke:#B6BAC2;stroke-width:1.6"></line>
+  <text x="202" y="224" style="font-family:'JetBrains Mono',ui-monospace,Menlo,Consolas,monospace;font-size:17px;font-weight:700;fill:#8AB6E6">42</text>
+  <text x="44" y="248" style="font-size:11.5px;fill:#B6BAC2">the constant 42 — not int</text>
+
+  <text x="388" y="40" style="font-size:12.5px;font-weight:600;fill:#B6BAC2">a general array (through the core)</text>
+  <rect x="386" y="54" width="288" height="130" rx="8" style="fill:#22262E;stroke:#454A54;stroke-width:1.5"></rect>
+  <text x="402" y="92" style="font-family:'JetBrains Mono',ui-monospace,Menlo,Consolas,monospace;font-size:13.5px;fill:#F4F0E2">array&lt;string, int&gt;</text>
+  <text x="402" y="124" style="font-size:11.5px;fill:#B6BAC2">key = string</text>
+  <text x="402" y="148" style="font-size:11.5px;fill:#B6BAC2">value = int (each value forgotten)</text>
+  <text x="396" y="222" style="font-family:'JetBrains Mono',ui-monospace,Menlo,Consolas,monospace;font-size:14px;fill:#F4F0E2">$row['id']</text>
+  <line x1="502" y1="217" x2="542" y2="217" marker-end="url(#arr)" style="fill:none;stroke:#B6BAC2;stroke-width:1.6"></line>
+  <text x="554" y="224" style="font-family:'JetBrains Mono',ui-monospace,Menlo,Consolas,monospace;font-size:17px;font-weight:700;fill:#B6BAC2">int</text>
+  <text x="396" y="248" style="font-size:11.5px;fill:#B6BAC2">the type is known, the value is not</text>
+
+  <text x="38" y="316" style="font-family:'Source Serif 4',Georgia,serif;font-style:italic;font-size:13.5px;fill:#B6BAC2">Remember a value type per key, and indexed access lands pinpoint — that is constant array shape.</text>
+</svg>

@@ -1,0 +1,80 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 700 612" width="700" height="612" role="img" aria-label="Scope propagation" style="font-family:&#39;Inter&#39;,system-ui,sans-serif;fill:#0E1116">
+  <defs>
+    <marker id="arr" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="context-stroke"></path>
+    </marker>
+  </defs>
+
+  <rect x="0" y="0" width="700" height="612" style="fill:#F6F4EE"></rect>
+
+  <text x="40" y="44" style="font-size:11.5px;font-weight:600;fill:#585F6B;letter-spacing:.03em">NodeScopeResolver — carry an immutable <tspan style="font-family:&#39;JetBrains Mono&#39;,ui-monospace,Menlo,monospace;font-size:11.5px">Scope</tspan> down the tree</text>
+
+
+  <rect x="265" y="62" width="170" height="46" rx="6" style="fill:#FFFFFF;stroke:#C9C4B7;stroke-width:1.5"></rect>
+  <text x="350" y="91" text-anchor="middle" style="font-family:&#39;JetBrains Mono&#39;,ui-monospace,Menlo,Consolas,monospace;font-size:14.5px;fill:#0E1116"><tspan style="fill:#2E6F3F;font-weight:700">$a</tspan> = 1;</text>
+  <line x1="435" y1="85" x2="466" y2="85" marker-end="url(#arr)" style="fill:none;stroke:#585F6B;stroke-width:1.6"></line>
+  <rect x="470" y="68" width="124" height="34" rx="6" style="fill:#E1ECF8;stroke:#2D5C9E;stroke-width:1.4"></rect>
+  <text x="532" y="90" text-anchor="middle" style="font-family:&#39;JetBrains Mono&#39;,ui-monospace,Menlo,monospace;font-size:13px;fill:#2D5C9E;font-weight:500">{ $a }</text>
+
+  <line x1="350" y1="108" x2="350" y2="138" marker-end="url(#arr)" style="fill:none;stroke:#585F6B;stroke-width:1.6"></line>
+
+
+  <rect x="255" y="140" width="190" height="46" rx="6" style="fill:#FFFFFF;stroke:#C9C4B7;stroke-width:1.5"></rect>
+  <text x="350" y="169" text-anchor="middle" style="font-family:&#39;JetBrains Mono&#39;,ui-monospace,Menlo,Consolas,monospace;font-size:14.5px;fill:#0E1116">if ( <tspan style="fill:#2D5C9E;font-weight:700">$a</tspan> &gt; 0 )</text>
+
+
+  <path d="M310,186 Q230,200 195,228" marker-end="url(#arr)" style="fill:none;stroke:#585F6B;stroke-width:1.6"></path>
+  <path d="M390,186 Q470,200 505,228" marker-end="url(#arr)" style="fill:none;stroke:#585F6B;stroke-width:1.6"></path>
+  <text x="226" y="214" style="font-size:11.5px;font-weight:600;fill:#2E6F3F">true</text>
+  <text x="466" y="214" style="font-size:11.5px;font-weight:600;fill:#585F6B">false</text>
+
+
+  <rect x="58" y="230" width="244" height="98" rx="7" style="fill:#EFEBE0;stroke:#C9C4B7;stroke-width:1.5"></rect>
+  <text x="70" y="222" style="font-size:11.5px;font-weight:600;fill:#585F6B">true branch (then)</text>
+  <text x="180" y="268" text-anchor="middle" style="font-family:&#39;JetBrains Mono&#39;,ui-monospace,Menlo,Consolas,monospace;font-size:14.5px;fill:#0E1116"><tspan style="fill:#2E6F3F;font-weight:700">$b</tspan> = 2;</text>
+  <rect x="98" y="284" width="164" height="32" rx="6" style="fill:#E1ECF8;stroke:#2D5C9E;stroke-width:1.4"></rect>
+  <text x="180" y="305" text-anchor="middle" style="font-family:&#39;JetBrains Mono&#39;,ui-monospace,Menlo,monospace;font-size:13px;fill:#2D5C9E;font-weight:500">{ $a, $b }</text>
+
+
+  <rect x="398" y="230" width="244" height="98" rx="7" style="fill:#EFEBE0;stroke:#C9C4B7;stroke-width:1.5"></rect>
+  <text x="410" y="222" style="font-size:11.5px;font-weight:600;fill:#585F6B">false branch (else)</text>
+  <text x="520" y="268" text-anchor="middle" style="font-family:&#39;JetBrains Mono&#39;,ui-monospace,Menlo,Consolas,monospace;font-size:14.5px;fill:#0E1116"><tspan style="fill:#2E6F3F;font-weight:700">$c</tspan> = 3;</text>
+  <rect x="438" y="284" width="164" height="32" rx="6" style="fill:#E1ECF8;stroke:#2D5C9E;stroke-width:1.4"></rect>
+  <text x="520" y="305" text-anchor="middle" style="font-family:&#39;JetBrains Mono&#39;,ui-monospace,Menlo,monospace;font-size:13px;fill:#2D5C9E;font-weight:500">{ $a, $c }</text>
+
+
+  <path d="M180,328 Q180,352 320,366" marker-end="url(#arr)" style="fill:none;stroke:#585F6B;stroke-width:1.6"></path>
+  <path d="M520,328 Q520,352 380,366" marker-end="url(#arr)" style="fill:none;stroke:#585F6B;stroke-width:1.6"></path>
+
+
+  <rect x="208" y="366" width="284" height="46" rx="6" style="fill:#E1EEDD;stroke:#2E6F3F;stroke-width:1.5"></rect>
+  <text x="350" y="394" text-anchor="middle" style="font-size:15px;font-weight:600;fill:#2E6F3F">Merge (optimistic union)</text>
+  <line x1="350" y1="412" x2="350" y2="426" marker-end="url(#arr)" style="fill:none;stroke:#585F6B;stroke-width:1.6"></line>
+  <rect x="248" y="428" width="204" height="34" rx="6" style="fill:#E1ECF8;stroke:#2D5C9E;stroke-width:1.4"></rect>
+  <text x="350" y="450" text-anchor="middle" style="font-family:&#39;JetBrains Mono&#39;,ui-monospace,Menlo,monospace;font-size:13px;fill:#2D5C9E;font-weight:500">{ $a, $b, $c }</text>
+
+  <line x1="350" y1="462" x2="350" y2="478" marker-end="url(#arr)" style="fill:none;stroke:#585F6B;stroke-width:1.6"></line>
+
+
+  <rect x="232" y="480" width="236" height="46" rx="6" style="fill:#FFFFFF;stroke:#C9C4B7;stroke-width:1.5"></rect>
+  <text x="350" y="509" text-anchor="middle" style="font-family:&#39;JetBrains Mono&#39;,ui-monospace,Menlo,Consolas,monospace;font-size:14.5px;fill:#0E1116">echo <tspan style="fill:#2D5C9E;font-weight:700">$b</tspan> + <tspan style="fill:#B5302B;font-weight:700">$d</tspan>;</text>
+
+
+  <line x1="468" y1="503" x2="500" y2="503" marker-end="url(#arr)" style="fill:none;stroke:#B5302B;stroke-width:1.6"></line>
+  <rect x="504" y="482" width="180" height="44" rx="6" style="fill:#F8E5E2;stroke:#B5302B;stroke-width:1.4"></rect>
+  <text x="516" y="500" style="font-family:&#39;JetBrains Mono&#39;,ui-monospace,Menlo,monospace;font-size:11.5px;fill:#B5302B;font-weight:700">error:</text>
+  <text x="516" y="516" style="font-family:&#39;JetBrains Mono&#39;,ui-monospace,Menlo,monospace;font-size:11px;fill:#B5302B">Undefined variable: $d</text>
+
+
+  <line x1="40" y1="548" x2="660" y2="548" style="stroke:#C9C4B7;stroke-width:1"></line>
+  <rect x="40" y="560" width="13" height="13" rx="2" style="fill:#E1EEDD;stroke:#2E6F3F"></rect>
+  <text x="59" y="571" style="font-size:11.5px;fill:#2A2F38">assign = define (write)</text>
+  <rect x="222" y="560" width="13" height="13" rx="2" style="fill:#E1ECF8;stroke:#2D5C9E"></rect>
+  <text x="241" y="571" style="font-size:11.5px;fill:#2A2F38">reference = read</text>
+  <rect x="360" y="560" width="13" height="13" rx="2" style="fill:#F8E5E2;stroke:#B5302B"></rect>
+  <text x="379" y="571" style="font-size:11.5px;fill:#2A2F38">undefined &#8594; rule fires</text>
+  <rect x="540" y="560" width="13" height="13" rx="2" style="fill:#E1ECF8;stroke:#2D5C9E"></rect>
+  <text x="559" y="571" style="font-size:11.5px;fill:#2A2F38">Scope = defined set</text>
+
+  <text x="40" y="600" style="font-family:&#39;Source Serif 4&#39;,Georgia,serif;font-style:italic;font-size:13.5px;fill:#585F6B">Carry an immutable Scope down the tree; it forks at branches and rejoins by union after the <tspan style="font-family:&#39;JetBrains Mono&#39;,ui-monospace,Menlo,monospace;font-size:12px;font-style:normal">if</tspan>.</text>
+</svg>
