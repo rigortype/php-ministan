@@ -21,20 +21,18 @@ language-neutral, which keeps the surface area small:
   below), and **the comments inside the code excerpts shown in the prose** (see the caveat
   below).
 - **English already — shared as-is:** identifiers and type names (`Scope`, `Type`,
-  `NodeScopeResolver`, …), the CLI output and diagnostic messages (they deliberately mirror
-  PHPStan's English wording), and the example PHP under [`examples/`](../../examples). The
-  English chapters link to the **same** [`impls/`](../../impls) tree as the Japanese ones —
-  there is no per-language code fork.
+  `NodeScopeResolver`, …), the CLI output and diagnostic messages, **all code comments and
+  docblocks**, the CLI `--help` text, and the example PHP under
+  [`examples/`](../../examples). The English chapters link to the **same**
+  [`impls/`](../../impls) tree as the Japanese ones — there is no per-language code fork.
 
-> **Open decision — comments in the linked code tree.** The `dev/` and `impls/` source has
-> **Japanese docblocks and inline comments** (e.g. `解析パイプラインの入口。`). The English
-> chapters therefore translate the comments *in the excerpts they print*, but a reader who
-> clicks through to a snapshot will still see Japanese comments. Three ways out, in rising
-> cost: **(a)** accept the seam (English book, Japanese code comments) and add a one-line note
-> at each click-through; **(b)** maintain an English-commented code tree and regenerate
-> English snapshots; **(c)** make the shared `dev/` comments English for both editions (which
-> de-localizes the code for Japanese readers). Not yet decided — until it is, follow (a) and
-> translate excerpt comments inline.
+> **Resolved (2026-06-15): the shared code is English.** The `dev/`, `examples/`, and
+> `impls/` source — comments, docblocks, and user-facing CLI strings — is now **English**
+> (it used to be Japanese). The code is the international default; each book then translates
+> the comments **in the excerpts it prints**: `book/ja/` shows Japanese comments in its prose,
+> `book/en/` shows English. Click-through to a snapshot shows English for both editions. So in
+> English chapters, code excerpts are printed verbatim from the (English) snapshot; in
+> Japanese chapters, the same excerpts carry hand-translated Japanese comments.
 
 ## Directory & path mapping
 
