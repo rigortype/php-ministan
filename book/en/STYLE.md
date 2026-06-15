@@ -113,7 +113,10 @@ and then use it bare.
   Japanese double-dash rhythm, wraps cleanly on screen, and is easy to verify. Do **not**
   use the unspaced `word—word` form or the en dash for this purpose. (The Japanese side uses
   a doubled `——`; English uses one.)
-- **Quotes:** curly quotes “ ” and ‘ ’ in prose; straight quotes only inside code spans.
+- **Quotes:** curly quotes “ ” and ‘ ’ in prose. Keep **straight** quotes inside code spans
+  and inside raw-HTML attribute values — e.g. the `<picture>`/`<img>` figure embeds, whose
+  `media="…"` / `src="…"` / `alt="…"` must stay straight or the image won't load. (When
+  bulk-converting prose to curly quotes, protect both code spans and HTML tags.)
 - **Code:** inline code in backticks; identifiers, file paths, and CLI text always in code.
 - **Chapter labels:** "Part 0…Part 9" for Wonderland; "S1…S7" for Looking-Glass (matching
   the Japanese and the immutable git tags `part-NN` / `seasoned-NN`).
