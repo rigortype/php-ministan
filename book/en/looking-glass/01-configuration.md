@@ -1,4 +1,4 @@
-# S1: Configuration and extension
+# S1 — Configuration and extension
 
 > *The code for this chapter lives in the snapshot [`impls/looking-glass/01-configuration`](../../../impls/looking-glass/01-configuration) — a slice of the live `dev/` tree taken at `git tag seasoned-01`.*
 
@@ -6,8 +6,8 @@
 here. We take the ministan whose core we threaded through in the basics — parse → scope → type
 inference → narrowing → rules → report — and, on top of it, add the precision and machinery that
 pay off in the field. (We assume you’ve finished the basics volume.) For what S1 through S7 cover,
-see “[The map — two volumes](../README.md)” in the front matter. This volume raises the difficulty
-on purpose; the first step is the doorway to everyday use — **configuration**.
+see “[The map — two volumes](../README.md)” in the front matter. This volume is harder
+by design, and the first step toward everyday use is configuration — the doorway to it.
 
 In the basics we ran everything from CLI flags alone. In practice you want the level, the paths, the
 errors to ignore, and your own custom rules collected in a **config file**. Following PHPStan, we

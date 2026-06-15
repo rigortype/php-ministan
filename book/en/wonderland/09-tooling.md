@@ -52,9 +52,9 @@ Drop a type checker onto a large existing codebase and you get thousands of find
 once. You can’t turn CI red until every last one is fixed. So we reach for a **baseline** —
 freeze today’s findings as “already accepted,” and turn red **only for findings that are
 newly introduced**
-([`Baseline`](../../../impls/wonderland/09-tooling/src/Output/Baseline.php)). It’s a defense —
-“don’t let this grow any further” — and an offense too: **it restarts the improvements that
-the fear of changing things had stalled**.
+([`Baseline`](../../../impls/wonderland/09-tooling/src/Output/Baseline.php)). It’s both a
+guardrail — nothing new slips in — and a restart button: **the cleanups you’d put off for fear
+of touching old code can begin again**.
 
 ```console
 $ dev/bin/ministan analyse --generate-baseline=ministan-baseline.json src

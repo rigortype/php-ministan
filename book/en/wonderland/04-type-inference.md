@@ -69,7 +69,7 @@ public function getType(Expr $expr): Type
 > literal its type, as in `42 : int`). Drop the rules into the `match` one by one and the type
 > system on paper lines up one-to-one with the code.
 
-That literals become **constant types** is the part that pays off. `42` is not `int`, it is
+The payoff is that literals become **constant types** — `42` is not `int`, it is
 `42`. So `annotate` shows `$a : 42`, and that precision becomes the foundation for deciding
 `match` exhaustiveness (a later chapter).
 

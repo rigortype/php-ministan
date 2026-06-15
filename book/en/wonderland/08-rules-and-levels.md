@@ -38,8 +38,8 @@ first-class citizen” — is exactly what pays off here.
   <img src="../figures/08-levels.svg" alt="What a level really is: the three-valued Maybe is judged against a level threshold — waved through (OK) below it, objected to (error) above it">
 </picture>
 
-> Reference note: this is exactly the non-rejecting promise from Part 0, made mechanical. A
-> sound type system rejects some perfectly good programs — that’s the price of soundness — and
+> Reference note: this is exactly the non-rejecting promise from Part 0, made mechanical. That
+> trade-off — see the note above — is exactly what levels make adjustable, and
 > gradual typing (Siek & Taha, 2006) buys it back by letting the unknown pass. ministan goes
 > one step further and puts “**don’t know = Maybe = stay silent**” (never object to a `Maybe`
 > until the high levels) at the center of the machine, so false positives are hard to produce

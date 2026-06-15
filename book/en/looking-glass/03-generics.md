@@ -5,8 +5,7 @@
 > **Further reading** (optional): `@template T` is a universally-quantified type `∀T`, and pinning down its type argument is **substitution** — the textbook view is **TAPL** ch. 22 (type reconstruction) and ch. 23 (System F, parametric polymorphism), the genuine fit for what we build here. On the PHP side, the `@template` notation traces back to Hack’s generics, and **Psalm** (Matt Brown) pioneered it for plain PHP — the lineage every PHP analyzer now follows. One caveat for the theory-minded: ministan’s substitution is **one-directional** (a straight assignment of type variables), not the bidirectional unification TAPL’s reconstruction algorithm performs.
 
 PHP has no language-level generics, but PHPDoc expresses them through `@template`. Whether
-an analyzer can read that annotation is the dividing line of modern PHP static analysis. (This
-`@template` traces back to Hack’s generics; in PHP, Psalm got there first.)
+an analyzer can read that annotation is the dividing line of modern PHP static analysis.
 
 > Unlike Java’s erasure or C#’s reified generics, PHP’s `@template` is **PHPDoc — a comment** —
 > so the runtime recognizes literally nothing. The type arguments live **only in the static-

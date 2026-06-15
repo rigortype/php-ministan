@@ -67,7 +67,7 @@ as we intend. Making `Error` `readonly` back in Part 0 was groundwork for this s
 > Part 2’s `Scope` holds only “defined or not.” In Part 3 each variable gets bound to a
 > **type**, and `hasVariable()` grows up into `getType()`.
 
-## From larva to adult — `NodeScopeResolver`
+## Growing the visitor into `NodeScopeResolver`
 
 We retire Part 1’s `RuleApplyingVisitor` (which only visited nodes) and replace it with a
 **recursive descent** that propagates scope
@@ -140,7 +140,7 @@ the thing falling apart.
 
 ## Holding the line on non-rejecting
 
-A naive undefined check is a goldmine of false positives. ministan stays silent wherever it
+A naive undefined check is a rich source of false positives. ministan stays silent wherever it
 can’t be sure.
 
 - **Superglobals** (`$_GET`, …) are seeded as defined from the start.

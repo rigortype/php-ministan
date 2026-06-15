@@ -1,10 +1,10 @@
-# S5: By-reference parameters and stubs
+# S5 — By-reference and stubs
 
 > *The code for this chapter lives in the snapshot [`impls/looking-glass/05-byref-stubs`](../../../impls/looking-glass/05-byref-stubs) — a slice of the live `dev/` tree taken at `git tag seasoned-05`.*
 
-> **Further reading** (optional): a **stub** declares a type in a file *separate from the body* — the same idea as Ruby’s **RBS** (`.rbs`) and TypeScript’s **`.d.ts`**, and one more answer to Part 7’s question of *where* you write a type. It sits off to the side of type theory proper, but no checker aimed at a real language can do without it. The **by-ref output parameter** is PHP’s version of C#’s `out`/`ref` — an argument the callee writes *into* — a notion C and C++ reach through pointers, and Java simply doesn’t have.
+> **Further reading** (optional): a **stub** declares a type in a file *separate from the body* — the same idea as Ruby’s **RBS** (`.rbs`) and TypeScript’s **`.d.ts`**, and one more answer to Part 7’s question of *where* you write a type. It sits off to the side of type theory proper, but no checker aimed at a real language can do without it. The **by-ref output parameter** is PHP’s version of C#’s `out`/`ref` — an argument the callee writes *into*. C and C++ express the same idea through pointers; Java has no equivalent.
 
-Back in basics Part 8, when ministan analyzed its own source, it scolded us like this:
+Back in basics Part 8, ministan analyzed its own source and flagged this:
 
 ```php
 preg_match('/\d+/', $input, $matches);
@@ -42,7 +42,7 @@ That collects the homework left over from basics Part 8.
 
 ## Stubs — supplying a signature from outside
 
-Some types native reflection simply can’t express. The return type of `explode()` is, natively, `array` (which in ministan means `mixed`) — but it really is `list<string>`. PHPStan and Psalm fill this gap with **stubs** (files in the `.stub` family that hold PHPDoc-annotated declarations to be parsed). Psalm is the one that popularized this PHPDoc-stub approach, with its `.phpstub` files. ministan takes the same route.
+Some types native reflection simply can’t express. The return type of `explode()` is, natively, `array` (which in ministan means `mixed`) — but it really is `list<string>`. PHPStan and Psalm fill this gap with **stubs** — PHPDoc-annotated declarations parsed but never run. Psalm popularized the approach with its `.phpstub` files; ministan takes the same route.
 
 [`stubs/core.php`](../../../impls/looking-glass/05-byref-stubs/stubs/core.php) is **never executed**. It is **parsed**, purely to read its signatures:
 

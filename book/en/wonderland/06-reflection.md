@@ -13,7 +13,7 @@ $message = $greeter->greet('world'); // what does greet() return?
 ```
 
 To know the type of `$message`, we need to be able to **look up** the signature of
-`Greeter::greet()`. The thing that does that lookup is **reflection**. With this chapter the
+`Greeter::greet()` — and that lookup is what **reflection** gives us. With this chapter the
 analyzer enters the stage where it “understands classes.”
 
 ## Name resolution first
@@ -55,9 +55,8 @@ Classes, methods, and functions each get wrapped in
 [`ClassReflection`](../../../impls/wonderland/06-reflection/src/Reflection/ClassReflection.php),
 [`MethodReflection`](../../../impls/wonderland/06-reflection/src/Reflection/MethodReflection.php), and
 [`FunctionReflection`](../../../impls/wonderland/06-reflection/src/Reflection/FunctionReflection.php).
-Mapping a type declaration onto a {@see Type} is the job of
-[`TypeNodeResolver`](../../../impls/wonderland/06-reflection/src/Reflection/TypeNodeResolver.php),
-which handles both php-parser’s type nodes and PHP’s native `ReflectionType` (turning `?Foo`
+[`TypeNodeResolver`](../../../impls/wonderland/06-reflection/src/Reflection/TypeNodeResolver.php)
+maps a type declaration onto a `Type`. It handles both php-parser’s type nodes and PHP’s native `ReflectionType` (turning `?Foo`
 into `Foo|null`, for instance — this is where Part 5’s `UnionType` starts to earn its keep).
 
 > Reading note: TAPL’s simply typed lambda-calculus gives a function the type
@@ -93,7 +92,7 @@ private function isSuperTypeOfClass(string $other): TrinaryLogic
 ```
 
 For `class B extends A`, `A ⊇ B` is Yes and `B ⊇ A` is No. The `instanceof` narrowing we
-shelved in Part 5 now genuinely bites.
+shelved in Part 5 now actually takes effect.
 
 ## Inferring a call’s return value
 
@@ -139,7 +138,7 @@ We can infer the return value of a method and of the built-in `strlen()` alike.
 > the moment a `__call` is present. To analyze something like Eloquent precisely, you need
 > **stubs or extensions** that translate the magic into types (for PHPStan that’s an extension
 > such as larastan; for ministan, we take up stubs in the advanced volume, S5). “All of my
-> Laravel code gets fully analyzed as-is” is not the deal — but everywhere you wrote a type
+> Laravel code gets fully analyzed as-is” isn’t the promise — but everywhere you wrote a type
 > down, it works.
 
 ## Summary

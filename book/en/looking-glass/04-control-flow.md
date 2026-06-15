@@ -6,8 +6,6 @@
 
 Narrowing isn’t confined to the inside of an `if` branch. After an **early return**, after `assert()`, inside the arms of a `match` — the *shape* of the code tightens a type. This chapter builds that sense of control flow.
 
-> A note on where this sits: in Part 5 we added narrowing (occurrence typing); here we widen it from the `if` branch alone to **the whole control flow** — early returns, `assert`, and `match` arms. Tracing *what holds where* is closer to **dataflow analysis** (program analysis) than to the typing rules of type theory.
-
 ## Early return — a branch that ends doesn’t reach the merge
 
 This is one of the most common patterns in PHP:
@@ -63,13 +61,13 @@ foreach ($node->arms as $arm) {
             ? $this->typeSpecifier->specify($cond, $remaining)              // match(true): the condition itself
             : $this->typeSpecifier->specifyEquality($node->cond, $cond, $remaining); // match($x): $x === value
         $armScope = $specified->truthy;
-        $remaining = $specified->falsy; // carry the timeline this arm didn't catch on to the next
+        $remaining = $specified->falsy; // carry the value this arm didn't match on to the next arm
     }
     $this->processNode($arm->body, $armScope); // analyze the arm in the narrowed scope
 }
 ```
 
-Because we’d already built `if`-narrowing, `match` just calls it once per arm. The parts pay off.
+Because we’d already built `if`-narrowing, `match` just calls it once per arm. Again, small parts holding up complex behavior.
 
 ```console
 $ dev/bin/ministan analyse examples/looking-glass/narrowing.php

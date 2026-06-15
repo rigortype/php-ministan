@@ -28,8 +28,9 @@ about that containment is what `isSuperTypeOf()` does.
 
 ## Three-valued logic — making “maybe” a first-class citizen
 
-Yes/No isn’t enough to answer a containment question. `int` *might* contain a `mixed` value —
-whether what’s inside that `mixed` is an `int` can’t be known until runtime. The thing that
+Yes/No isn’t enough to answer a containment question. Ask “is a value typed `mixed` also an
+`int`?” and neither Yes nor No can answer — what’s actually inside that `mixed` isn’t known
+until runtime. The answer has to be a third thing: Maybe. The thing that
 expresses this “maybe” is
 [`TrinaryLogic`](../../../impls/wonderland/03-type-system/src/TrinaryLogic.php) (corresponding
 to PHPStan’s `TrinaryLogic`):
@@ -71,8 +72,9 @@ interface Type
 }
 ```
 
-`isSuperTypeOf` (am I a superset of the other?) and `accepts` (may I let the other into my
-place?) are subtly different questions, but for simple value types they coincide. So we factor
+`isSuperTypeOf` (am I a superset of the other?) and `accepts` (can a value of the other type be
+used where mine is expected? — assignability) are subtly different questions, but for simple
+value types they coincide. So we factor
 the shared work into
 [`SimpleTypeTrait`](../../../impls/wonderland/03-type-system/src/Type/SimpleTypeTrait.php) and
 let `accepts` delegate to `isSuperTypeOf`. The relation to the top (`mixed`) and the bottom
@@ -99,7 +101,7 @@ public function isSuperTypeOf(Type $type): TrinaryLogic
 }
 ```
 
-## Constant types are where the edge comes from
+## Constant types are where the precision comes from
 
 Right after `$x = 42;`, is the type of `$x` `int`? No — it’s **`42`**. That distinction is what
 decides how sharp the analysis can be. Because a value can carry the type `42`, we can reason
@@ -144,7 +146,7 @@ yield 'never ⊉ mixed' => [$never, $mixed,                  TrinaryLogic::No];
   foundation of the level system.
 - `mixed` (the top — where the unknown collapses to) and `never` (the bottom) are the two ends
   of the type lattice.
-- **Constant types** (`42`, `'foo'`, `true`) are where the analysis gets its edge.
+- **Constant types** (`42`, `'foo'`, `true`) are where the analysis gets its precision.
 
 In the next chapter, Part 4, this vocabulary finally meets `Scope`. We implement
 `Scope::getType(Expr): Type` and **infer** the type of an expression from its literals and

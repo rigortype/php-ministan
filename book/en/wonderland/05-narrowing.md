@@ -36,7 +36,7 @@ foreach ($this->types as $member) {
 return $result; // int|string ⊇ 42 is Yes (int accepts it)
 ```
 
-**Building** a union is the job not of the type class but of
+**Building** a union isn’t the type class’s job — it belongs to
 [`TypeCombinator`](../../../impls/wonderland/05-narrowing/src/Type/TypeCombinator.php).
 Normalization — flattening, dropping `never`, absorbing `mixed`, deduping, and collapsing to a
 single type when there’s only one member — is a cross-cutting operation, and no individual type
@@ -57,9 +57,8 @@ TypeCombinator::remove($intOrNull, new NullType()); // int
 
 ## The narrowing engine — `TypeSpecifier`
 
-Taking a condition and returning the scope that holds “when it was true” and “when it was false”
-is the work of
 [`TypeSpecifier`](../../../impls/wonderland/05-narrowing/src/Analyser/TypeSpecifier.php)
+takes a condition and returns the scope for each side — the world where it held, and the world where it didn’t
 (the counterpart to PHPStan’s class of the same name). Its result is a
 [`SpecifiedTypes`](../../../impls/wonderland/05-narrowing/src/Analyser/SpecifiedTypes.php) — a
 truthy / falsy pair.
@@ -89,7 +88,7 @@ $falsy  = $scope->assignVariable($name, TypeCombinator::remove($current, $narrow
 `!` is a one-liner — `negate()` swaps true for false — and `&&` / `||` simply compose the
 `specify` of their two sides. Small parts, combined, cover complex conditions.
 
-> **Further reading**: narrowing a type along the *shape* of a condition is, in type theory, a
+> **Reference note**: narrowing a type along the *shape* of a condition is, in type theory, a
 > research area called **occurrence typing** (flow-dependent typing). The standard texts assign
 > each expression a single static type once; “the same variable carries different types in
 > different places” is terrain they leave unmapped — the particular ground a checker for a

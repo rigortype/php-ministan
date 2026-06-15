@@ -1,8 +1,8 @@
-# S6: Performance (the result cache)
+# S6 — Performance
 
 > *The code for this chapter lives in the snapshot [`impls/looking-glass/06-performance`](../../../impls/looking-glass/06-performance) — a slice of the live `dev/` tree taken at `git tag seasoned-06`.*
 
-We’ve been stacking up precision in the type system. This chapter is a breather — we step away from types for a moment and look at the one thing that decides how fast a real tool *feels* in your hands: the **result cache**. On a codebase of a few thousand files, re-analyzing every file on every change is a non-starter. In CI and on your laptop alike, a tool that keeps you waiting is a tool nobody runs. Before we move on to the finishing work in S7, let’s lay the groundwork for speed.
+We’ve been stacking up precision in the type system. This chapter is a breather — we step away from types for a moment and look at the one thing that decides how fast a real tool *feels* in your hands: the **result cache**. On a few thousand files, re-analyzing everything on every change is a non-starter — in CI or on your laptop, a tool that keeps you waiting is one nobody runs. Before we move on to the finishing work in S7, let’s lay the groundwork for speed.
 
 ## How the cache works
 
@@ -16,7 +16,7 @@ private function pathFor(string $code): string
 }
 ```
 
-The key is the **salt**. When the analyzer’s logic or level changes, the results change too, so we mix the version and the level into the salt. The “version” here is a **schema-version constant string** carried by ministan, which you bump by hand whenever you change the analysis logic. As a result, raising the level or updating ministan **invalidates the cache automatically**. The file path is **not** part of the key — the same contents produce the same result wherever they live.
+The key is the **salt**. When the analyzer’s logic or level changes, the results change too, so we mix the version and the level into the salt. The “version” here is a **schema-version constant string** that ministan carries and that you bump by hand whenever the analysis logic changes. As a result, raising the level or updating ministan **invalidates the cache automatically**. The file path is **not** part of the key — the same contents produce the same result wherever they live.
 
 > Turn that around and you can see the gap: merely adding a custom rule doesn’t bump this version, so the cache can go stale. Real PHPStan weaves the PHPStan version *and* a hash of your configuration (the NEON) into its salt, precisely so this case isn’t missed.
 

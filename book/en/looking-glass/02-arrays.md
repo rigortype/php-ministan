@@ -1,4 +1,4 @@
-# S2 — Going deeper into arrays
+# S2 — Going deeper on arrays
 
 > *The code for this chapter lives in the snapshot [`impls/looking-glass/02-arrays`](../../../impls/looking-glass/02-arrays) — a slice of the live `dev/` tree taken at `git tag seasoned-02`.*
 

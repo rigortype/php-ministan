@@ -32,9 +32,9 @@ bring in `phpstan/phpdoc-parser` and take `@param` / `@return` / `@var` in as ty
 ## Wiring up phpdoc-parser
 
 We don’t write the parser for type “strings” ourselves; we hand it to PHPStan’s official
-[phpstan/phpdoc-parser](https://github.com/phpstan/phpdoc-parser). Converting the type AST it
-returns into ministan’s {@see Type} is the job of
+[phpstan/phpdoc-parser](https://github.com/phpstan/phpdoc-parser).
 [`PhpDocTypeResolver`](../../../impls/wonderland/07-phpdoc/src/Reflection/PhpDocTypeResolver.php)
+converts the type AST it returns into ministan’s `Type`
 (the counterpart to PHPStan’s `TypeNodeResolver`):
 
 ```php

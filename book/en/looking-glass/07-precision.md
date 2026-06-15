@@ -1,4 +1,4 @@
-# S7: Sharpening inference and checking
+# S7 — Sharper inference and checking
 
 > *The code for this chapter lives in the snapshot [`impls/looking-glass/07-precision`](../../../impls/looking-glass/07-precision) — a slice of the live `dev/` tree taken at `git tag seasoned-07`.*
 
@@ -8,7 +8,7 @@ By now the core runs end to end. This chapter is the finish — we go back and t
 
 ## A union absorbs its subtypes
 
-`int|0` ought to be just `int`. `0` is a subtype of `int` — `int.isSuperTypeOf(42)` is Yes, “`int` contains `42`,” and the wider type is the supertype. TypeScript folds unions like this automatically; ministan’s `mergeWith`, though, has only ever **dropped exact duplicates** and never folded subtypes, so redundant unions like `int|0` were left lying around. So we teach `TypeCombinator::union()` to **absorb subtypes** ([`TypeCombinator`](../../../impls/looking-glass/07-precision/src/Type/TypeCombinator.php)):
+`int|0` ought to be just `int`. `0` is a subtype of `int`: `int.isSuperTypeOf(0)` is Yes — `int` contains `0` — and the wider type is the supertype. TypeScript folds unions like this automatically; ministan’s `mergeWith`, though, has only ever **dropped exact duplicates** and never folded subtypes, so redundant unions like `int|0` were left lying around. So we teach `TypeCombinator::union()` to **absorb subtypes** ([`TypeCombinator`](../../../impls/looking-glass/07-precision/src/Type/TypeCombinator.php)):
 
 ```php
 // If an existing member is a supertype of $type, $type is redundant (given int, we don't need 0).
@@ -54,9 +54,9 @@ $result = $this->processStmts($stmts, $widened);
 return $widened->mergeWith($result);
 ```
 
-The crux is the **silent pass**. So that rules never fire twice, the discovery pass switches the callbacks off for its duration. That way we can take the second lap’s types into account without reporting anything twice:
+The crux is the **silent pass**. So that rules never fire twice, the discovery pass switches the callbacks off for its duration. That way we can take the second lap’s types into account without reporting anything twice.
 
-> Why is it safe to stop after two laps? Because a type only ever **widens** at a merge — it is monotone — and folding in one lap’s worth of assignments usually already hits the ceiling. Iterating until it converges, the “true fixed point,” we leave on the table (see the summary) — which is why the heading says fixed-point **approximation**.
+> Why is it safe to stop after two laps? Because each merge only ever widens a type, a later lap can’t undo an earlier widening; we stop after the second lap as a deliberate approximation — a true fixed point would keep iterating until nothing changes.
 
 ```php
 $prev = 'start';
