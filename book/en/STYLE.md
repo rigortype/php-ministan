@@ -129,19 +129,19 @@ Each chapter opens with the same two notes as the Japanese, transcreated:
 
 ## Reference apparatus (re-aimed for English readers)
 
-The Japanese edition leans on 遠藤侑介『型システムのしくみ』(*The Mechanics of Type
-Systems*), which is **Japanese-only** — useless to an English reader — alongside Pierce's
-TAPL. The English edition rebuilds the apparatus:
+The Japanese edition pairs Pierce's TAPL with 遠藤侑介『型システムのしくみ』(*The Mechanics
+of Type Systems*) — a build-a-**type-checker** companion that is **Japanese-only**, so an
+English reader can't use it. The English edition does **not** force a substitute for it. There
+is no English book of the same genre and calibre, and reaching for a build-an-*interpreter*
+book (e.g. *Crafting Interpreters*) would be a false equivalence: ministan is about type
+checking and type theory, not interpretation, so such a book contributes nothing on the actual
+subject. The build-along *ethos* is in any case already credited to ministan's stated models,
+chibivue and chibirigor. The apparatus is therefore lean and honest:
 
-- **TAPL** — Benjamin C. Pierce, *Types and Programming Languages* (MIT Press). Stays as the
-  shared theory reference; same chapter pointers as the Japanese.
-- **Crafting Interpreters** — Robert Nystrom (free online). The English-language sibling in
-  spirit: build a language tool from scratch, one running step at a time. Plays the
-  approachable build-along role that 『しくみ』 played in Japanese (it covers a tree-walking
-  interpreter rather than a type checker, so cite it for the *ethos and the AST-walking
-  machinery*, not for type theory).
-- **Topical sources** where a chapter needs them: Siek & Taha, *Gradual Typing for
-  Functional Languages* (2006) for the non-rejecting/gradual stance; the PHPStan blog
+- **TAPL** — Benjamin C. Pierce, *Types and Programming Languages* (MIT Press). The shared
+  type-theory reference; same chapter pointers as the Japanese edition.
+- **Topical sources** where a chapter genuinely needs them: Siek & Taha, *Gradual Typing for
+  Functional Languages* (2006) for the non-rejecting / gradual stance; the PHPStan blog
   (Ondřej Mirtes) and Psalm's design writing (Matt Brown) for analyzer design decisions.
 - **Be honest about gaps.** Where 『しくみ』 was the *only* correspondence (e.g., its
   untagged-union treatment, or its "afterword" frontier), and no clean English equivalent

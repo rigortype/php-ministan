@@ -51,11 +51,6 @@ because we don't want to presume type theory, none of it is mixed into the main 
 - **TAPL** … Benjamin C. Pierce,
   *[Types and Programming Languages](https://www.cis.upenn.edu/~bcpierce/tapl/)* (MIT Press).
   The shared reference for type theory.
-- **Crafting Interpreters** … Robert Nystrom,
-  *[Crafting Interpreters](https://craftinginterpreters.com/)* (free online). The closest
-  English sibling in spirit — build a language tool from scratch, one running step at a time.
-  It walks an AST to *interpret* rather than to *type-check*, so we cite it for the machinery
-  and the ethos, not for the type theory.
 
 ministan's **non-rejecting** stance sits close to **gradual typing** (Siek & Taha, 2006): it
 deliberately gives up a measure of soundness (TAPL ch. 8, §8.3) to avoid false positives —
