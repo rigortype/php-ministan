@@ -7,10 +7,10 @@ namespace Ministan\Type;
 use Ministan\TrinaryLogic;
 
 /**
- * 最上位の型。あらゆる値を含む。「分からない」を表す既定値でもある。
+ * The top type. Contains every value. Also the default that stands for "unknown".
  *
- * non-rejecting の哲学では、推論に失敗したら never でも例外でもなく mixed に
- * 縮退させる。mixed はすべてを受け入れ、すべての上位型である。
+ * Under the non-rejecting philosophy, when inference fails we collapse to mixed rather than to
+ * never or an exception. mixed accepts everything and is the supertype of everything.
  */
 final class MixedType implements Type
 {

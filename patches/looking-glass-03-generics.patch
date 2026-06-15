@@ -1,8 +1,8 @@
 diff --git a/dev/src/Analyser/NodeScopeResolver.php b/dev/src/Analyser/NodeScopeResolver.php
-index 649c4c9..436b684 100644
+index 0a05e6d..701a1f1 100644
 --- a/dev/src/Analyser/NodeScopeResolver.php
 +++ b/dev/src/Analyser/NodeScopeResolver.php
-@@ -391,7 +391,7 @@ final class NodeScopeResolver
+@@ -395,7 +395,7 @@ final class NodeScopeResolver
          $returnType = $doc->returnType ?? $this->typeNodeResolver->resolve($node->returnType);
  
          $inner = Scope::createForFunction()->withFunctionReturnType($returnType);
@@ -11,13 +11,13 @@ index 649c4c9..436b684 100644
  
          if ($node instanceof Stmt\ClassMethod && !$node->isStatic()) {
              $inner = $inner->assignVariable('this', new MixedType());
-@@ -451,15 +451,18 @@ final class NodeScopeResolver
+@@ -455,15 +455,18 @@ final class NodeScopeResolver
      }
  
      /**
 -     * @param Node\Param[] $params
 +     * @param Node\Param[]        $params
-+     * @param array<string, Type> $docParamTypes @param で宣言された型（ネイティブ宣言より優先）
++     * @param array<string, Type> $docParamTypes types declared via @param (these take precedence over the native declaration)
       */
 -    private function bindParams(array $params, Scope $scope): Scope
 +    private function bindParams(array $params, Scope $scope, array $docParamTypes = []): Scope
@@ -34,7 +34,7 @@ index 649c4c9..436b684 100644
          }
  
 diff --git a/dev/src/Analyser/Scope.php b/dev/src/Analyser/Scope.php
-index 6a72d76..54c6e73 100644
+index 8abb72f..cac4d37 100644
 --- a/dev/src/Analyser/Scope.php
 +++ b/dev/src/Analyser/Scope.php
 @@ -11,14 +11,18 @@ use Ministan\Type\Constant\ConstantBooleanType;
@@ -56,14 +56,14 @@ index 6a72d76..54c6e73 100644
  use PhpParser\Node\ArrayItem;
  use PhpParser\Node\Expr;
  use PhpParser\Node\Identifier;
-@@ -248,7 +252,21 @@ final readonly class Scope
+@@ -252,7 +256,21 @@ final readonly class Scope
              return new MixedType();
          }
  
 -        return $class->getMethod($expr->name->toString())->returnType;
 +        $returnType = $class->getMethod($expr->name->toString())->returnType;
 +
-+        // ジェネリッククラスなら、型引数で戻り値の型変数を置換する（Collection<int>::get(): T → int）。
++        // For a generic class, substitute the return value's type variables with the type arguments (Collection<int>::get(): T -> int).
 +        if ($objectType instanceof GenericObjectType && $class->templateNames !== []) {
 +            $map = [];
 +            foreach ($class->templateNames as $i => $templateName) {
@@ -79,7 +79,7 @@ index 6a72d76..54c6e73 100644
      }
  
      private function funcCallType(Expr\FuncCall $expr): Type
-@@ -258,7 +276,24 @@ final readonly class Scope
+@@ -262,7 +280,24 @@ final readonly class Scope
              return new MixedType();
          }
  
@@ -89,7 +89,7 @@ index 6a72d76..54c6e73 100644
 +            return $function->returnType;
 +        }
 +
-+        // 実引数から型変数を推論し（identity(42) なら T → 42）、戻り値型を置換する。
++        // Infer the type variables from the actual arguments (identity(42) gives T -> 42), then substitute them into the return type.
 +        $map = [];
 +        foreach ($expr->args as $position => $arg) {
 +            if (!$arg instanceof Arg) {
@@ -106,14 +106,14 @@ index 6a72d76..54c6e73 100644
  
      private function constFetchType(Expr\ConstFetch $expr): Type
 diff --git a/dev/src/Reflection/ClassReflection.php b/dev/src/Reflection/ClassReflection.php
-index 14542af..8caa31b 100644
+index 300d9d7..b7a7bb3 100644
 --- a/dev/src/Reflection/ClassReflection.php
 +++ b/dev/src/Reflection/ClassReflection.php
 @@ -23,6 +23,7 @@ final class ClassReflection
      /**
-      * @param list<string> $parentNames extends / implements の上位クラス名（FQN）
-      * @param array<string, MethodReflection> $methods 小文字名 → メソッド（直接宣言分）
-+     * @param list<string> $templateNames このクラスが宣言する型変数（@template）
+      * @param list<string> $parentNames supertype class names from extends / implements (FQN)
+      * @param array<string, MethodReflection> $methods lowercased name => method (directly declared ones)
++     * @param list<string> $templateNames the type variables this class declares (@template)
       */
      public function __construct(
          public readonly string $name,
@@ -143,7 +143,7 @@ index 14542af..8caa31b 100644
  
      /**
 diff --git a/dev/src/Reflection/FunctionReflection.php b/dev/src/Reflection/FunctionReflection.php
-index 6f1ac83..115e39f 100644
+index dcb0651..c29f551 100644
 --- a/dev/src/Reflection/FunctionReflection.php
 +++ b/dev/src/Reflection/FunctionReflection.php
 @@ -15,12 +15,14 @@ use ReflectionFunction;
@@ -152,7 +152,7 @@ index 6f1ac83..115e39f 100644
      /**
 -     * @param list<Type> $parameterTypes
 +     * @param list<Type>   $parameterTypes
-+     * @param list<string> $templateNames この関数が宣言する型変数（@template）
++     * @param list<string> $templateNames the type variables this function declares (@template)
       */
      public function __construct(
          public string $name,
@@ -171,16 +171,16 @@ index 6f1ac83..115e39f 100644
      }
  
 diff --git a/dev/src/Reflection/MethodReflection.php b/dev/src/Reflection/MethodReflection.php
-index 984c3ab..6dcc4c8 100644
+index 7744b8d..44697ee 100644
 --- a/dev/src/Reflection/MethodReflection.php
 +++ b/dev/src/Reflection/MethodReflection.php
-@@ -27,9 +27,12 @@ final readonly class MethodReflection
+@@ -28,9 +28,12 @@ final readonly class MethodReflection
      ) {
      }
  
 -    public static function fromNode(ClassMethod $node, TypeNodeResolver $resolver, PhpDocTypeResolver $phpDoc): self
 +    /**
-+     * @param list<string> $classTemplateNames クラスが宣言する型変数（メソッドの @return T 等が参照する）
++     * @param list<string> $classTemplateNames the type variables the class declares (referenced by the method's @return T etc.)
 +     */
 +    public static function fromNode(ClassMethod $node, TypeNodeResolver $resolver, PhpDocTypeResolver $phpDoc, array $classTemplateNames = []): self
      {
@@ -190,24 +190,24 @@ index 984c3ab..6dcc4c8 100644
          $parameterTypes = [];
          foreach ($node->params as $param) {
 diff --git a/dev/src/Reflection/ParsedPhpDoc.php b/dev/src/Reflection/ParsedPhpDoc.php
-index aea1fd7..1442cf7 100644
+index 047a944..cd8b4f7 100644
 --- a/dev/src/Reflection/ParsedPhpDoc.php
 +++ b/dev/src/Reflection/ParsedPhpDoc.php
 @@ -7,23 +7,25 @@ namespace Ministan\Reflection;
  use Ministan\Type\Type;
  
  /**
-- * 1 つの docblock から取り出した型情報。`@return`・`@param`・`@var`。
-+ * 1 つの docblock から取り出した型情報。`@return`・`@param`・`@var`・`@template`。
+- * Type information extracted from a single docblock: `@return`, `@param`, `@var`.
++ * Type information extracted from a single docblock: `@return`, `@param`, `@var`, `@template`.
   */
  final readonly class ParsedPhpDoc
  {
      /**
--     * @param array<string, Type> $paramTypes パラメータ名（$ なし）→ 型
--     * @param array<string, Type> $varTypes   変数名（$ なし、無名は ''）→ 型
-+     * @param array<string, Type> $paramTypes    パラメータ名（$ なし）→ 型
-+     * @param array<string, Type> $varTypes      変数名（$ なし、無名は ''）→ 型
-+     * @param list<string>        $templateNames この docblock が宣言する型変数名
+-     * @param array<string, Type> $paramTypes parameter name (without $) => type
+-     * @param array<string, Type> $varTypes   variable name (without $, '' if anonymous) => type
++     * @param array<string, Type> $paramTypes    parameter name (without $) => type
++     * @param array<string, Type> $varTypes      variable name (without $, '' if anonymous) => type
++     * @param list<string>        $templateNames the type variable names this docblock declares
       */
      public function __construct(
          public ?Type $returnType,
@@ -224,7 +224,7 @@ index aea1fd7..1442cf7 100644
      }
  }
 diff --git a/dev/src/Reflection/PhpDocTypeResolver.php b/dev/src/Reflection/PhpDocTypeResolver.php
-index 718a15c..c76f529 100644
+index 0b61818..ad11994 100644
 --- a/dev/src/Reflection/PhpDocTypeResolver.php
 +++ b/dev/src/Reflection/PhpDocTypeResolver.php
 @@ -8,12 +8,14 @@ use Ministan\Type\ArrayType;
@@ -246,15 +246,15 @@ index 718a15c..c76f529 100644
  use PHPStan\PhpDocParser\ParserConfig;
  
  /**
-- * docblock を解析し、`@return`/`@param`/`@var` の型を {@see Type} に写す。
-+ * docblock を解析し、`@return`/`@param`/`@var`/`@template` の型を {@see Type} に写す。
+- * Parses a docblock and maps the types of `@return`/`@param`/`@var` onto {@see Type}.
++ * Parses a docblock and maps the types of `@return`/`@param`/`@var`/`@template` onto {@see Type}.
   *
-- * phpstan/phpdoc-parser で文字列をパースし、その型 AST を ministan の型へ変換する。
-- * PHPStan の `TypeNodeResolver` に対応。クラス名の名前空間解決（use の解釈）までは
-- * 追わない——そこは応用編で。
-+ * 型変数を扱うのが S3 での拡張点。`@template T` を集め、その名前の識別子は
-+ * {@see TemplateType} に、`Collection<int>` のような識別子付きジェネリックは
-+ * {@see GenericObjectType} に解決する。
+- * It parses the string with phpstan/phpdoc-parser and converts that type AST into ministan's
+- * types. This corresponds to PHPStan's `TypeNodeResolver`. It does not go as far as namespace
+- * resolution of class names (interpreting `use`) — that comes in the applied volume.
++ * Handling type variables is the extension point introduced in S3. It collects `@template T`,
++ * resolves identifiers with those names to {@see TemplateType}, and resolves named generics like
++ * `Collection<int>` to {@see GenericObjectType}.
   */
  final class PhpDocTypeResolver
  {
@@ -264,7 +264,7 @@ index 718a15c..c76f529 100644
  
 -    public function parse(?string $docComment): ParsedPhpDoc
 +    /**
-+     * @param list<string> $outerTemplateNames 外側（クラス）から見えている型変数名
++     * @param list<string> $outerTemplateNames type variable names visible from the outer scope (the class)
 +     */
 +    public function parse(?string $docComment, array $outerTemplateNames = []): ParsedPhpDoc
      {
@@ -359,17 +359,17 @@ index 718a15c..c76f529 100644
              ($base === 'list' || $base === 'non-empty-list') && count($args) >= 1
                  => new ArrayType(new IntegerType(), $args[0]),
 -            default => new MixedType(),
-+            // それ以外の `Foo<…>` はジェネリッククラス。
++            // Any other `Foo<…>` is a generic class.
 +            default => new GenericObjectType(ltrim($node->type->name, '\\'), array_values($args)),
          };
      }
  }
 diff --git a/dev/src/Type/GenericObjectType.php b/dev/src/Type/GenericObjectType.php
 new file mode 100644
-index 0000000..88f72ea
+index 0000000..68ee131
 --- /dev/null
 +++ b/dev/src/Type/GenericObjectType.php
-@@ -0,0 +1,49 @@
+@@ -0,0 +1,50 @@
 +<?php
 +
 +declare(strict_types=1);
@@ -377,10 +377,11 @@ index 0000000..88f72ea
 +namespace Ministan\Type;
 +
 +/**
-+ * 型引数を伴うオブジェクト型。`Collection<int>`、`Result<string, Error>`。
++ * An object type carrying type arguments. `Collection<int>`, `Result<string, Error>`.
 + *
-+ * {@see ObjectType} を継承するので、未定義メソッド検出や引数検査などの「クラスを見る」
-+ * 処理は型引数を無視してそのまま働く。型引数は、メソッド戻り値の型パラメータ置換に使う。
++ * Because it extends {@see ObjectType}, the "look at the class" work — detecting undefined methods,
++ * checking arguments, and so on — keeps working as is, ignoring the type arguments. The type
++ * arguments are used for substituting type parameters in method return types.
 + */
 +final class GenericObjectType extends ObjectType
 +{
@@ -420,12 +421,12 @@ index 0000000..88f72ea
 +    }
 +}
 diff --git a/dev/src/Type/ObjectType.php b/dev/src/Type/ObjectType.php
-index 9fb0175..74f91b1 100644
+index e3eb33f..52343f1 100644
 --- a/dev/src/Type/ObjectType.php
 +++ b/dev/src/Type/ObjectType.php
 @@ -14,7 +14,7 @@ use Ministan\TrinaryLogic;
-  * 引き、`$child instanceof $parent` を正しく Yes/No 判定する。provider が無い、または
-  * クラスが未知のときは Maybe に縮退（non-rejecting）。
+  * {@see ReflectionProviderStaticAccessor} and decides `$child instanceof $parent` correctly as Yes/No.
+  * When there is no provider, or the class is unknown, it collapses to Maybe (non-rejecting).
   */
 -final class ObjectType implements Type
 +class ObjectType implements Type
@@ -434,7 +435,7 @@ index 9fb0175..74f91b1 100644
  
 diff --git a/dev/src/Type/TemplateType.php b/dev/src/Type/TemplateType.php
 new file mode 100644
-index 0000000..d207880
+index 0000000..b8cffcd
 --- /dev/null
 +++ b/dev/src/Type/TemplateType.php
 @@ -0,0 +1,39 @@
@@ -447,10 +448,10 @@ index 0000000..d207880
 +use Ministan\TrinaryLogic;
 +
 +/**
-+ * 型変数 `T`。ジェネリクスの「まだ決まっていない型」を表す。
++ * A type variable `T`. The generics "type not yet decided".
 + *
-+ * `@template T` で宣言され、呼び出し時に具体的な型へ **置換（substitution）** される。
-+ * 関係判定は上限境界（bound, 既定 mixed）に委ね、同一性は名前で見る。
++ * Declared with `@template T` and **substituted** for a concrete type at call time.
++ * Relation checks defer to the upper bound (default mixed), and identity is judged by name.
 + */
 +final class TemplateType implements Type
 +{
@@ -479,7 +480,7 @@ index 0000000..d207880
 +}
 diff --git a/dev/src/Type/TemplateTypeMap.php b/dev/src/Type/TemplateTypeMap.php
 new file mode 100644
-index 0000000..b5a5a28
+index 0000000..22890d0
 --- /dev/null
 +++ b/dev/src/Type/TemplateTypeMap.php
 @@ -0,0 +1,48 @@
@@ -490,10 +491,10 @@ index 0000000..b5a5a28
 +namespace Ministan\Type;
 +
 +/**
-+ * 型変数名 → 具体型 の対応。型の中の {@see TemplateType} を一括置換する。
++ * A mapping from type-variable name to concrete type. Substitutes every {@see TemplateType} within a type at once.
 + *
-+ * `identity(42)` で `T → 42` を作り、戻り値型 `T` を `42` に解決する、といった
-+ * substitution の本体。複合型（union・配列・ジェネリック）の中まで再帰する。
++ * The heart of substitution: e.g. `identity(42)` builds `T → 42`, then resolves the return type `T`
++ * to `42`. It recurses into compound types (union, array, generic).
 + */
 +final class TemplateTypeMap
 +{
@@ -532,7 +533,7 @@ index 0000000..b5a5a28
 +    }
 +}
 diff --git a/dev/tests/Command/AnnotateCommandTest.php b/dev/tests/Command/AnnotateCommandTest.php
-index 23e59f3..d646f5d 100644
+index 3f24c8a..6108741 100644
 --- a/dev/tests/Command/AnnotateCommandTest.php
 +++ b/dev/tests/Command/AnnotateCommandTest.php
 @@ -40,6 +40,19 @@ final class AnnotateCommandTest extends TestCase
@@ -546,10 +547,10 @@ index 23e59f3..d646f5d 100644
 +        $output = ob_get_clean();
 +
 +        self::assertSame(0, $exitCode);
-+        self::assertMatchesRegularExpression('/\$a\s+:\s+42$/m', $output);          // 汎関数の置換
++        self::assertMatchesRegularExpression('/\$a\s+:\s+42$/m', $output);          // generic function substitution
 +        self::assertMatchesRegularExpression("/\\\$b\s+:\s+'hello'$/m", $output);
-+        self::assertMatchesRegularExpression('/\$box\s+:\s+Box<int>$/m', $output);   // @var ジェネリック
-+        self::assertMatchesRegularExpression('/\$value\s+:\s+int$/m', $output);      // メソッド戻り値の置換
++        self::assertMatchesRegularExpression('/\$box\s+:\s+Box<int>$/m', $output);   // @var generic
++        self::assertMatchesRegularExpression('/\$value\s+:\s+int$/m', $output);      // method return value substitution
 +    }
 +
      public function testPhpDocDrivesInference(): void
@@ -557,7 +558,7 @@ index 23e59f3..d646f5d 100644
          ob_start();
 diff --git a/dev/tests/Type/GenericsTest.php b/dev/tests/Type/GenericsTest.php
 new file mode 100644
-index 0000000..d910dc0
+index 0000000..f3a9edd
 --- /dev/null
 +++ b/dev/tests/Type/GenericsTest.php
 @@ -0,0 +1,54 @@
@@ -583,7 +584,7 @@ index 0000000..d910dc0
 +        $type = new GenericObjectType('Collection', [new IntegerType(), new StringType()]);
 +
 +        self::assertSame('Collection<int, string>', $type->describe());
-+        self::assertSame('Collection', $type->className); // ObjectType を継承
++        self::assertSame('Collection', $type->className); // inherits from ObjectType
 +    }
 +
 +    public function testSubstitutesTemplate(): void

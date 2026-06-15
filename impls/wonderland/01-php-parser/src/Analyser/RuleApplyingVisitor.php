@@ -9,11 +9,12 @@ use PhpParser\Node;
 use PhpParser\NodeVisitorAbstract;
 
 /**
- * AST を 1 ノードずつ歩き、各ノードに反応するルールを適用して {@see Error} を集める。
+ * Walks the AST one node at a time, applies the rules that react to each node, and
+ * collects {@see Error}s.
  *
- * PHPStan ではスコープを伝播させる NodeScopeResolver がこの役目を担うが、
- * Part 1 ではまだ型もスコープもない。「ノードを訪れてルールを当てる」核だけを置く。
- * Part 2 でここに {@see Scope} の伝播が加わる。
+ * In PHPStan this role is played by NodeScopeResolver, which also propagates scope; in
+ * Part 1 we have neither types nor scope yet, so this holds just the core: "visit a node,
+ * apply the rules." Part 2 adds {@see Scope} propagation here.
  */
 final class RuleApplyingVisitor extends NodeVisitorAbstract
 {

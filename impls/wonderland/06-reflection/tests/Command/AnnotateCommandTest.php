@@ -17,13 +17,13 @@ final class AnnotateCommandTest extends TestCase
 
         self::assertSame(0, $exitCode);
 
-        // 定数畳み込みはしないので $a = 42 は 42、$b = $a + 1 は int。
+        // No constant folding, so $a = 42 is 42 and $b = $a + 1 is int.
         self::assertMatchesRegularExpression('/\$a\s+:\s+42$/m', $output);
         self::assertMatchesRegularExpression('/\$b\s+:\s+int$/m', $output);
         self::assertMatchesRegularExpression("/\\\$c\s+:\s+'hello'$/m", $output);
         self::assertMatchesRegularExpression('/\$d\s+:\s+string$/m', $output);
         self::assertMatchesRegularExpression('/\$e\s+:\s+bool$/m', $output);
-        // 関数内: $text は string、return も string。
+        // Inside the function: $text is string, and return is string too.
         self::assertMatchesRegularExpression('/\$text\s+:\s+string$/m', $output);
         self::assertMatchesRegularExpression('/return\s+:\s+string$/m', $output);
     }

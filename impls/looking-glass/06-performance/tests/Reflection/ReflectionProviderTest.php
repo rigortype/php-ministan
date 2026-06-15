@@ -48,9 +48,9 @@ final class ReflectionProviderTest extends TestCase
     {
         $provider = $this->providerFor('');
 
-        // スタブが explode に精密な戻り値型を与える（ネイティブは array=mixed）。
+        // The stub gives explode a precise return type (the native one is array=mixed).
         self::assertSame('array<int, string>', $provider->getFunction('explode')->returnType->describe());
-        // preg_match の第 3 引数は参照渡し。
+        // The 3rd argument of preg_match is passed by reference.
         self::assertTrue($provider->getFunction('preg_match')->byRefParams[2] ?? false);
     }
 
@@ -62,7 +62,7 @@ final class ReflectionProviderTest extends TestCase
         $a = new ObjectType('A');
         $b = new ObjectType('B');
 
-        self::assertSame(TrinaryLogic::Yes, $a->isSuperTypeOf($b)); // A は B の上位
-        self::assertSame(TrinaryLogic::No, $b->isSuperTypeOf($a));  // 逆は成り立たない
+        self::assertSame(TrinaryLogic::Yes, $a->isSuperTypeOf($b)); // A is a supertype of B
+        self::assertSame(TrinaryLogic::No, $b->isSuperTypeOf($a));  // the reverse does not hold
     }
 }

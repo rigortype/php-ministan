@@ -65,8 +65,8 @@ final class AnalyserTest extends TestCase
     }
 
     /**
-     * パラメータ・代入・foreach・アロー関数・条件分岐をまたいで定義された変数は、
-     * 偽陽性を出してはならない（non-rejecting の回帰テスト）。
+     * Variables defined across parameters, assignments, foreach, arrow functions, and
+     * conditional branches must not produce false positives (non-rejecting regression test).
      */
     public function testScopedVariablesProduceNoFalsePositives(): void
     {
@@ -83,8 +83,8 @@ final class AnalyserTest extends TestCase
     }
 
     /**
-     * Part 2 で積み残した「isset で守られた三項」の取りこぼしが、
-     * Part 5 の絞り込みで解消されたことの回帰テスト。
+     * Regression test: the "isset-guarded ternary" gap left over from Part 2 is
+     * resolved by the narrowing introduced in Part 5.
      */
     public function testIssetGuardedTernaryProducesNoFalsePositive(): void
     {
@@ -110,7 +110,7 @@ final class AnalyserTest extends TestCase
 
     public function testByRefOutputParameterDefinesVariable(): void
     {
-        // preg_match(..., $matches) の $matches は参照渡しの出力引数なので未定義にならない。
+        // $matches in preg_match(..., $matches) is a by-ref output parameter, so it is not undefined.
         $errors = $this->analyser()->analyseFile(__DIR__ . '/fixtures/byref.php');
 
         self::assertSame([], $errors);

@@ -8,10 +8,10 @@ use Ministan\Analyser\Analyser;
 use Ministan\Output\ErrorFormatter;
 
 /**
- * `ministan analyse <file>` の実装。
+ * Implementation of `ministan analyse <file>`.
  *
- * PHPStan の AnalyseCommand に対応する最小版。Part 9 で設定読み込みや
- * 複数ファイル・複数フォーマットへ拡張する。
+ * A minimal counterpart to PHPStan's AnalyseCommand. Part 9 extends it with
+ * configuration loading and support for multiple files and formats.
  */
 final class AnalyseCommand
 {

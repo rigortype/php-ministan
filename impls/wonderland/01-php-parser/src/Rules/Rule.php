@@ -7,18 +7,18 @@ namespace Ministan\Rules;
 use PhpParser\Node;
 
 /**
- * 1 種類の AST ノードを検査し、見つけた問題を返す検査器。
+ * A checker that inspects one kind of AST node and returns the problems it finds.
  *
- * PHPStan の {@see \PHPStan\Rules\Rule} に対応する。`getNodeType()` が
- * 「どのノードに反応するか」を、`processNode()` が「何を報告するか」を決める。
+ * Corresponds to PHPStan's {@see \PHPStan\Rules\Rule}. `getNodeType()` decides
+ * "which node to react to", and `processNode()` decides "what to report".
  *
  * @template TNodeType of Node
  */
 interface Rule
 {
     /**
-     * このルールが反応するノードのクラス名。
-     * 抽象型（例: {@see Node\Expr}）を返せば、その派生すべてに反応する。
+     * The class name of the node this rule reacts to.
+     * Return an abstract type (e.g. {@see Node\Expr}) to react to all of its descendants.
      *
      * @return class-string<TNodeType>
      */

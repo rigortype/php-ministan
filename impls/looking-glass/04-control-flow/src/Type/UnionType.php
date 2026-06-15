@@ -7,13 +7,13 @@ namespace Ministan\Type;
 use Ministan\TrinaryLogic;
 
 /**
- * 「いずれかの型」を表す合併型。`int|string`, `Foo|null` など。
+ * A union type meaning "one of these types". `int|string`, `Foo|null`, and so on.
  *
- * 絞り込み（narrowing）の合流で生まれる。`if` の then で int、else で string に
- * なった変数は、合流後に `int|string` になる。PHPStan の {@see \PHPStan\Type\UnionType}。
+ * It arises where narrowing branches merge. A variable that became int in an `if`'s then and
+ * string in its else becomes `int|string` after the merge. PHPStan's {@see \PHPStan\Type\UnionType}.
  *
- * 正規化（フラット化・重複除去・never 除去・1 個なら単型へ）は生成側の
- * {@see TypeCombinator::union()} が担う。ここでは正規化済みの構成要素を前提とする。
+ * Normalization (flattening, deduping, dropping never, collapsing to a single type when there is one
+ * member) is the job of the producer, {@see TypeCombinator::union()}. Here we assume already-normalized members.
  */
 final class UnionType implements Type
 {
@@ -21,7 +21,7 @@ final class UnionType implements Type
     private array $types;
 
     /**
-     * @param list<Type> $types 2 個以上の構成要素（正規化済み）
+     * @param list<Type> $types two or more members (already normalized)
      */
     public function __construct(array $types)
     {
@@ -39,15 +39,15 @@ final class UnionType implements Type
     public function describe(): string
     {
         $parts = array_map(static fn (Type $t): string => $t->describe(), $this->types);
-        sort($parts); // 安定した表示のため整列
+        sort($parts); // sort for stable display
 
         return implode('|', $parts);
     }
 
     public function isSuperTypeOf(Type $type): TrinaryLogic
     {
-        // 相手が union なら、各メンバとの関係を集めて extreme-identity で畳む
-        // （全 Yes→Yes・全 No→No・混在は部分一致で Maybe）。
+        // If the operand is a union, gather the relation to each member and fold with extreme-identity
+        // (all Yes→Yes, all No→No, a mixture is a partial match → Maybe).
         if ($type instanceof UnionType) {
             $results = [];
             foreach ($type->types as $member) {
@@ -57,7 +57,7 @@ final class UnionType implements Type
             return TrinaryLogic::extremeIdentity($results);
         }
 
-        // 単型なら、どれか 1 つのメンバが受け入れればよい（OR）。
+        // For a single type, it suffices that any one member accepts it (OR).
         $result = TrinaryLogic::No;
         foreach ($this->types as $member) {
             $result = $result->or($member->isSuperTypeOf($type));
@@ -91,7 +91,7 @@ final class UnionType implements Type
             return false;
         }
 
-        // 順序非依存で照合する。
+        // Compare in an order-independent way.
         foreach ($this->types as $a) {
             foreach ($type->types as $b) {
                 if ($b->equals($a)) {

@@ -13,14 +13,14 @@ use ReflectionFunction;
 use Throwable;
 
 /**
- * クラス・関数のシグネチャを引く窓口。PHPStan の {@see \PHPStan\Reflection\ReflectionProvider}。
+ * The entry point for looking up class and function signatures. PHPStan's {@see \PHPStan\Reflection\ReflectionProvider}.
  *
- * 二段構え:
- * 1. 解析対象コードの宣言（AST から事前に収集）
- * 2. 組み込み・vendor のクラス／関数（PHP ネイティブのリフレクションへフォールバック）
+ * Two tiers:
+ * 1. Declarations from the code under analysis (collected up front from the AST)
+ * 2. Built-in and vendor classes/functions (falling back to PHP's native reflection)
  *
- * 「対象コードを実行せず読む」のが理想だが、本チュートリアルでは外部シンボルについては
- * ネイティブのリフレクションに頼る。スタブから組む方式は応用編で。
+ * Ideally we would "read the target code without running it," but in this tutorial we rely on
+ * native reflection for external symbols. Building from stubs is covered in the advanced volume.
  */
 final class ReflectionProvider
 {
@@ -30,7 +30,7 @@ final class ReflectionProvider
     /** @var array<string, FunctionReflection> */
     private array $functions = [];
 
-    /** @var array<string, FunctionReflection> スタブで補ったシグネチャ（ネイティブより優先） */
+    /** @var array<string, FunctionReflection> signatures supplemented by stubs (preferred over native) */
     private array $stubFunctions = [];
 
     private TypeNodeResolver $typeNodeResolver;
@@ -71,8 +71,8 @@ final class ReflectionProvider
     }
 
     /**
-     * 解析対象 AST からクラス・関数宣言を収集して provider を組む。
-     * 名前解決済みなら宣言には namespacedName が付いている前提。
+     * Builds the provider by collecting class and function declarations from the target AST.
+     * Assumes that, once name resolution has run, declarations carry a namespacedName.
      *
      * @param Node[] $stmts
      */
@@ -140,7 +140,7 @@ final class ReflectionProvider
         $name = ltrim($name, '\\');
         $key = strtolower($name);
 
-        // 優先順: 解析対象の宣言 > スタブ > ネイティブ。
+        // Priority order: target declarations > stubs > native.
         return $this->functions[$key]
             ?? $this->stubFunctions[$key]
             ?? ($this->functions[$key] = FunctionReflection::fromNative(new ReflectionFunction($name), $this->typeNodeResolver));

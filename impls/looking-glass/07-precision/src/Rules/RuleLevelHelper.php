@@ -8,19 +8,21 @@ use Ministan\TrinaryLogic;
 use Ministan\Type\Type;
 
 /**
- * 「期待される型に、実際の型を入れてよいか」をレベルに応じて判定する。
+ * Decides, depending on the level, "whether the actual type may be put into the expected type".
  *
- * PHPStan の {@see \PHPStan\Rules\RuleLevelHelper} に対応する核心。鍵は三値:
- * - Yes（確実に適合）→ 常に OK
- * - No（確実に不適合）→ 常にエラー
- * - Maybe（mixed 等で不確実）→ **高レベルでのみ**エラー
+ * The core that corresponds to PHPStan's {@see \PHPStan\Rules\RuleLevelHelper}. The key is the
+ * three-valued logic:
+ * - Yes (definitely conforms) -> always OK
+ * - No (definitely does not conform) -> always an error
+ * - Maybe (uncertain, e.g. with mixed) -> an error **only at high levels**
  *
- * これが「レベルを上げるほど厳しくなる」の正体。低レベルでは mixed を素通りさせ、
- * 高レベルでは mixed の混入も咎める。non-rejecting の哲学がレベル軸に乗る。
+ * This is what "the higher the level, the stricter" really is. At low levels it waves mixed
+ * through; at high levels it also flags mixed creeping in. The non-rejecting philosophy is
+ * placed onto the level axis.
  */
 final readonly class RuleLevelHelper
 {
-    /** この閾値以上のレベルで「Maybe」を不適合として扱う。 */
+    /** At this level or above, treat "Maybe" as not conforming. */
     private const int STRICT_LEVEL = 7;
 
     public function __construct(

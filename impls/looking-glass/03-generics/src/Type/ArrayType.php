@@ -8,10 +8,10 @@ use Ministan\TrinaryLogic;
 use Ministan\Type\Constant\ConstantArrayType;
 
 /**
- * 配列型。キーと要素の型を持つ。`array<int, string>` や `list<Foo>`（= array<int, Foo>）。
+ * Array type. Carries a key type and an item type. `array<int, string>` or `list<Foo>` (= array<int, Foo>).
  *
- * 要素型を保つことで `foreach` の要素や配列アクセスの型推論につながる。キーごとに値型が
- * 分かる形は {@see ConstantArrayType}。PHPStan の配列型を大きく簡略化したもの。
+ * Keeping the item type lets us infer the type of `foreach` elements and array accesses. When the
+ * value type is known per key, see {@see ConstantArrayType}. A heavy simplification of PHPStan's array types.
  */
 final class ArrayType implements Type
 {
@@ -50,7 +50,7 @@ final class ArrayType implements Type
                 ->and($this->itemType->isSuperTypeOf($type->itemType));
         }
 
-        // 定数配列は、キー/値の union が適合すれば一般配列の部分型。
+        // A constant array is a subtype of a general array when its key/value unions fit.
         if ($type instanceof ConstantArrayType) {
             return $this->keyType->isSuperTypeOf($type->getIterableKeyType())
                 ->and($this->itemType->isSuperTypeOf($type->getIterableValueType()));

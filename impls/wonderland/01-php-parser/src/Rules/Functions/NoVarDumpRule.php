@@ -11,13 +11,14 @@ use PhpParser\Node\Expr\FuncCall;
 use PhpParser\Node\Name;
 
 /**
- * デバッグ用の `var_dump()` 呼び出しの消し忘れを検出する、最初の「本物の」ルール。
+ * The first "real" rule: it detects a `var_dump()` debugging call that was left in by mistake.
  *
- * 型を一切使わない、純粋な構文パターンマッチ。これだけでも実用的な lint になる。
+ * A pure syntactic pattern match that uses no types at all. Even this alone makes a useful lint.
  *
- * 注: ここでは名前を字面で照合するだけで、名前空間解決はしない
- * （`namespace Foo; var_dump()` がグローバルにフォールバックするか等は Part 6 の
- * リフレクションで扱う）。Part 1 は「AST にルールを当てる」骨組みの理解が目的。
+ * Note: here we only match the name literally and do not perform namespace resolution
+ * (whether `namespace Foo; var_dump()` falls back to the global function and the like is
+ * handled by the reflection in Part 6). Part 1's goal is to understand the skeleton of
+ * "applying a rule to the AST".
  *
  * @implements Rule<FuncCall>
  */
@@ -32,7 +33,7 @@ final class NoVarDumpRule implements Rule
     {
         assert($node instanceof FuncCall);
 
-        // $callback() のような動的呼び出しは名前が静的に分からないので対象外。
+        // A dynamic call like $callback() has no statically known name, so it is out of scope.
         if (!$node->name instanceof Name) {
             return [];
         }

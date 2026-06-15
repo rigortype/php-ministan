@@ -10,11 +10,12 @@ use PhpParser\NodeVisitor\NameResolver;
 use PhpParser\ParserFactory;
 
 /**
- * ソースを AST にし、名前を完全修飾へ解決する。
+ * Turn source into an AST and resolve names to their fully qualified form.
  *
- * php-parser の {@see NameResolver} を通すことで、`use Foo\Bar;` 下の `Bar` が
- * `Foo\Bar` に解決され、クラス・関数宣言には `namespacedName` が付く。リフレクションが
- * 正しい FQN で引けるようになる前提。`analyse` と `annotate` で共有する。
+ * Running it through php-parser's {@see NameResolver} resolves a `Bar` under
+ * `use Foo\Bar;` to `Foo\Bar`, and attaches a `namespacedName` to class and function
+ * declarations. This is the precondition for reflection to look things up by the
+ * correct FQN. Shared by `analyse` and `annotate`.
  */
 final class Parsing
 {

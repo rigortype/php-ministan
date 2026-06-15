@@ -26,11 +26,11 @@ use ReflectionType;
 use ReflectionUnionType;
 
 /**
- * 型「宣言」を {@see Type} に写す。`int` → IntegerType、`?Foo` → Foo|null、など。
+ * Maps type "declarations" onto {@see Type}: `int` => IntegerType, `?Foo` => Foo|null, and so on.
  *
- * 二系統の入力を扱う:
- * - php-parser の型ノード（解析対象コードの宣言）
- * - PHP ネイティブの {@see ReflectionType}（組み込み・外部クラスのシグネチャ）
+ * It handles two kinds of input:
+ * - php-parser's type nodes (declarations in the code under analysis)
+ * - PHP's native {@see ReflectionType} (signatures of built-in and external classes)
  */
 final class TypeNodeResolver
 {
@@ -44,7 +44,7 @@ final class TypeNodeResolver
             $node instanceof UnionTypeNode => TypeCombinator::union(
                 ...array_map($this->resolve(...), $node->types),
             ),
-            $node instanceof IntersectionType => new MixedType(), // 交差型は簡略化
+            $node instanceof IntersectionType => new MixedType(), // intersection types are a simplification
             default => new MixedType(),
         };
     }
@@ -79,7 +79,7 @@ final class TypeNodeResolver
             'false' => new ConstantBooleanType(false),
             'null', 'void' => new NullType(),
             'never' => new NeverType(),
-            // array / iterable / object / callable / self / static / parent / mixed は後章で精密化
+            // array / iterable / object / callable / self / static / parent / mixed are refined in a later chapter
             default => new MixedType(),
         };
     }

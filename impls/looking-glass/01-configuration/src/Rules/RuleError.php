@@ -5,11 +5,11 @@ declare(strict_types=1);
 namespace Ministan\Rules;
 
 /**
- * ルールが報告する 1 件の問題。
+ * A single problem reported by a rule.
  *
- * ファイル名はルールの関知するところではない（どのファイルを解析中かは
- * 解析器が知っている）ので、ここではメッセージと行番号だけを持つ。
- * 解析器がこれを {@see \Ministan\Analyser\Error} に昇格させる。
+ * The file name is none of a rule's concern (the analyser knows which file is being
+ * analysed), so this holds only the message and the line number. The analyser
+ * promotes it to a {@see \Ministan\Analyser\Error}.
  */
 final readonly class RuleError
 {

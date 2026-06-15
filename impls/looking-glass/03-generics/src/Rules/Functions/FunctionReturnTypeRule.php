@@ -13,10 +13,11 @@ use PhpParser\Node;
 use PhpParser\Node\Stmt\Return_;
 
 /**
- * `return` する式の型が、宣言された戻り値型に適合するか検査する。
+ * Checks that the type of the expression being `return`ed conforms to the declared return type.
  *
- * 現在いる関数／メソッドの戻り値型は {@see Scope::getFunctionReturnType()} が運ぶ
- * （関数本体に入るとき {@see \Ministan\Analyser\NodeScopeResolver} が設定する）。
+ * The return type of the function/method we are currently inside is carried by
+ * {@see Scope::getFunctionReturnType()} (set by {@see \Ministan\Analyser\NodeScopeResolver}
+ * when entering the function body).
  *
  * @implements Rule<Return_>
  */
@@ -38,7 +39,7 @@ final class FunctionReturnTypeRule implements Rule
 
         $declared = $scope->getFunctionReturnType();
         if ($declared === null) {
-            return []; // 関数の外（トップレベルの return 等）
+            return []; // outside any function (e.g. a top-level return)
         }
 
         $returned = $node->expr === null ? new NullType() : $scope->getType($node->expr);

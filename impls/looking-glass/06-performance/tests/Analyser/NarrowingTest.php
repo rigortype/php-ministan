@@ -17,16 +17,16 @@ final class NarrowingTest extends TestCase
         (new AnnotateCommand())->run([__DIR__ . '/../fixtures/narrowing.php']);
         $output = ob_get_clean();
 
-        // 早期 return で $x: int → $y: int
+        // Early return makes $x: int → $y: int
         self::assertMatchesRegularExpression('/\$y\s+:\s+int$/m', $output);
-        // assert(is_int($value)) で $value: int → $r: int
+        // assert(is_int($value)) makes $value: int → $r: int
         self::assertMatchesRegularExpression('/\$r\s+:\s+int$/m', $output);
     }
 
     public function testMatchArmNarrowingAvoidsUndefinedMethodFalsePositive(): void
     {
-        // level 0 でも未定義メソッド検出は有効。match の腕で Circle に絞り込めていれば
-        // $shape->radius() は誤検出されない。
+        // Undefined method detection is active even at level 0. If the match arm narrows
+        // to Circle, $shape->radius() is not flagged as a false positive.
         $registry = (new RuleRegistryFactory())->createForLevel(0);
         $errors = (new Analyser($registry))->analyseFile(__DIR__ . '/../fixtures/narrowing.php');
 

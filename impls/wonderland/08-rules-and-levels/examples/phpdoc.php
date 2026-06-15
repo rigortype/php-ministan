@@ -11,7 +11,7 @@ function shout(array $names): array
     return array_map(static fn (string $name): string => strtoupper($name), $names);
 }
 
-$result = shout(['a', 'b']); // array<int, string>（@return から）
+$result = shout(['a', 'b']); // array<int, string> (from @return)
 
 /** @var int $count */
-$count = compute(); // int（@var が mixed を上書き）
+$count = compute(); // int (@var overrides mixed)

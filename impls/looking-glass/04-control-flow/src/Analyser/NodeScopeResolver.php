@@ -18,15 +18,18 @@ use PhpParser\Node\Name;
 use PhpParser\Node\Stmt;
 
 /**
- * AST を下りながら {@see Scope} を運び、各ノードで**コールバック**を呼ぶ。
+ * Walks down the AST, carrying a {@see Scope} along, and invokes a **callback**
+ * at each node.
  *
- * PHPStan の {@see \PHPStan\Analyser\NodeScopeResolver} に対応する核。Part 2 では
- * ルール適用を直接抱えていたが、Part 4 で「各ノードで (node, scope) を渡して呼ぶ」
- * 汎用コールバックに一般化した。これにより、ルールを走らせる解析（{@see Analyser}）も、
- * 推論型を覗く `annotate` も、同じ走査を再利用できる。
+ * The core corresponding to PHPStan's {@see \PHPStan\Analyser\NodeScopeResolver}.
+ * In Part 2 it held rule application directly, but Part 4 generalizes it into a
+ * generic callback that is "called with (node, scope) at each node". This lets the
+ * rule-running analysis ({@see Analyser}) and the `annotate` that peeks at inferred
+ * types both reuse the same traversal.
  *
- * 走査の要は Part 2 と同じ「読み取り文脈と書き込み文脈の区別」。加えて Part 4 では、
- * 代入のたびに右辺の型を {@see Scope::getType()} で推論し、変数に結びつける。
+ * The crux of the traversal is the same "distinction between read and write
+ * context" as in Part 2. On top of that, Part 4 infers the right-hand side's type
+ * with {@see Scope::getType()} on every assignment and binds it to the variable.
  */
 final class NodeScopeResolver
 {
@@ -128,7 +131,7 @@ final class NodeScopeResolver
         return $scope;
     }
 
-    // --- 代入: 右辺の型を推論して変数に結びつける ---
+    // --- assignment: infer the right-hand side's type and bind it to the variable ---
 
     private function processAssign(Expr\Assign|Expr\AssignRef $node, Scope $scope): Scope
     {
@@ -142,7 +145,7 @@ final class NodeScopeResolver
     {
         $scope = $this->processNode($node->expr, $scope);
 
-        // 複合代入（+= 等）の結果型は後章で精密化。ここでは mixed に縮退して安全側に。
+        // The result type of a compound assignment (+=, etc.) is refined in a later chapter. For now collapse to mixed to stay on the safe side.
         return $this->processAssignTarget($node->var, new MixedType(), $scope);
     }
 
@@ -173,7 +176,7 @@ final class NodeScopeResolver
                 $scope = $this->processNode($item->key, $scope);
             }
 
-            // 分割代入の要素型はまだ追えない → mixed
+            // The element type of a destructuring assignment cannot be tracked yet -> mixed
             $scope = $this->processAssignTarget($item->value, new MixedType(), $scope);
         }
 
@@ -186,17 +189,17 @@ final class NodeScopeResolver
             $scope = $this->processNode($node->dim, $scope);
         }
 
-        // $arr[...] = ... で $arr は配列になるが、配列型は後章。ここでは mixed。
+        // $arr[...] = ... makes $arr an array, but array types come in a later chapter. For now mixed.
         return $this->processAssignTarget($node->var, new MixedType(), $scope);
     }
 
-    // --- 文と @var ---
+    // --- statements and @var ---
 
     private function processExpressionStmt(Stmt\Expression $node, Scope $scope): Scope
     {
         $expr = $node->expr;
 
-        // assert($x instanceof Foo) は、以降のスコープで $x を絞り込む。
+        // assert($x instanceof Foo) narrows $x in the scope that follows.
         if ($expr instanceof Expr\FuncCall
             && $expr->name instanceof Name
             && $expr->name->toLowerString() === 'assert'
@@ -218,7 +221,7 @@ final class NodeScopeResolver
             $varType = $parsed->varTypes[$expr->var->name] ?? $parsed->varTypes[''] ?? null;
 
             if ($varType !== null) {
-                // 通常どおり代入を処理（ルール適用・右辺読み取り）した上で、@var で型を上書きする。
+                // Process the assignment as usual (apply rules, read the right-hand side), then override the type with @var.
                 $scope = $this->processNode($expr, $scope);
 
                 return $scope->assignVariable($expr->var->name, $varType);
@@ -229,30 +232,31 @@ final class NodeScopeResolver
     }
 
     /**
-     * `&&`／`||` の右辺は、左辺で絞り込まれた世界で評価される。
-     * `$x !== null && $x->foo()` の右辺で $x が非 null になるのはこのため。
+     * The right-hand side of `&&`/`||` is evaluated in the world narrowed by the
+     * left-hand side. This is why $x becomes non-null on the right-hand side of
+     * `$x !== null && $x->foo()`.
      */
     private function processLogical(Expr\BinaryOp\BooleanAnd|Expr\BinaryOp\BooleanOr $node, Scope $scope): Scope
     {
         $scope = $this->processNode($node->left, $scope);
         $specified = $this->typeSpecifier->specify($node->left, $scope);
 
-        // && は「左が真」、|| は「左が偽」の世界線で右辺を評価する。
+        // && evaluates the right-hand side in the "left is true" world line, || in the "left is false" one.
         $rightScope = $node instanceof Expr\BinaryOp\BooleanAnd ? $specified->truthy : $specified->falsy;
         $this->processNode($node->right, $rightScope);
 
         return $scope;
     }
 
-    // --- 条件分岐: 型の絞り込みを適用する ---
+    // --- conditional branches: apply type narrowing ---
 
     private function processIf(Stmt\If_ $node, Scope $scope): Scope
     {
         $scope = $this->processNode($node->cond, $scope);
         $specified = $this->typeSpecifier->specify($node->cond, $scope);
 
-        // return / throw で終わる枝は合流に寄与しない。これが早期 return の絞り込みを生む:
-        // `if ($x === null) { return; }` を抜けた後、$x は非 null として続く。
+        // A branch that ends in return / throw does not contribute to the merge. This is what produces early-return narrowing:
+        // after passing `if ($x === null) { return; }`, $x continues as non-null.
         $endScopes = [];
         $thenScope = $this->processStmts($node->stmts, $specified->truthy);
         if (!$this->alwaysTerminates($node->stmts)) {
@@ -276,11 +280,11 @@ final class NodeScopeResolver
                 $endScopes[] = $elseScope;
             }
         } else {
-            $endScopes[] = $falsy; // else が無ければ「全条件が偽」の経路がそのまま続く
+            $endScopes[] = $falsy; // with no else, the "all conditions false" path simply continues
         }
 
         if ($endScopes === []) {
-            return $falsy; // 全経路が終了
+            return $falsy; // every path terminates
         }
 
         $result = array_shift($endScopes);
@@ -292,7 +296,8 @@ final class NodeScopeResolver
     }
 
     /**
-     * 文の並びが必ず return / throw / exit で終わるか（＝後続コードに到達しないか）。
+     * Whether a sequence of statements always ends in return / throw / exit (i.e.
+     * the following code is unreachable).
      *
      * @param Node[] $stmts
      */
@@ -318,14 +323,14 @@ final class NodeScopeResolver
     }
 
     /**
-     * match の各腕を、絞り込まれたスコープで解析する。S2 で宿題にした
-     * 「match の腕での narrowing」をここで回収する。
+     * Analyses each arm of a match in its narrowed scope. This is where we pay off
+     * the "narrowing in match arms" left as homework in S2.
      */
     private function processMatch(Expr\Match_ $node, Scope $scope): Scope
     {
         $scope = $this->processNode($node->cond, $scope);
 
-        // `match (true)` は腕の条件式そのものが真偽条件。`match ($x)` は $x === 腕の値。
+        // For `match (true)` the arm's condition expression is itself the truth condition. For `match ($x)` it is $x === the arm's value.
         $matchesTrue = $node->cond instanceof Expr\ConstFetch
             && $node->cond->name->toLowerString() === 'true';
 
@@ -357,8 +362,8 @@ final class NodeScopeResolver
         $scope = $this->processNode($node->cond, $scope);
         $specified = $this->typeSpecifier->specify($node->cond, $scope);
 
-        // `$x ? $x->foo() : null` のように、各枝は絞り込まれたスコープで解析する。
-        // これにより `isset($y) ? $y : d` の $y も真の枝では定義済みになる。
+        // As in `$x ? $x->foo() : null`, each branch is analysed in its narrowed scope.
+        // This is also why $y in `isset($y) ? $y : d` is defined on the true branch.
         if ($node->if !== null) {
             $this->processNode($node->if, $specified->truthy);
         }
@@ -367,7 +372,7 @@ final class NodeScopeResolver
         return $scope;
     }
 
-    // --- ループ・例外・宣言 ---
+    // --- loops, exceptions, declarations ---
 
     private function processForeach(Stmt\Foreach_ $node, Scope $scope): Scope
     {
@@ -413,7 +418,7 @@ final class NodeScopeResolver
     {
         $catchScope = $scope;
         if ($node->var !== null && is_string($node->var->name)) {
-            // 例外の型は ObjectType を持つ Part 6 で精密化。
+            // The exception's type is refined in Part 6, once we have ObjectType.
             $catchScope = $catchScope->assignVariable($node->var->name, new MixedType());
         }
 
@@ -473,7 +478,7 @@ final class NodeScopeResolver
         return $scope;
     }
 
-    // --- 関数・クロージャ（スコープ境界）---
+    // --- functions and closures (scope boundaries) ---
 
     private function processFunctionLike(Stmt\Function_|Stmt\ClassMethod $node, Scope $outer): Scope
     {
@@ -507,7 +512,7 @@ final class NodeScopeResolver
                     $outer = $outer->assignVariable($name, new MixedType());
                 }
             } else {
-                ($this->nodeCallback)($use->var, $outer); // 値渡し use は外側の読み取り
+                ($this->nodeCallback)($use->var, $outer); // a by-value use reads from the outer scope
             }
 
             if ($name !== null) {
@@ -529,7 +534,7 @@ final class NodeScopeResolver
 
     private function processArrowFunction(Expr\ArrowFunction $node, Scope $outer): Scope
     {
-        $inner = $this->bindParams($node->params, $outer); // 外側を値で自動キャプチャ
+        $inner = $this->bindParams($node->params, $outer); // captures the outer scope automatically by value
 
         if (!$node->static) {
             $inner = $inner->assignVariable('this', new MixedType());
@@ -542,7 +547,7 @@ final class NodeScopeResolver
 
     /**
      * @param Node\Param[]        $params
-     * @param array<string, Type> $docParamTypes @param で宣言された型（ネイティブ宣言より優先）
+     * @param array<string, Type> $docParamTypes types declared via @param (these take precedence over the native declaration)
      */
     private function bindParams(array $params, Scope $scope, array $docParamTypes = []): Scope
     {

@@ -7,10 +7,10 @@ namespace Ministan\Type;
 use Ministan\TrinaryLogic;
 
 /**
- * 配列型。キーと要素の型を持つ。`array<int, string>` や `list<Foo>`（= array<int, Foo>）。
+ * Array type. Carries a key type and an item type. `array<int, string>` or `list<Foo>` (= array<int, Foo>).
  *
- * PHPDoc から生まれる最初の「複合型」。要素型を保つことで `foreach` の要素や配列アクセスの
- * 型推論につながる（本格化は応用編）。PHPStan の配列型を大きく簡略化したもの。
+ * The first "compound type" born from PHPDoc. Keeping the item type lets us infer the type of `foreach`
+ * elements and array accesses (fully developed in the Applied volume). A heavy simplification of PHPStan's array types.
  */
 final class ArrayType implements Type
 {

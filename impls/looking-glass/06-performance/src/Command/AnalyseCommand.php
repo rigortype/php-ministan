@@ -18,16 +18,17 @@ use Ministan\Rules\Rule;
 use Ministan\Rules\RuleRegistryFactory;
 
 /**
- * `ministan analyse [options] [paths...]` の実装。
+ * Implementation of `ministan analyse [options] [paths...]`.
  *
- * 設定は NEON（既定 `ministan.neon`）と CLI から組み立てる。CLI が NEON を上書きする。
+ * The configuration is assembled from NEON (default `ministan.neon`) and the CLI.
+ * The CLI overrides NEON.
  *
- * オプション:
- *   --configuration=FILE   設定ファイル（既定 ministan.neon）
- *   --level=N              ルールレベル（NEON より優先）
- *   --error-format=json    JSON で出力する
- *   --baseline=FILE        既知の指摘を無視する
- *   --generate-baseline[=FILE]  現在の指摘を baseline に書き出す
+ * Options:
+ *   --configuration=FILE   config file (default ministan.neon)
+ *   --level=N              rule level (takes precedence over NEON)
+ *   --error-format=json    produce JSON output
+ *   --baseline=FILE        ignore known findings
+ *   --generate-baseline[=FILE]  write out the current findings to the baseline
  */
 final class AnalyseCommand
 {

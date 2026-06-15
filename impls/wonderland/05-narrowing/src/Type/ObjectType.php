@@ -7,12 +7,12 @@ namespace Ministan\Type;
 use Ministan\TrinaryLogic;
 
 /**
- * あるクラス／インターフェイスのインスタンスを表す型。
+ * A type representing an instance of some class or interface.
  *
- * Part 5 では「クラス名」しか知らない素朴な実装。同名なら Yes、別名なら
- * 継承関係が不明なので Maybe を返す（non-rejecting）。`$x instanceof Foo` の
- * 絞り込みで使う。継承を踏まえた厳密な部分型判定は、リフレクションを得る
- * Part 6 で本 ObjectType を強化して実現する。
+ * In Part 5 this is a naive implementation that knows only the "class name". For the same name it
+ * returns Yes; for a different name the inheritance relationship is unknown, so it returns Maybe
+ * (non-rejecting). Used for narrowing in `$x instanceof Foo`. Strict subtype decisions that account
+ * for inheritance are achieved in Part 6, where reflection becomes available and this ObjectType is strengthened.
  */
 final class ObjectType implements Type
 {
@@ -34,7 +34,7 @@ final class ObjectType implements Type
             ?? match (true) {
                 $type instanceof self => $this->className === $type->className
                     ? TrinaryLogic::Yes
-                    : TrinaryLogic::Maybe, // 継承関係は Part 6 まで不明
+                    : TrinaryLogic::Maybe, // the inheritance relationship is unknown until Part 6
                 default => TrinaryLogic::No,
             };
     }

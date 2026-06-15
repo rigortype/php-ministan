@@ -15,7 +15,7 @@ use PhpParser\Node\Expr\MethodCall;
 use PhpParser\Node\Identifier;
 
 /**
- * メソッド呼び出しの実引数の型を、宣言されたパラメータ型と照合する。
+ * Matches the types of a method call's actual arguments against the declared parameter types.
  *
  * @implements Rule<MethodCall>
  */
@@ -47,7 +47,7 @@ final class MethodCallParameterTypesRule implements Rule
 
         $class = $provider->getClass($objectType->className);
         if (!$class->hasMethod($node->name->toString())) {
-            return []; // 未定義メソッドは別ルールの担当
+            return []; // undefined methods are handled by another rule
         }
 
         $method = $class->getMethod($node->name->toString());

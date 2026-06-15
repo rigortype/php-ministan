@@ -10,7 +10,7 @@ use PhpParser\Node\Stmt\Function_;
 use ReflectionFunction;
 
 /**
- * 関数 1 つのシグネチャ。PHPDoc を上位、ネイティブ宣言を下位に置く。
+ * The signature of a single function. PHPDoc takes priority, with the native declaration below it.
  */
 final readonly class FunctionReflection
 {

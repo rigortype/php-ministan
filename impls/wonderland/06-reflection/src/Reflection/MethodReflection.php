@@ -9,7 +9,7 @@ use PhpParser\Node\Stmt\ClassMethod;
 use ReflectionMethod;
 
 /**
- * メソッド 1 つのシグネチャ。名前・パラメータ型・戻り値型。
+ * The signature of a single method: name, parameter types, and return type.
  */
 final readonly class MethodReflection
 {

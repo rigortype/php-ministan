@@ -14,7 +14,7 @@ use PhpParser\Node\Expr\FuncCall;
 use PhpParser\Node\Name;
 
 /**
- * 関数呼び出しの実引数の型を、宣言されたパラメータ型と照合する。
+ * Matches the types of a function call's actual arguments against the declared parameter types.
  *
  * @implements Rule<FuncCall>
  */

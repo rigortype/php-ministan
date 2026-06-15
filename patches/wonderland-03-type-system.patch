@@ -1,6 +1,6 @@
 diff --git a/dev/src/TrinaryLogic.php b/dev/src/TrinaryLogic.php
 new file mode 100644
-index 0000000..b2d6650
+index 0000000..ac5ce32
 --- /dev/null
 +++ b/dev/src/TrinaryLogic.php
 @@ -0,0 +1,74 @@
@@ -11,15 +11,15 @@ index 0000000..b2d6650
 +namespace Ministan;
 +
 +/**
-+ * 三値論理: はい / たぶん / いいえ。
++ * Three-valued logic: Yes / Maybe / No.
 + *
-+ * PHPStan の {@see \PHPStan\TrinaryLogic} に対応する。静的解析では「確実にそう」
-+ * 「確実に違う」だけでなく「そうかもしれない」が頻出する。`mixed` は int かもしれず、
-+ * union 型は一部の経路でのみ条件を満たすかもしれない。この「たぶん」を一級市民として
-+ * 扱えることが、偽陽性を出さない（non-rejecting）解析の土台になる。
++ * Corresponds to PHPStan's {@see \PHPStan\TrinaryLogic}. In static analysis, not only "definitely
++ * so" and "definitely not", but also "maybe so" comes up constantly. `mixed` might be an int, and
++ * a union type might satisfy a condition only on some paths. Being able to treat this "maybe" as a
++ * first-class citizen is the foundation of analysis that produces no false positives (non-rejecting).
 + *
-+ * 経験則: レベルの低い解析は「いいえ」だけを報告し、「たぶん」は見逃す。レベルを
-+ * 上げるほど「たぶん」も問題として扱う。Part 8 のレベル制はこの軸に乗る。
++ * Rule of thumb: low-level analysis reports only "No" and overlooks "Maybe". The higher the level,
++ * the more "Maybe" is also treated as a problem. The level system in Part 8 rides on this axis.
 + */
 +enum TrinaryLogic
 +{
@@ -112,7 +112,7 @@ index 0000000..257c975
 +}
 diff --git a/dev/src/Type/Constant/ConstantBooleanType.php b/dev/src/Type/Constant/ConstantBooleanType.php
 new file mode 100644
-index 0000000..89f273c
+index 0000000..21bc5ce
 --- /dev/null
 +++ b/dev/src/Type/Constant/ConstantBooleanType.php
 @@ -0,0 +1,45 @@
@@ -128,7 +128,7 @@ index 0000000..89f273c
 +use Ministan\Type\Type;
 +
 +/**
-+ * `true` / `false` を表す定数型。条件の絞り込み（Part 5）で主役になる。
++ * The constant type representing `true` / `false`. It takes the lead role in condition narrowing (Part 5).
 + */
 +final class ConstantBooleanType implements Type
 +{
@@ -163,7 +163,7 @@ index 0000000..89f273c
 +}
 diff --git a/dev/src/Type/Constant/ConstantIntegerType.php b/dev/src/Type/Constant/ConstantIntegerType.php
 new file mode 100644
-index 0000000..bf9d261
+index 0000000..e6cd5e3
 --- /dev/null
 +++ b/dev/src/Type/Constant/ConstantIntegerType.php
 @@ -0,0 +1,49 @@
@@ -179,10 +179,10 @@ index 0000000..bf9d261
 +use Ministan\Type\Type;
 +
 +/**
-+ * 単一の整数値を表す定数型（リテラル型）。`42` の型は `int` ではなく `42`。
++ * The constant type (literal type) representing a single integer value. The type of `42` is not `int` but `42`.
 + *
-+ * 定数型こそ PHPStan の推論を鋭くする源。`$x = 42;` の直後、$x の型は `int` ではなく
-+ * `42` なので、`match` の網羅性や到達不能分岐まで判定できる。
++ * Constant types are precisely what makes PHPStan's inference sharp. Right after `$x = 42;`, the type
++ * of $x is not `int` but `42`, so we can judge `match` exhaustiveness and even unreachable branches.
 + */
 +final class ConstantIntegerType implements Type
 +{
@@ -205,7 +205,7 @@ index 0000000..bf9d261
 +                $type instanceof self => $this->value === $type->value
 +                    ? TrinaryLogic::Yes
 +                    : TrinaryLogic::No,
-+                // 一般の int は、たまたまこの値かもしれない。
++                // A general int might happen to be this value.
 +                $type instanceof IntegerType => TrinaryLogic::Maybe,
 +                default => TrinaryLogic::No,
 +            };
@@ -218,7 +218,7 @@ index 0000000..bf9d261
 +}
 diff --git a/dev/src/Type/Constant/ConstantStringType.php b/dev/src/Type/Constant/ConstantStringType.php
 new file mode 100644
-index 0000000..a37b9cf
+index 0000000..34b8157
 --- /dev/null
 +++ b/dev/src/Type/Constant/ConstantStringType.php
 @@ -0,0 +1,45 @@
@@ -234,7 +234,7 @@ index 0000000..a37b9cf
 +use Ministan\Type\Type;
 +
 +/**
-+ * 単一の文字列値を表す定数型。`'foo'` の型は `string` ではなく `'foo'`。
++ * The constant type representing a single string value. The type of `'foo'` is not `string` but `'foo'`.
 + */
 +final class ConstantStringType implements Type
 +{
@@ -269,7 +269,7 @@ index 0000000..a37b9cf
 +}
 diff --git a/dev/src/Type/FloatType.php b/dev/src/Type/FloatType.php
 new file mode 100644
-index 0000000..5d31e64
+index 0000000..3d13358
 --- /dev/null
 +++ b/dev/src/Type/FloatType.php
 @@ -0,0 +1,24 @@
@@ -292,14 +292,14 @@ index 0000000..5d31e64
 +
 +    public function isSuperTypeOf(Type $type): TrinaryLogic
 +    {
-+        // int → float の暗黙拡大は accepts の精密化として後の章で扱う。ここでは厳密。
++        // The implicit int → float widening is handled in a later chapter as a refinement of accepts. Strict here.
 +        return self::relateToTopAndBottom($type)
 +            ?? ($type instanceof self ? TrinaryLogic::Yes : TrinaryLogic::No);
 +    }
 +}
 diff --git a/dev/src/Type/IntegerType.php b/dev/src/Type/IntegerType.php
 new file mode 100644
-index 0000000..0cc5d52
+index 0000000..426acfc
 --- /dev/null
 +++ b/dev/src/Type/IntegerType.php
 @@ -0,0 +1,26 @@
@@ -325,13 +325,13 @@ index 0000000..0cc5d52
 +    {
 +        return self::relateToTopAndBottom($type)
 +            ?? (($type instanceof self || $type instanceof ConstantIntegerType)
-+                ? TrinaryLogic::Yes   // int も、42 のような定数 int も、int の部分型
++                ? TrinaryLogic::Yes   // both int and a constant int like 42 are subtypes of int
 +                : TrinaryLogic::No);
 +    }
 +}
 diff --git a/dev/src/Type/MixedType.php b/dev/src/Type/MixedType.php
 new file mode 100644
-index 0000000..da573db
+index 0000000..fad461b
 --- /dev/null
 +++ b/dev/src/Type/MixedType.php
 @@ -0,0 +1,28 @@
@@ -344,10 +344,10 @@ index 0000000..da573db
 +use Ministan\TrinaryLogic;
 +
 +/**
-+ * 最上位の型。あらゆる値を含む。「分からない」を表す既定値でもある。
++ * The top type. Contains every value. Also the default that stands for "unknown".
 + *
-+ * non-rejecting の哲学では、推論に失敗したら never でも例外でもなく mixed に
-+ * 縮退させる。mixed はすべてを受け入れ、すべての上位型である。
++ * Under the non-rejecting philosophy, when inference fails we collapse to mixed rather than to
++ * never or an exception. mixed accepts everything and is the supertype of everything.
 + */
 +final class MixedType implements Type
 +{
@@ -365,7 +365,7 @@ index 0000000..da573db
 +}
 diff --git a/dev/src/Type/NeverType.php b/dev/src/Type/NeverType.php
 new file mode 100644
-index 0000000..72b0227
+index 0000000..1aa3ee3
 --- /dev/null
 +++ b/dev/src/Type/NeverType.php
 @@ -0,0 +1,29 @@
@@ -378,10 +378,10 @@ index 0000000..72b0227
 +use Ministan\TrinaryLogic;
 +
 +/**
-+ * 最下位の型。値を一つも含まない（決して起こらない）。
++ * The bottom type. Contains no value at all (never happens).
 + *
-+ * `throw` するだけの関数の戻り値や、到達しえない分岐の型。あらゆる型の部分型であり、
-+ * 上位型となるのは never だけ。mixed とは対極の存在。
++ * The return type of a function that only `throw`s, or the type of an unreachable branch. It is a
++ * subtype of every type, and the only supertype it has is never. The polar opposite of mixed.
 + */
 +final class NeverType implements Type
 +{
@@ -394,7 +394,7 @@ index 0000000..72b0227
 +
 +    public function isSuperTypeOf(Type $type): TrinaryLogic
 +    {
-+        // never の上位型は never のみ。mixed に対しても「いいえ」。
++        // The only supertype of never is never. Even against mixed the answer is No.
 +        return $type instanceof self ? TrinaryLogic::Yes : TrinaryLogic::No;
 +    }
 +}
@@ -429,7 +429,7 @@ index 0000000..ae0dc27
 +}
 diff --git a/dev/src/Type/SimpleTypeTrait.php b/dev/src/Type/SimpleTypeTrait.php
 new file mode 100644
-index 0000000..167557d
+index 0000000..e1e4e34
 --- /dev/null
 +++ b/dev/src/Type/SimpleTypeTrait.php
 @@ -0,0 +1,45 @@
@@ -442,12 +442,12 @@ index 0000000..167557d
 +use Ministan\TrinaryLogic;
 +
 +/**
-+ * 単純な値型（int, string, null …）が共有する定型処理。
++ * Boilerplate shared by simple value types (int, string, null …).
 + *
-+ * - `accepts` は `isSuperTypeOf` に委譲する（これらの型では代入可能性＝部分型関係）。
-+ *   float が int を受け入れる、といった暗黙変換は後の章の精密化に回す。
-+ * - `equals` は同じクラスかどうか。定数型は値も比べるので個別に上書きする。
-+ * - `relateToTopAndBottom` は、どの型にも共通の「上端 mixed・下端 never」との関係を返す。
++ * - `accepts` delegates to `isSuperTypeOf` (for these types, assignability = the subtype relation).
++ *   Implicit conversions, such as float accepting int, are deferred to a refinement in a later chapter.
++ * - `equals` checks whether the class is the same. Constant types also compare values, so they override it individually.
++ * - `relateToTopAndBottom` returns the relation to the "top mixed, bottom never" that is common to every type.
 + */
 +trait SimpleTypeTrait
 +{
@@ -462,8 +462,8 @@ index 0000000..167557d
 +    }
 +
 +    /**
-+     * never はあらゆる型の部分型（= 常に Yes）。mixed はどの型でもありうる（= Maybe）。
-+     * どちらでもなければ null を返し、呼び出し側の固有判定に委ねる。
++     * never is a subtype of every type (= always Yes). mixed could be any type (= Maybe).
++     * If it is neither, return null and defer to the caller's own decision.
 +     */
 +    protected static function relateToTopAndBottom(Type $type): ?TrinaryLogic
 +    {
@@ -512,7 +512,7 @@ index 0000000..dc933cf
 +}
 diff --git a/dev/src/Type/Type.php b/dev/src/Type/Type.php
 new file mode 100644
-index 0000000..030f0fa
+index 0000000..1cf4ca9
 --- /dev/null
 +++ b/dev/src/Type/Type.php
 @@ -0,0 +1,30 @@
@@ -525,16 +525,16 @@ index 0000000..030f0fa
 +use Ministan\TrinaryLogic;
 +
 +/**
-+ * 型を表す代数的オブジェクト。PHPStan の {@see \PHPStan\Type\Type} に対応する核。
++ * The algebraic object that represents a type. The core corresponding to PHPStan's {@see \PHPStan\Type\Type}.
 + *
-+ * 3 つの基本演算で型どうしの関係を問う:
++ * Three basic operations ask about the relation between types:
 + *
-+ * - {@see describe()} … 人間向けの文字列（`int`, `'foo'`, `mixed` …）
-+ * - {@see isSuperTypeOf()} … 部分型関係。「$type の値はすべて自分の値か？」
-+ * - {@see accepts()} … 代入可能性。「自分の場所に $type の値を入れてよいか？」
++ * - {@see describe()} … a human-facing string (`int`, `'foo'`, `mixed` …)
++ * - {@see isSuperTypeOf()} … the subtype relation. "Are all of $type's values also my values?"
++ * - {@see accepts()} … assignability. "May I put a value of $type into my slot?"
 + *
-+ * いずれも答えは {@see TrinaryLogic}。`int` は `mixed` を「たぶん」受け入れ、
-+ * `string` は決して `int` を受け入れない（いいえ）。この「たぶん」がレベル制の鍵。
++ * Every answer is a {@see TrinaryLogic}. `int` accepts `mixed` with "maybe", and
++ * `string` never accepts `int` (no). That "maybe" is the key to the level system.
 + */
 +interface Type
 +{

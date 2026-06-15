@@ -5,15 +5,15 @@ declare(strict_types=1);
 namespace Ministan;
 
 /**
- * 三値論理: はい / たぶん / いいえ。
+ * Three-valued logic: Yes / Maybe / No.
  *
- * PHPStan の {@see \PHPStan\TrinaryLogic} に対応する。静的解析では「確実にそう」
- * 「確実に違う」だけでなく「そうかもしれない」が頻出する。`mixed` は int かもしれず、
- * union 型は一部の経路でのみ条件を満たすかもしれない。この「たぶん」を一級市民として
- * 扱えることが、偽陽性を出さない（non-rejecting）解析の土台になる。
+ * Corresponds to PHPStan's {@see \PHPStan\TrinaryLogic}. In static analysis, not only "definitely
+ * so" and "definitely not", but also "maybe so" comes up constantly. `mixed` might be an int, and
+ * a union type might satisfy a condition only on some paths. Being able to treat this "maybe" as a
+ * first-class citizen is the foundation of analysis that produces no false positives (non-rejecting).
  *
- * 経験則: レベルの低い解析は「いいえ」だけを報告し、「たぶん」は見逃す。レベルを
- * 上げるほど「たぶん」も問題として扱う。Part 8 のレベル制はこの軸に乗る。
+ * Rule of thumb: low-level analysis reports only "No" and overlooks "Maybe". The higher the level,
+ * the more "Maybe" is also treated as a problem. The level system in Part 8 rides on this axis.
  */
 enum TrinaryLogic
 {
@@ -64,12 +64,13 @@ enum TrinaryLogic
     }
 
     /**
-     * 全 operand が一致すればその値、1 つでも異なれば Maybe。
+     * If all operands agree, that value; if even one differs, Maybe.
      *
-     * union との関係に使う —— ある型が union の「全メンバに対して Yes」なら Yes、
-     * 「全メンバに対して No」なら No、混在すれば部分一致なので Maybe。`and`（min）で
-     * 畳むと部分一致が No に潰れ、union の一部不適合を低レベルで誤検出してしまう。
-     * PHPStan の {@see \PHPStan\TrinaryLogic::extremeIdentity} に対応。
+     * Used for the relationship with a union -- if a type is "Yes against every member" of the
+     * union it is Yes, "No against every member" it is No, and if mixed it is a partial match so
+     * Maybe. Folding with `and` (min) would collapse a partial match into No, falsely detecting a
+     * union's partial non-conformance at low levels. Corresponds to PHPStan's
+     * {@see \PHPStan\TrinaryLogic::extremeIdentity}.
      *
      * @param non-empty-list<self> $operands
      */

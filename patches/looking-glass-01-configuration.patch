@@ -11,10 +11,10 @@ index b535a2b..6f43a06 100644
          "phpstan/phpdoc-parser": "^2.3"
      },
 diff --git a/dev/src/Command/AnalyseCommand.php b/dev/src/Command/AnalyseCommand.php
-index 6fe8055..89f29f0 100644
+index 448d202..1c27b19 100644
 --- a/dev/src/Command/AnalyseCommand.php
 +++ b/dev/src/Command/AnalyseCommand.php
-@@ -6,39 +6,51 @@ namespace Ministan\Command;
+@@ -6,39 +6,52 @@ namespace Ministan\Command;
  
  use Ministan\Analyser\Analyser;
  use Ministan\Analyser\FileFinder;
@@ -29,21 +29,21 @@ index 6fe8055..89f29f0 100644
  use Ministan\Rules\RuleRegistryFactory;
  
  /**
-- * `ministan analyse [options] <paths...>` の実装。
-+ * `ministan analyse [options] [paths...]` の実装。
+- * Implementation of `ministan analyse [options] <paths...>`.
++ * Implementation of `ministan analyse [options] [paths...]`.
 + *
-+ * 設定は NEON（既定 `ministan.neon`）と CLI から組み立てる。CLI が NEON を上書きする。
++ * The configuration is assembled from NEON (default `ministan.neon`) and the CLI.
++ * The CLI overrides NEON.
   *
-  * オプション:
-- *   --level=N              ルールレベル（0..9, 既定 5）
-- *   --error-format=json    JSON で出力する（既定は表）
-- *   --baseline=FILE        FILE に載った既知の指摘を無視する
-- *   --generate-baseline[=FILE]  現在の指摘を baseline として書き出す
-+ *   --configuration=FILE   設定ファイル（既定 ministan.neon）
-+ *   --level=N              ルールレベル（NEON より優先）
-+ *   --error-format=json    JSON で出力する
-+ *   --baseline=FILE        既知の指摘を無視する
-+ *   --generate-baseline[=FILE]  現在の指摘を baseline に書き出す
+  * Options:
+- *   --level=N              rule level (0..9, default 5)
+- *   --error-format=json    produce JSON output (default is the table)
+- *   --baseline=FILE        ignore known findings listed in FILE
++ *   --configuration=FILE   config file (default ministan.neon)
++ *   --level=N              rule level (takes precedence over NEON)
++ *   --error-format=json    produce JSON output
++ *   --baseline=FILE        ignore known findings
+  *   --generate-baseline[=FILE]  write out the current findings to the baseline
   */
  final class AnalyseCommand
  {
@@ -74,7 +74,7 @@ index 6fe8055..89f29f0 100644
              } elseif (str_starts_with($arg, '--error-format=')) {
                  $format = substr($arg, strlen('--error-format='));
              } elseif (str_starts_with($arg, '--baseline=')) {
-@@ -48,20 +60,27 @@ final class AnalyseCommand
+@@ -48,20 +61,27 @@ final class AnalyseCommand
              } elseif (str_starts_with($arg, '--generate-baseline=')) {
                  $baselineToGenerate = substr($arg, strlen('--generate-baseline='));
              } else {
@@ -105,7 +105,7 @@ index 6fe8055..89f29f0 100644
          if ($baselineToGenerate !== null) {
              file_put_contents($baselineToGenerate, Baseline::generate($errors));
              fwrite(STDERR, sprintf("Baseline written to %s (%d errors).\n", $baselineToGenerate, count($errors)));
-@@ -78,6 +97,34 @@ final class AnalyseCommand
+@@ -78,6 +98,34 @@ final class AnalyseCommand
          return $errors === [] ? 0 : 1;
      }
  
@@ -142,7 +142,7 @@ index 6fe8055..89f29f0 100644
          return $format === 'json' ? new JsonErrorFormatter() : new TableErrorFormatter();
 diff --git a/dev/src/Configuration/Configuration.php b/dev/src/Configuration/Configuration.php
 new file mode 100644
-index 0000000..b4c3bf8
+index 0000000..c0e81cb
 --- /dev/null
 +++ b/dev/src/Configuration/Configuration.php
 @@ -0,0 +1,26 @@
@@ -153,16 +153,16 @@ index 0000000..b4c3bf8
 +namespace Ministan\Configuration;
 +
 +/**
-+ * 解析の設定。NEON ファイルと CLI から組み立てられる不変オブジェクト。
++ * The analysis configuration. An immutable object assembled from the NEON file and the CLI.
 + *
 + * @phpstan-type RuleClass class-string<\Ministan\Rules\Rule<\PhpParser\Node>>
 + */
 +final readonly class Configuration
 +{
 +    /**
-+     * @param list<string> $paths        解析対象のパス
-+     * @param list<string> $ignoreErrors メッセージにマッチしたら無視する正規表現
-+     * @param list<string> $ruleClasses  追加で登録するルールのクラス名
++     * @param list<string> $paths        the paths to analyse
++     * @param list<string> $ignoreErrors regular expressions; matching messages are ignored
++     * @param list<string> $ruleClasses  class names of additional rules to register
 +     */
 +    public function __construct(
 +        public int $level,
@@ -174,7 +174,7 @@ index 0000000..b4c3bf8
 +}
 diff --git a/dev/src/Configuration/ConfigurationLoader.php b/dev/src/Configuration/ConfigurationLoader.php
 new file mode 100644
-index 0000000..1dd996d
+index 0000000..73391ea
 --- /dev/null
 +++ b/dev/src/Configuration/ConfigurationLoader.php
 @@ -0,0 +1,50 @@
@@ -188,9 +188,9 @@ index 0000000..1dd996d
 +use Nette\Neon\Neon;
 +
 +/**
-+ * NEON 設定ファイルを {@see Configuration} に読み込む。
++ * Loads a NEON config file into a {@see Configuration}.
 + *
-+ * PHPStan が `phpstan.neon` を読むのと同じ位置づけ。本物に倣い NEON を採用する。
++ * The same role as PHPStan reading `phpstan.neon`. Following the real thing, we adopt NEON.
 + *
 + * ```neon
 + * parameters:
@@ -230,7 +230,7 @@ index 0000000..1dd996d
 +}
 diff --git a/dev/src/Configuration/IgnoredErrorHelper.php b/dev/src/Configuration/IgnoredErrorHelper.php
 new file mode 100644
-index 0000000..f7c477d
+index 0000000..d662ec0
 --- /dev/null
 +++ b/dev/src/Configuration/IgnoredErrorHelper.php
 @@ -0,0 +1,52 @@
@@ -243,15 +243,15 @@ index 0000000..f7c477d
 +use Ministan\Analyser\Error;
 +
 +/**
-+ * `ignoreErrors` の正規表現にマッチした指摘を取り除く。
++ * Removes findings that match an `ignoreErrors` regular expression.
 + *
-+ * baseline が「この具体的な箇所」を無視するのに対し、ignoreErrors は「この種の
-+ * メッセージ」をパターンで無視する。PHPStan の同名機能に対応。
++ * Where a baseline ignores "this specific spot", ignoreErrors ignores "this kind of
++ * message" by pattern. Corresponds to PHPStan's feature of the same name.
 + */
 +final readonly class IgnoredErrorHelper
 +{
 +    /**
-+     * @param list<string> $patterns デリミタ付き正規表現
++     * @param list<string> $patterns regular expressions with delimiters
 +     */
 +    public function __construct(
 +        private array $patterns,
@@ -287,22 +287,22 @@ index 0000000..f7c477d
 +    }
 +}
 diff --git a/dev/src/Rules/RuleRegistryFactory.php b/dev/src/Rules/RuleRegistryFactory.php
-index 6655789..e756035 100644
+index 37cf752..be9ca01 100644
 --- a/dev/src/Rules/RuleRegistryFactory.php
 +++ b/dev/src/Rules/RuleRegistryFactory.php
-@@ -29,7 +29,10 @@ final class RuleRegistryFactory
+@@ -30,7 +30,10 @@ final class RuleRegistryFactory
          return $this->createForLevel(self::MAX_LEVEL);
      }
  
 -    public function createForLevel(int $level): RuleRegistry
 +    /**
-+     * @param list<Rule<\PhpParser\Node>> $extraRules 設定で追加されたカスタムルール
++     * @param list<Rule<\PhpParser\Node>> $extraRules custom rules added via configuration
 +     */
 +    public function createForLevel(int $level, array $extraRules = []): RuleRegistry
      {
          $helper = new RuleLevelHelper($level);
          $checker = new ArgumentTypeChecker($helper);
-@@ -51,6 +54,10 @@ final class RuleRegistryFactory
+@@ -52,6 +55,10 @@ final class RuleRegistryFactory
              }
          }
  

@@ -7,10 +7,10 @@ namespace Ministan\Type;
 use Ministan\TrinaryLogic;
 
 /**
- * 型変数 `T`。ジェネリクスの「まだ決まっていない型」を表す。
+ * A type variable `T`. The generics "type not yet decided".
  *
- * `@template T` で宣言され、呼び出し時に具体的な型へ **置換（substitution）** される。
- * 関係判定は上限境界（bound, 既定 mixed）に委ね、同一性は名前で見る。
+ * Declared with `@template T` and **substituted** for a concrete type at call time.
+ * Relation checks defer to the upper bound (default mixed), and identity is judged by name.
  */
 final class TemplateType implements Type
 {

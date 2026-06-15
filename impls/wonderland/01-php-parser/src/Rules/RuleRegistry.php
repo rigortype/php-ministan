@@ -7,12 +7,13 @@ namespace Ministan\Rules;
 use PhpParser\Node;
 
 /**
- * ノード種別ごとにルールを索引し、あるノードに対して反応すべきルールを返す。
+ * Indexes rules by node kind and returns the rules that should react to a given node.
  *
- * PHPStan の {@see \PHPStan\Rules\Registry} に対応。索引は `getNodeType()` の
- * 戻り値で張るが、引き当て時にはノードの**クラス階層**（親クラス・実装インターフェイス）
- * もたどる。これにより、具象 {@see Node\Expr\FuncCall} を狙うルールも、
- * 抽象 {@see Node\Expr} を狙うルールも、同じ仕組みで共存できる。
+ * Corresponds to PHPStan's {@see \PHPStan\Rules\Registry}. The index is built from the return
+ * value of `getNodeType()`, but on lookup it also walks the node's **class hierarchy** (parent
+ * classes and implemented interfaces). This lets a rule that targets the concrete
+ * {@see Node\Expr\FuncCall} and a rule that targets the abstract {@see Node\Expr} coexist
+ * through the same mechanism.
  */
 final class RuleRegistry
 {
@@ -45,7 +46,7 @@ final class RuleRegistry
     }
 
     /**
-     * ノード自身のクラスから、親クラス・実装インターフェイスまでを列挙する。
+     * Enumerates from the node's own class through its parent classes and implemented interfaces.
      *
      * @return list<class-string>
      */

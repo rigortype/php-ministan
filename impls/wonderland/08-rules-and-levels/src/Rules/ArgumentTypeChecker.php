@@ -9,8 +9,8 @@ use Ministan\Type\Type;
 use PhpParser\Node\Arg;
 
 /**
- * 呼び出しの実引数を、宣言されたパラメータ型と照合する共通処理。
- * 関数呼び出しとメソッド呼び出しのルールが共有する。
+ * Shared logic that matches a call's actual arguments against the declared parameter types.
+ * The function-call and method-call rules share this.
  */
 final readonly class ArgumentTypeChecker
 {
@@ -23,7 +23,7 @@ final readonly class ArgumentTypeChecker
      * @param list<Type> $parameterTypes
      * @param array<Arg|\PhpParser\Node\VariadicPlaceholder> $args
      *
-     * @return list<array{int, Type, Type}> [位置(1始まり), 期待型, 実際の型] の不一致
+     * @return list<array{int, Type, Type}> mismatches as [position (1-based), expected type, actual type]
      */
     public function check(array $parameterTypes, array $args, Scope $scope): array
     {
@@ -31,10 +31,10 @@ final readonly class ArgumentTypeChecker
 
         foreach ($args as $position => $arg) {
             if (!$arg instanceof Arg || $arg->unpack || $arg->name !== null) {
-                continue; // ...$spread・名前付き引数は位置対応が崩れるので見送り
+                continue; // ...$spread and named arguments break positional correspondence, so skip them
             }
             if (!isset($parameterTypes[$position])) {
-                continue; // 余剰引数・可変長は見送り（non-rejecting）
+                continue; // skip surplus arguments and variadics (non-rejecting)
             }
 
             $expected = $parameterTypes[$position];

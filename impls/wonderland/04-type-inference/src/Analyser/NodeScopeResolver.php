@@ -17,15 +17,18 @@ use PhpParser\Node\Expr;
 use PhpParser\Node\Stmt;
 
 /**
- * AST を下りながら {@see Scope} を運び、各ノードで**コールバック**を呼ぶ。
+ * Walks down the AST, carrying a {@see Scope} along, and invokes a **callback**
+ * at each node.
  *
- * PHPStan の {@see \PHPStan\Analyser\NodeScopeResolver} に対応する核。Part 2 では
- * ルール適用を直接抱えていたが、Part 4 で「各ノードで (node, scope) を渡して呼ぶ」
- * 汎用コールバックに一般化した。これにより、ルールを走らせる解析（{@see Analyser}）も、
- * 推論型を覗く `annotate` も、同じ走査を再利用できる。
+ * The core corresponding to PHPStan's {@see \PHPStan\Analyser\NodeScopeResolver}.
+ * In Part 2 it held rule application directly, but Part 4 generalizes it into a
+ * generic callback that is "called with (node, scope) at each node". This lets the
+ * rule-running analysis ({@see Analyser}) and the `annotate` that peeks at inferred
+ * types both reuse the same traversal.
  *
- * 走査の要は Part 2 と同じ「読み取り文脈と書き込み文脈の区別」。加えて Part 4 では、
- * 代入のたびに右辺の型を {@see Scope::getType()} で推論し、変数に結びつける。
+ * The crux of the traversal is the same "distinction between read and write
+ * context" as in Part 2. On top of that, Part 4 infers the right-hand side's type
+ * with {@see Scope::getType()} on every assignment and binds it to the variable.
  */
 final class NodeScopeResolver
 {
@@ -112,7 +115,7 @@ final class NodeScopeResolver
         return $scope;
     }
 
-    // --- 代入: 右辺の型を推論して変数に結びつける ---
+    // --- assignment: infer the right-hand side's type and bind it to the variable ---
 
     private function processAssign(Expr\Assign|Expr\AssignRef $node, Scope $scope): Scope
     {
@@ -126,7 +129,7 @@ final class NodeScopeResolver
     {
         $scope = $this->processNode($node->expr, $scope);
 
-        // 複合代入（+= 等）の結果型は後章で精密化。ここでは mixed に縮退して安全側に。
+        // The result type of a compound assignment (+=, etc.) is refined in a later chapter. For now collapse to mixed to stay on the safe side.
         return $this->processAssignTarget($node->var, new MixedType(), $scope);
     }
 
@@ -157,7 +160,7 @@ final class NodeScopeResolver
                 $scope = $this->processNode($item->key, $scope);
             }
 
-            // 分割代入の要素型はまだ追えない → mixed
+            // The element type of a destructuring assignment cannot be tracked yet -> mixed
             $scope = $this->processAssignTarget($item->value, new MixedType(), $scope);
         }
 
@@ -170,11 +173,11 @@ final class NodeScopeResolver
             $scope = $this->processNode($node->dim, $scope);
         }
 
-        // $arr[...] = ... で $arr は配列になるが、配列型は後章。ここでは mixed。
+        // $arr[...] = ... makes $arr an array, but array types come in a later chapter. For now mixed.
         return $this->processAssignTarget($node->var, new MixedType(), $scope);
     }
 
-    // --- ループ・例外・宣言 ---
+    // --- loops, exceptions, declarations ---
 
     private function processForeach(Stmt\Foreach_ $node, Scope $scope): Scope
     {
@@ -195,7 +198,7 @@ final class NodeScopeResolver
     {
         $catchScope = $scope;
         if ($node->var !== null && is_string($node->var->name)) {
-            // 例外の型は ObjectType を持つ Part 6 で精密化。
+            // The exception's type is refined in Part 6, once we have ObjectType.
             $catchScope = $catchScope->assignVariable($node->var->name, new MixedType());
         }
 
@@ -255,7 +258,7 @@ final class NodeScopeResolver
         return $scope;
     }
 
-    // --- 関数・クロージャ（スコープ境界）---
+    // --- functions and closures (scope boundaries) ---
 
     private function processFunctionLike(Stmt\Function_|Stmt\ClassMethod $node, Scope $outer): Scope
     {
@@ -286,7 +289,7 @@ final class NodeScopeResolver
                     $outer = $outer->assignVariable($name, new MixedType());
                 }
             } else {
-                ($this->nodeCallback)($use->var, $outer); // 値渡し use は外側の読み取り
+                ($this->nodeCallback)($use->var, $outer); // a by-value use reads from the outer scope
             }
 
             if ($name !== null) {
@@ -308,7 +311,7 @@ final class NodeScopeResolver
 
     private function processArrowFunction(Expr\ArrowFunction $node, Scope $outer): Scope
     {
-        $inner = $this->bindParams($node->params, $outer); // 外側を値で自動キャプチャ
+        $inner = $this->bindParams($node->params, $outer); // captures the outer scope automatically by value
 
         if (!$node->static) {
             $inner = $inner->assignVariable('this', new MixedType());
@@ -336,8 +339,9 @@ final class NodeScopeResolver
     }
 
     /**
-     * パラメータの型宣言を {@see Type} に写す最小版。クラス型・nullable・union は
-     * リフレクションと PHPDoc を扱う Part 6〜7 で精密化する。
+     * A minimal version that maps a parameter's type declaration onto a {@see Type}.
+     * Class types, nullable, and union types are refined in Parts 6-7, which handle
+     * reflection and PHPDoc.
      */
     private function typeFromHint(?Node $node): Type
     {

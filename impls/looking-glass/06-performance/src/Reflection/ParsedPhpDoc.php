@@ -7,14 +7,14 @@ namespace Ministan\Reflection;
 use Ministan\Type\Type;
 
 /**
- * 1 つの docblock から取り出した型情報。`@return`・`@param`・`@var`・`@template`。
+ * Type information extracted from a single docblock: `@return`, `@param`, `@var`, `@template`.
  */
 final readonly class ParsedPhpDoc
 {
     /**
-     * @param array<string, Type> $paramTypes    パラメータ名（$ なし）→ 型
-     * @param array<string, Type> $varTypes      変数名（$ なし、無名は ''）→ 型
-     * @param list<string>        $templateNames この docblock が宣言する型変数名
+     * @param array<string, Type> $paramTypes    parameter name (without $) => type
+     * @param array<string, Type> $varTypes      variable name (without $, '' if anonymous) => type
+     * @param list<string>        $templateNames the type variable names this docblock declares
      */
     public function __construct(
         public ?Type $returnType,

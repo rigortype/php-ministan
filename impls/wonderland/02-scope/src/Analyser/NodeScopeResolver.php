@@ -10,20 +10,23 @@ use PhpParser\Node\Expr;
 use PhpParser\Node\Stmt;
 
 /**
- * AST を下りながら {@see Scope} を運び、各ノードでルールを適用する。
+ * Walks down the AST, carrying a {@see Scope} along, and applies rules at each node.
  *
- * PHPStan の {@see \PHPStan\Analyser\NodeScopeResolver} に対応する核。
- * Part 1 の RuleApplyingVisitor（ノードを訪れるだけ）を、ここで「スコープを
- * 伝播させる再帰下降」へと育てた。
+ * The core corresponding to PHPStan's {@see \PHPStan\Analyser\NodeScopeResolver}.
+ * Part 1's RuleApplyingVisitor (which only visited nodes) is grown here into a
+ * recursive descent that propagates a scope.
  *
- * 設計の要は「読み取り文脈と書き込み文脈を区別する」こと。`$x = 1` の左辺 `$x` は
- * **定義**であって未定義チェックの対象ではない。`foreach (... as $v)` の `$v` も同様。
- * そうした束縛構文だけを個別に捌き、それ以外は {@see processChildren()} で機械的に
- * 子へ降りる。降りた先で出会う Variable は「読み取り」なのでルールに掛かる。
+ * The crux of the design is to "distinguish between read and write context". The
+ * `$x` on the left-hand side of `$x = 1` is a **definition**, not a target of the
+ * undefined-variable check. The `$v` in `foreach (... as $v)` is the same. We handle
+ * only such binding constructs individually, and for everything else descend
+ * mechanically into the children via {@see processChildren()}. A Variable we meet
+ * once we have descended is a "read", so it is subject to rules.
  *
- * 制御構文（if/while/for/try…）は専用処理を持たず、子を順に辿るだけにしている。
- * 代入は前方へ伝播し、合流は {@see Scope::mergeWith()} の楽観的和集合になるため、
- * 偽陽性を出さない。経路に敏感な精密化（「全経路で定義されたか」）は Part 5 で扱う。
+ * Control constructs (if/while/for/try...) have no dedicated handling; they merely
+ * walk their children in order. Assignments propagate forward, and merges become the
+ * optimistic union of {@see Scope::mergeWith()}, so no false positives are emitted.
+ * Path-sensitive refinement ("is it defined on every path?") is covered in Part 5.
  */
 final class NodeScopeResolver
 {
@@ -66,13 +69,13 @@ final class NodeScopeResolver
         $this->applyRules($node, $scope);
 
         return match (true) {
-            // --- スコープ境界を作る構文 ---
+            // --- constructs that create a scope boundary ---
             $node instanceof Stmt\Function_,
             $node instanceof Stmt\ClassMethod    => $this->processFunctionLike($node, $scope),
             $node instanceof Expr\Closure        => $this->processClosure($node, $scope),
             $node instanceof Expr\ArrowFunction  => $this->processArrowFunction($node, $scope),
 
-            // --- 変数を束縛する構文 ---
+            // --- constructs that bind variables ---
             $node instanceof Expr\Assign,
             $node instanceof Expr\AssignRef      => $this->processAssign($node, $scope),
             $node instanceof Expr\AssignOp       => $this->processAssignOp($node, $scope),
@@ -81,16 +84,16 @@ final class NodeScopeResolver
             $node instanceof Stmt\Global_        => $this->processGlobal($node, $scope),
             $node instanceof Stmt\Static_        => $this->processStaticVars($node, $scope),
 
-            // --- 未定義変数を許容する読み取り文脈 ---
-            // isset($x) / empty($x) は未定義でも合法。中は未定義チェックしない。
+            // --- read context that tolerates undefined variables ---
+            // isset($x) / empty($x) is legal even when undefined. We do not run the undefined check inside.
             $node instanceof Expr\Isset_,
             $node instanceof Expr\Empty_         => $scope,
             $node instanceof Expr\BinaryOp\Coalesce => $this->processCoalesce($node, $scope),
 
-            // --- 変数そのもの（読み取り）。ルール適用済み、子はない ---
+            // --- the variable itself (a read). Rules already applied, no children ---
             $node instanceof Expr\Variable       => $scope,
 
-            // --- それ以外は子へ降り、スコープを順に伝播 ---
+            // --- everything else descends into children, propagating the scope in order ---
             default => $this->processChildren($node, $scope),
         };
     }
@@ -119,11 +122,11 @@ final class NodeScopeResolver
         return $scope;
     }
 
-    // --- 代入 ---
+    // --- assignment ---
 
     private function processAssign(Expr\Assign|Expr\AssignRef $node, Scope $scope): Scope
     {
-        // 右辺を先に解析する（右辺の変数は読み取りなので未定義チェックの対象）。
+        // Analyse the right-hand side first (a variable on the right is a read, so it is subject to the undefined check).
         $scope = $this->processNode($node->expr, $scope);
 
         return $this->processAssignTarget($node->var, $scope);
@@ -131,16 +134,17 @@ final class NodeScopeResolver
 
     private function processAssignOp(Expr\AssignOp $node, Scope $scope): Scope
     {
-        // 複合代入（+= など）の対象は読みも兼ねるが、ここでは定義として扱い
-        // 偽陽性を避ける（厳密な「未定義への +=」検出は後の章へ）。
+        // A compound assignment (+= etc.) target also reads, but here we treat it as a definition
+        // to avoid false positives (precise detection of "+= on an undefined variable" comes in a later chapter).
         $scope = $this->processNode($node->expr, $scope);
 
         return $this->processAssignTarget($node->var, $scope);
     }
 
     /**
-     * 代入の**左辺**を処理し、束縛された変数をスコープに加える。
-     * 左辺の Variable は「定義」なので未定義チェックには掛けない。
+     * Processes the **left-hand side** of an assignment and adds the bound variable
+     * to the scope. A Variable on the left-hand side is a "definition", so it is not
+     * subject to the undefined check.
      */
     private function processAssignTarget(Expr $target, Scope $scope): Scope
     {
@@ -149,14 +153,14 @@ final class NodeScopeResolver
                 ? $scope->assignVariable($target->name)
                 : $this->processNode($target, $scope),
 
-            // 分割代入: [$a, $b] = ... / list($a, $b) = ...
+            // destructuring assignment: [$a, $b] = ... / list($a, $b) = ...
             $target instanceof Expr\List_,
             $target instanceof Expr\Array_ => $this->processListAssign($target, $scope),
 
-            // $arr[$i] = ... / $arr[] = ... : 添字は読み取り、根の変数は定義（自動生成）
+            // $arr[$i] = ... / $arr[] = ... : the index is a read, the root variable is a definition (auto-created)
             $target instanceof Expr\ArrayDimFetch => $this->processArrayDimAssign($target, $scope),
 
-            // $obj->p = ... / Foo::$p = ... : オブジェクト側は読み取り。新しい変数は生まれない
+            // $obj->p = ... / Foo::$p = ... : the object side is a read. No new variable is born
             default => $this->processNode($target, $scope),
         };
     }
@@ -165,11 +169,11 @@ final class NodeScopeResolver
     {
         foreach ($node->items as $item) {
             if ($item === null) {
-                continue; // [, $b] = ... の空き
+                continue; // a hole in [, $b] = ...
             }
 
             if ($item->key !== null) {
-                $scope = $this->processNode($item->key, $scope); // キーは読み取り
+                $scope = $this->processNode($item->key, $scope); // the key is a read
             }
 
             $scope = $this->processAssignTarget($item->value, $scope);
@@ -181,17 +185,17 @@ final class NodeScopeResolver
     private function processArrayDimAssign(Expr\ArrayDimFetch $node, Scope $scope): Scope
     {
         if ($node->dim !== null) {
-            $scope = $this->processNode($node->dim, $scope); // 添字は読み取り
+            $scope = $this->processNode($node->dim, $scope); // the index is a read
         }
 
-        return $this->processAssignTarget($node->var, $scope); // 根を定義
+        return $this->processAssignTarget($node->var, $scope); // the root is a definition
     }
 
-    // --- ループ・例外・宣言 ---
+    // --- loops, exceptions, declarations ---
 
     private function processForeach(Stmt\Foreach_ $node, Scope $scope): Scope
     {
-        $scope = $this->processNode($node->expr, $scope); // 反復対象は読み取り
+        $scope = $this->processNode($node->expr, $scope); // the iterated expression is a read
 
         $loopScope = $scope;
         if ($node->keyVar !== null) {
@@ -201,7 +205,7 @@ final class NodeScopeResolver
 
         $bodyScope = $this->processStmts($node->stmts, $loopScope);
 
-        // ループは 0 回かもしれない。楽観的に合流して偽陽性を避ける（ループ変数は残る）。
+        // The loop may run zero times. Merge optimistically to avoid false positives (the loop variables remain).
         return $scope->mergeWith($bodyScope);
     }
 
@@ -241,15 +245,15 @@ final class NodeScopeResolver
 
     private function processCoalesce(Expr\BinaryOp\Coalesce $node, Scope $scope): Scope
     {
-        // `$x ?? d` は左辺が未定義でも安全（短絡）。左辺は未定義チェックせず辿る。
+        // `$x ?? d` is safe even when the left-hand side is undefined (short-circuit). We walk the left-hand side without the undefined check.
         $scope = $this->processSilently($node->left, $scope);
 
         return $this->processNode($node->right, $scope);
     }
 
     /**
-     * スコープは伝播させつつ、配下の Variable 読み取りを未定義チェックに掛けない。
-     * isset() 相当の寛容な文脈で使う。
+     * Propagates the scope while not subjecting the Variable reads beneath it to the
+     * undefined check. Used in the lenient context equivalent to isset().
      */
     private function processSilently(Node $node, Scope $scope): Scope
     {
@@ -273,7 +277,7 @@ final class NodeScopeResolver
         return $scope;
     }
 
-    // --- 関数・クロージャ（スコープ境界）---
+    // --- functions and closures (scope boundaries) ---
 
     private function processFunctionLike(Stmt\Function_|Stmt\ClassMethod $node, Scope $outer): Scope
     {
@@ -284,11 +288,11 @@ final class NodeScopeResolver
             $inner = $inner->assignVariable('this');
         }
 
-        if ($node->stmts !== null) { // 抽象メソッド・インターフェイスは null
+        if ($node->stmts !== null) { // null for abstract methods and interfaces
             $this->processStmts($node->stmts, $inner);
         }
 
-        return $outer; // 関数定義は外側の変数を増やさない
+        return $outer; // a function definition does not add variables to the outer scope
     }
 
     private function processClosure(Expr\Closure $node, Scope $outer): Scope
@@ -297,7 +301,7 @@ final class NodeScopeResolver
         $inner = $this->bindParams($node->params, $inner);
 
         foreach ($node->uses as $use) {
-            // 値渡しの use($x) は外側の読み取り。&付きは外側に変数を生む。
+            // A by-value use($x) is a read from the outer scope. One with & creates a variable in the outer scope.
             if ($use->byRef) {
                 if (is_string($use->var->name)) {
                     $outer = $outer->assignVariable($use->var->name);
@@ -322,7 +326,7 @@ final class NodeScopeResolver
 
     private function processArrowFunction(Expr\ArrowFunction $node, Scope $outer): Scope
     {
-        // アロー関数は外側を値で自動キャプチャする。
+        // An arrow function captures the outer scope automatically by value.
         $inner = $this->bindParams($node->params, $outer);
 
         if (!$node->static) {

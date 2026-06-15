@@ -1,7 +1,7 @@
 <?php
 
-// ministan のスタブ。実行されず、シグネチャを読むためだけにパースされる。
-// ネイティブのリフレクションでは表現できない精密な型を、PHPStan の functionMap のように補う。
+// ministan stub. Never executed; parsed only to read the signatures.
+// Supplies precise types that native reflection cannot express, like PHPStan's functionMap.
 
 declare(strict_types=1);
 

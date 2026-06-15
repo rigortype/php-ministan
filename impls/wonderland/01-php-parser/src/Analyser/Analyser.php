@@ -10,10 +10,10 @@ use PhpParser\NodeTraverser;
 use PhpParser\ParserFactory;
 
 /**
- * 解析パイプラインの入口。
+ * The entry point of the analysis pipeline.
  *
- * Part 0: 構文エラーの翻訳。
- * Part 1: パース済み AST にルール群を適用する（← イマココ）。
+ * Part 0: translate syntax errors.
+ * Part 1: apply the rules to a parsed AST (<- we are here).
  */
 final class Analyser
 {
@@ -37,7 +37,7 @@ final class Analyser
         try {
             $ast = $parser->parse($code) ?? [];
         } catch (ParserError $e) {
-            // 構文エラーがある間はルールを走らせても意味がないので、ここで打ち切る。
+            // While there are syntax errors, running the rules is pointless, so bail out here.
             return [new Error($e->getRawMessage(), $file, $e->getStartLine())];
         }
 

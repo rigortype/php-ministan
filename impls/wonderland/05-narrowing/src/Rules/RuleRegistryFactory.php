@@ -8,10 +8,10 @@ use Ministan\Rules\Functions\NoVarDumpRule;
 use Ministan\Rules\Variables\UndefinedVariableRule;
 
 /**
- * 既定のルール一式を組み立てる。
+ * Assembles the default set of rules.
  *
- * PHPStan では DI コンテナと neon 設定がこの役目を担うが、ここでは素朴な
- * ファクトリで十分。Part 8 でレベル別のルール束へ発展させる。
+ * In PHPStan, the DI container and neon configuration take on this role, but here a plain
+ * factory is enough. It grows into level-based rule bundles in Part 8.
  */
 final class RuleRegistryFactory
 {

@@ -20,7 +20,7 @@ final class IntegerType implements Type
     {
         return self::relateToTopAndBottom($type)
             ?? (($type instanceof self || $type instanceof ConstantIntegerType)
-                ? TrinaryLogic::Yes   // int も、42 のような定数 int も、int の部分型
+                ? TrinaryLogic::Yes   // both int and a constant int like 42 are subtypes of int
                 : TrinaryLogic::No);
     }
 }

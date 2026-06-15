@@ -1,5 +1,5 @@
 diff --git a/dev/src/Analyser/Analyser.php b/dev/src/Analyser/Analyser.php
-index 63dd1ac..a1a4c7c 100644
+index 8a91e10..36e557c 100644
 --- a/dev/src/Analyser/Analyser.php
 +++ b/dev/src/Analyser/Analyser.php
 @@ -25,6 +25,25 @@ final class Analyser
@@ -7,7 +7,7 @@ index 63dd1ac..a1a4c7c 100644
      }
  
 +    /**
-+     * 複数ファイルを解析し、エラーをまとめて返す。
++     * Analyse multiple files and return all errors together.
 +     *
 +     * @param list<string> $files
 +     *
@@ -30,7 +30,7 @@ index 63dd1ac..a1a4c7c 100644
       */
 diff --git a/dev/src/Analyser/FileFinder.php b/dev/src/Analyser/FileFinder.php
 new file mode 100644
-index 0000000..59d7799
+index 0000000..621146b
 --- /dev/null
 +++ b/dev/src/Analyser/FileFinder.php
 @@ -0,0 +1,59 @@
@@ -46,7 +46,7 @@ index 0000000..59d7799
 +use SplFileInfo;
 +
 +/**
-+ * 解析対象のパス（ファイルまたはディレクトリ）から .php ファイルを集める。
++ * Collect .php files from the target paths (files or directories).
 + */
 +final class FileFinder
 +{
@@ -68,7 +68,7 @@ index 0000000..59d7799
 +            }
 +        }
 +
-+        sort($files); // 出力を安定させる
++        sort($files); // keep the output stable
 +
 +        return $files;
 +    }
@@ -94,7 +94,7 @@ index 0000000..59d7799
 +    }
 +}
 diff --git a/dev/src/Command/AnalyseCommand.php b/dev/src/Command/AnalyseCommand.php
-index 9863a13..6fe8055 100644
+index e8499e7..448d202 100644
 --- a/dev/src/Command/AnalyseCommand.php
 +++ b/dev/src/Command/AnalyseCommand.php
 @@ -5,43 +5,81 @@ declare(strict_types=1);
@@ -109,16 +109,16 @@ index 9863a13..6fe8055 100644
  use Ministan\Rules\RuleRegistryFactory;
  
  /**
-- * `ministan analyse [--level=N] <file>` の実装。
-+ * `ministan analyse [options] <paths...>` の実装。
+- * Implementation of `ministan analyse [--level=N] <file>`.
++ * Implementation of `ministan analyse [options] <paths...>`.
   *
-- * PHPStan の AnalyseCommand に対応する最小版。Part 9 で複数ファイル・複数フォーマットや
-- * baseline へ拡張する。
-+ * オプション:
-+ *   --level=N              ルールレベル（0..9, 既定 5）
-+ *   --error-format=json    JSON で出力する（既定は表）
-+ *   --baseline=FILE        FILE に載った既知の指摘を無視する
-+ *   --generate-baseline[=FILE]  現在の指摘を baseline として書き出す
+- * A minimal counterpart to PHPStan's AnalyseCommand. Part 9 extends it with
+- * support for multiple files and formats and the baseline.
++ * Options:
++ *   --level=N              rule level (0..9, default 5)
++ *   --error-format=json    produce JSON output (default is the table)
++ *   --baseline=FILE        ignore known findings listed in FILE
++ *   --generate-baseline[=FILE]  write out the current findings to the baseline
   */
  final class AnalyseCommand
  {
@@ -189,32 +189,32 @@ index 9863a13..6fe8055 100644
 +    }
  }
 diff --git a/dev/src/Console/Application.php b/dev/src/Console/Application.php
-index ae7bb5a..9eb6034 100644
+index c8a7980..8ded317 100644
 --- a/dev/src/Console/Application.php
 +++ b/dev/src/Console/Application.php
 @@ -36,8 +36,14 @@ final class Application
              ministan {$this->versionLine()}
  
              Usage:
--              ministan analyse [--level=N] <file>   PHP ファイルを解析する（N=0..9, 既定 5）
--              ministan annotate <file>              推論された型を表示する
-+              ministan analyse [options] <paths...>   ファイル／ディレクトリを解析する
-+              ministan annotate <file>                推論された型を表示する
+-              ministan analyse [--level=N] <file>   analyse a PHP file (N=0..9, default 5)
+-              ministan annotate <file>              show the inferred types
++              ministan analyse [options] <paths...>   analyse files / directories
++              ministan annotate <file>                show the inferred types
 +
 +            analyse options:
-+              --level=N                 ルールレベル（0..9, 既定 5）
-+              --error-format=json       JSON で出力する
-+              --baseline=FILE           既知の指摘を無視する
-+              --generate-baseline[=FILE]  現在の指摘を baseline に書き出す
++              --level=N                 rule level (0..9, default 5)
++              --error-format=json       produce JSON output
++              --baseline=FILE           ignore known findings
++              --generate-baseline[=FILE]  write out the current findings to the baseline
  
              TXT;
  
 diff --git a/dev/src/Output/Baseline.php b/dev/src/Output/Baseline.php
 new file mode 100644
-index 0000000..9bea39b
+index 0000000..959401f
 --- /dev/null
 +++ b/dev/src/Output/Baseline.php
-@@ -0,0 +1,56 @@
+@@ -0,0 +1,57 @@
 +<?php
 +
 +declare(strict_types=1);
@@ -224,11 +224,12 @@ index 0000000..9bea39b
 +use Ministan\Analyser\Error;
 +
 +/**
-+ * 既存の指摘を「許容済み」として記録し、次回以降は無視する仕組み。
++ * A mechanism that records existing findings as "accepted" and ignores them from then on.
 + *
-+ * レガシーコードに PHPStan を導入する第一歩。今あるエラーを baseline に固め、
-+ * 「これ以上増やさない」運用を可能にする。本実装は (ファイル, メッセージ) の組で
-+ * 突き合わせる簡略版（PHPStan は件数まで見る）。フォーマットは JSON。
++ * The first step in introducing PHPStan to legacy code. Freeze today's errors into a
++ * baseline so you can run a "don't add any more" policy. This implementation is a
++ * simplified version that matches on the (file, message) pair (PHPStan also looks at the
++ * count). The format is JSON.
 + */
 +final class Baseline
 +{
@@ -246,7 +247,7 @@ index 0000000..9bea39b
 +    }
 +
 +    /**
-+     * baseline に載っている指摘を取り除く。
++     * Removes findings that are listed in the baseline.
 +     *
 +     * @param list<Error> $errors
 +     *
@@ -272,18 +273,19 @@ index 0000000..9bea39b
 +    }
 +}
 diff --git a/dev/src/Output/ErrorFormatter.php b/dev/src/Output/ErrorFormatter.php
-index 951d0d2..cc20ba6 100644
+index b6bcb1e..bbaee51 100644
 --- a/dev/src/Output/ErrorFormatter.php
 +++ b/dev/src/Output/ErrorFormatter.php
 @@ -7,32 +7,13 @@ namespace Ministan\Output;
  use Ministan\Analyser\Error;
  
  /**
-- * 解析結果を人間向けに整形する。
+- * Formats analysis results for humans.
 - *
-+ * 解析結果を出力テキストに整形する。表・JSON など複数の表現を差し替えられる。
-  * PHPStan の {@see \PHPStan\Command\ErrorFormatter\ErrorFormatter} に対応。
-- * Part 9 で JSON など複数フォーマットに拡張する。
+- * Corresponds to PHPStan's {@see \PHPStan\Command\ErrorFormatter\ErrorFormatter}.
+- * Extended to multiple formats such as JSON in Part 9.
++ * Formats analysis results into output text. Several representations, such as table or JSON,
++ * can be swapped in. Corresponds to PHPStan's {@see \PHPStan\Command\ErrorFormatter\ErrorFormatter}.
   */
 -final class ErrorFormatter
 +interface ErrorFormatter
@@ -313,7 +315,7 @@ index 951d0d2..cc20ba6 100644
  }
 diff --git a/dev/src/Output/JsonErrorFormatter.php b/dev/src/Output/JsonErrorFormatter.php
 new file mode 100644
-index 0000000..a3b2319
+index 0000000..f876fc4
 --- /dev/null
 +++ b/dev/src/Output/JsonErrorFormatter.php
 @@ -0,0 +1,32 @@
@@ -324,8 +326,8 @@ index 0000000..a3b2319
 +namespace Ministan\Output;
 +
 +/**
-+ * 機械可読な JSON フォーマット。CI やエディタ連携で使う。
-+ * PHPStan の JSON 出力を簡略化した形。
++ * A machine-readable JSON format, used for CI and editor integration.
++ * A simplified form of PHPStan's JSON output.
 + */
 +final class JsonErrorFormatter implements ErrorFormatter
 +{
@@ -351,7 +353,7 @@ index 0000000..a3b2319
 +}
 diff --git a/dev/src/Output/TableErrorFormatter.php b/dev/src/Output/TableErrorFormatter.php
 new file mode 100644
-index 0000000..453cd3e
+index 0000000..6ee0283
 --- /dev/null
 +++ b/dev/src/Output/TableErrorFormatter.php
 @@ -0,0 +1,40 @@
@@ -364,7 +366,7 @@ index 0000000..453cd3e
 +use Ministan\Analyser\Error;
 +
 +/**
-+ * 人間向けの既定フォーマット。ファイルごとにまとめて表示する。
++ * The default human-facing format. Groups and displays findings by file.
 + */
 +final class TableErrorFormatter implements ErrorFormatter
 +{

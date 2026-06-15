@@ -8,22 +8,22 @@ use Ministan\Analyser\Scope;
 use PhpParser\Node;
 
 /**
- * 1 種類の AST ノードを検査し、見つけた問題を返す検査器。
+ * A checker that inspects one kind of AST node and returns the problems it finds.
  *
- * PHPStan の {@see \PHPStan\Rules\Rule} に対応する。`getNodeType()` が
- * 「どのノードに反応するか」を、`processNode()` が「何を報告するか」を決める。
+ * Corresponds to PHPStan's {@see \PHPStan\Rules\Rule}. `getNodeType()` decides
+ * "which node to react to", and `processNode()` decides "what to report".
  *
- * Part 2 で `processNode()` に {@see Scope} が加わった。これにより、ルールは
- * 「このノードの地点で何が分かっているか（どの変数が定義済みか、Part 4 以降は
- * 各式の型）」を踏まえて判断できる。
+ * In Part 2, a {@see Scope} was added to `processNode()`. With it, a rule can decide
+ * based on "what is known at this node's location (which variables are defined, and from
+ * Part 4 onward the type of each expression)".
  *
  * @template TNodeType of Node
  */
 interface Rule
 {
     /**
-     * このルールが反応するノードのクラス名。
-     * 抽象型（例: {@see Node\Expr}）を返せば、その派生すべてに反応する。
+     * The class name of the node this rule reacts to.
+     * Return an abstract type (e.g. {@see Node\Expr}) to react to all of its descendants.
      *
      * @return class-string<TNodeType>
      */

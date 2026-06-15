@@ -43,7 +43,7 @@ final class ResultCacheTest extends TestCase
     {
         (new ResultCache($this->dir, 'level=0'))->save('code', [['message' => 'm', 'line' => 1]]);
 
-        // 別 salt（例: レベル変更）では同じ内容でもヒットしない。
+        // With a different salt (e.g. a level change), the same content does not hit.
         self::assertNull((new ResultCache($this->dir, 'level=9'))->load('code'));
     }
 
@@ -53,8 +53,8 @@ final class ResultCacheTest extends TestCase
         $analyser = new Analyser((new RuleRegistryFactory())->createForLevel(0), $cache);
         $fixture = __DIR__ . '/../fixtures/undefined-method.php';
 
-        $cold = $analyser->analyseFile($fixture); // 計算してキャッシュ
-        $warm = $analyser->analyseFile($fixture); // キャッシュから
+        $cold = $analyser->analyseFile($fixture); // compute and cache
+        $warm = $analyser->analyseFile($fixture); // from cache
 
         self::assertCount(1, $cold);
         self::assertSame(

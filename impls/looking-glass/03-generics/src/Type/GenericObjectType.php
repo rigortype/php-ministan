@@ -5,10 +5,11 @@ declare(strict_types=1);
 namespace Ministan\Type;
 
 /**
- * 型引数を伴うオブジェクト型。`Collection<int>`、`Result<string, Error>`。
+ * An object type carrying type arguments. `Collection<int>`, `Result<string, Error>`.
  *
- * {@see ObjectType} を継承するので、未定義メソッド検出や引数検査などの「クラスを見る」
- * 処理は型引数を無視してそのまま働く。型引数は、メソッド戻り値の型パラメータ置換に使う。
+ * Because it extends {@see ObjectType}, the "look at the class" work — detecting undefined methods,
+ * checking arguments, and so on — keeps working as is, ignoring the type arguments. The type
+ * arguments are used for substituting type parameters in method return types.
  */
 final class GenericObjectType extends ObjectType
 {

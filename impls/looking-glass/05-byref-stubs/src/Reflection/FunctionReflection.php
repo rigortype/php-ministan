@@ -10,14 +10,14 @@ use PhpParser\Node\Stmt\Function_;
 use ReflectionFunction;
 
 /**
- * 関数 1 つのシグネチャ。PHPDoc を上位、ネイティブ宣言を下位に置く。
+ * The signature of a single function. PHPDoc takes priority, with the native declaration below it.
  */
 final readonly class FunctionReflection
 {
     /**
      * @param list<Type>   $parameterTypes
-     * @param list<bool>   $byRefParams   各パラメータが参照渡し（出力引数）か
-     * @param list<string> $templateNames この関数が宣言する型変数（@template）
+     * @param list<bool>   $byRefParams   whether each parameter is passed by reference (an output argument)
+     * @param list<string> $templateNames the type variables this function declares (@template)
      */
     public function __construct(
         public string $name,

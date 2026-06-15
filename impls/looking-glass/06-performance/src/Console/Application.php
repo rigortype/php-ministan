@@ -8,7 +8,7 @@ use Ministan\Command\AnalyseCommand;
 use Ministan\Command\AnnotateCommand;
 
 /**
- * CLI のエントリポイント。サブコマンドを振り分けるだけの薄い層。
+ * The CLI entry point. A thin layer that only dispatches to subcommands.
  */
 final class Application
 {
@@ -36,15 +36,15 @@ final class Application
             ministan {$this->versionLine()}
 
             Usage:
-              ministan analyse [options] <paths...>   ファイル／ディレクトリを解析する
-              ministan annotate <file>                推論された型を表示する
+              ministan analyse [options] <paths...>   analyse files / directories
+              ministan annotate <file>                show the inferred types
 
             analyse options:
-              --level=N                 ルールレベル（0..9, 既定 5）
-              --error-format=json       JSON で出力する
-              --baseline=FILE           既知の指摘を無視する
-              --generate-baseline[=FILE]  現在の指摘を baseline に書き出す
-              --cache[=DIR]             結果キャッシュを使う（既定 .ministan-cache）
+              --level=N                 rule level (0..9, default 5)
+              --error-format=json       produce JSON output
+              --baseline=FILE           ignore known findings
+              --generate-baseline[=FILE]  write out the current findings to the baseline
+              --cache[=DIR]             use the result cache (default .ministan-cache)
 
             TXT;
 

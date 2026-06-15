@@ -13,13 +13,13 @@ use Ministan\Output\TableErrorFormatter;
 use Ministan\Rules\RuleRegistryFactory;
 
 /**
- * `ministan analyse [options] <paths...>` の実装。
+ * Implementation of `ministan analyse [options] <paths...>`.
  *
- * オプション:
- *   --level=N              ルールレベル（0..9, 既定 5）
- *   --error-format=json    JSON で出力する（既定は表）
- *   --baseline=FILE        FILE に載った既知の指摘を無視する
- *   --generate-baseline[=FILE]  現在の指摘を baseline として書き出す
+ * Options:
+ *   --level=N              rule level (0..9, default 5)
+ *   --error-format=json    produce JSON output (default is the table)
+ *   --baseline=FILE        ignore known findings listed in FILE
+ *   --generate-baseline[=FILE]  write out the current findings to the baseline
  */
 final class AnalyseCommand
 {

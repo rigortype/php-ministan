@@ -41,7 +41,7 @@ final class RuleLevelTest extends TestCase
 
     public function testHigherLevelIncludesLowerLevelRules(): void
     {
-        // level 0 でも未定義メソッドは検出される。
+        // Undefined methods are detected even at level 0.
         $messages = $this->messagesFor('undefined-method.php', 0);
 
         self::assertContains('Call to an undefined method Box::close().', $messages);

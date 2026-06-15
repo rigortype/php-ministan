@@ -7,11 +7,12 @@ namespace Ministan\Output;
 use Ministan\Analyser\Error;
 
 /**
- * 既存の指摘を「許容済み」として記録し、次回以降は無視する仕組み。
+ * A mechanism that records existing findings as "accepted" and ignores them from then on.
  *
- * レガシーコードに PHPStan を導入する第一歩。今あるエラーを baseline に固め、
- * 「これ以上増やさない」運用を可能にする。本実装は (ファイル, メッセージ) の組で
- * 突き合わせる簡略版（PHPStan は件数まで見る）。フォーマットは JSON。
+ * The first step in introducing PHPStan to legacy code. Freeze today's errors into a
+ * baseline so you can run a "don't add any more" policy. This implementation is a
+ * simplified version that matches on the (file, message) pair (PHPStan also looks at the
+ * count). The format is JSON.
  */
 final class Baseline
 {
@@ -29,7 +30,7 @@ final class Baseline
     }
 
     /**
-     * baseline に載っている指摘を取り除く。
+     * Removes findings that are listed in the baseline.
      *
      * @param list<Error> $errors
      *

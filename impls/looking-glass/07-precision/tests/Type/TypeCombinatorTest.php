@@ -48,7 +48,7 @@ final class TypeCombinatorTest extends TestCase
 
     public function testUnionAbsorbsSubtypes(): void
     {
-        // 0 は int の部分型 → int に吸収される。
+        // 0 is a subtype of int → absorbed into int.
         self::assertSame('int', TypeCombinator::union(new IntegerType(), new ConstantIntegerType(0))->describe());
         self::assertSame('int', TypeCombinator::union(new ConstantIntegerType(0), new IntegerType())->describe());
     }

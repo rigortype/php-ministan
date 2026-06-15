@@ -23,16 +23,17 @@ use PhpParser\Node\Name;
 use PhpParser\Node\Scalar;
 
 /**
- * ある地点で「いま何が分かっているか」を表す不変オブジェクト。
+ * An immutable object representing "what is known at a given point".
  *
- * Part 2 では「変数が定義済みか」だけを持っていた。Part 4 でそれを **変数→型** の
- * 対応へ育て、さらに {@see getType()} で任意の式の型を推論できるようにする。
- * これが PHPStan の `Scope::getType()` に対応する、型推論の本体。
+ * In Part 2 it held only "whether a variable is defined". Part 4 grows that into a
+ * **variable -> type** mapping and, via {@see getType()}, lets it infer the type of
+ * any expression. This is the heart of type inference, corresponding to PHPStan's
+ * `Scope::getType()`.
  */
 final readonly class Scope
 {
     /**
-     * @param array<string, Type> $variableTypes 定義済み変数名 → その型
+     * @param array<string, Type> $variableTypes defined variable name -> its type
      */
     private function __construct(
         private array $variableTypes,
@@ -65,7 +66,7 @@ final readonly class Scope
     }
 
     /**
-     * 変数の型。未定義なら mixed に縮退する（non-rejecting）。
+     * The type of a variable. If undefined, it collapses to mixed (non-rejecting).
      */
     public function getVariableType(string $name): Type
     {
@@ -78,9 +79,10 @@ final readonly class Scope
     }
 
     /**
-     * 2 つのスコープを合流する。両方で定義された変数は型を **union** で合併する
-     * （then で int・else で string なら、合流後は int|string）。片方だけの変数は
-     * 楽観的に残し、偽陽性を出さない。
+     * Merges two scopes. A variable defined in both has its types combined with a
+     * **union** (int in the then-branch and string in the else-branch becomes
+     * int|string after the merge). A variable present in only one branch is kept
+     * optimistically, so no false positives are produced.
      */
     public function mergeWith(self $other): self
     {
@@ -95,38 +97,40 @@ final readonly class Scope
     }
 
     /**
-     * 式の型を推論する。型システムが初めて「動いて見える」場所。
+     * Infers the type of an expression. The first place where the type system
+     * "visibly comes to life".
      *
-     * Part 4 ではリテラル・定数・変数参照・基本的な二項/単項演算を扱う。
-     * メソッド呼び出しや配列アクセスは、リフレクション（Part 6）以降で精密化する。
+     * Part 4 handles literals, constants, variable references, and basic
+     * binary/unary operations. Method calls and array access are refined from
+     * reflection (Part 6) onward.
      */
     public function getType(Expr $expr): Type
     {
         return match (true) {
-            // --- リテラル → 定数型 ---
+            // --- literal -> constant type ---
             $expr instanceof Scalar\Int_    => new ConstantIntegerType($expr->value),
             $expr instanceof Scalar\String_ => new ConstantStringType($expr->value),
-            $expr instanceof Scalar\Float_  => new FloatType(), // 定数 float 型は後章
+            $expr instanceof Scalar\Float_  => new FloatType(), // constant float type comes in a later chapter
 
             // --- true / false / null ---
             $expr instanceof Expr\ConstFetch => $this->constFetchType($expr),
 
-            // --- 変数参照 ---
+            // --- variable reference ---
             $expr instanceof Expr\Variable => is_string($expr->name)
                 ? $this->getVariableType($expr->name)
                 : new MixedType(),
 
-            // --- オブジェクト生成・呼び出し（リフレクションを使う）---
+            // --- object construction and calls (these use reflection) ---
             $expr instanceof Expr\New_ => $expr->class instanceof Name
                 ? new ObjectType($expr->class->toString())
                 : new MixedType(),
             $expr instanceof Expr\MethodCall => $this->methodCallType($expr),
             $expr instanceof Expr\FuncCall => $this->funcCallType($expr),
 
-            // --- 文字列連結は常に string ---
+            // --- string concatenation is always string ---
             $expr instanceof Expr\BinaryOp\Concat => new StringType(),
 
-            // --- 算術 ---
+            // --- arithmetic ---
             $expr instanceof Expr\BinaryOp\Plus,
             $expr instanceof Expr\BinaryOp\Minus,
             $expr instanceof Expr\BinaryOp\Mul => $this->arithmeticType($expr),
@@ -134,7 +138,7 @@ final readonly class Scope
             $expr instanceof Expr\UnaryMinus,
             $expr instanceof Expr\UnaryPlus => $this->toNumeric($this->getType($expr->expr)),
 
-            // --- 比較・論理は常に bool ---
+            // --- comparison and logical operators are always bool ---
             $expr instanceof Expr\BinaryOp\Identical,
             $expr instanceof Expr\BinaryOp\NotIdentical,
             $expr instanceof Expr\BinaryOp\Equal,
@@ -147,7 +151,7 @@ final readonly class Scope
             $expr instanceof Expr\BinaryOp\BooleanOr,
             $expr instanceof Expr\BooleanNot => new BooleanType(),
 
-            // --- 分からないものは mixed に縮退 ---
+            // --- anything unknown collapses to mixed ---
             default => new MixedType(),
         };
     }

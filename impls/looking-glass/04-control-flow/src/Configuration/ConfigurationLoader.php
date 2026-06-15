@@ -8,9 +8,9 @@ use Ministan\Rules\RuleRegistryFactory;
 use Nette\Neon\Neon;
 
 /**
- * NEON 設定ファイルを {@see Configuration} に読み込む。
+ * Loads a NEON config file into a {@see Configuration}.
  *
- * PHPStan が `phpstan.neon` を読むのと同じ位置づけ。本物に倣い NEON を採用する。
+ * The same role as PHPStan reading `phpstan.neon`. Following the real thing, we adopt NEON.
  *
  * ```neon
  * parameters:

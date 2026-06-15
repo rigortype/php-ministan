@@ -17,13 +17,13 @@ final class AnnotateCommandTest extends TestCase
 
         self::assertSame(0, $exitCode);
 
-        // 定数畳み込みはしないので $a = 42 は 42、$b = $a + 1 は int。
+        // No constant folding, so $a = 42 is 42 and $b = $a + 1 is int.
         self::assertMatchesRegularExpression('/\$a\s+:\s+42$/m', $output);
         self::assertMatchesRegularExpression('/\$b\s+:\s+int$/m', $output);
         self::assertMatchesRegularExpression("/\\\$c\s+:\s+'hello'$/m", $output);
         self::assertMatchesRegularExpression('/\$d\s+:\s+string$/m', $output);
         self::assertMatchesRegularExpression('/\$e\s+:\s+bool$/m', $output);
-        // 関数内: $text は string、return も string。
+        // Inside the function: $text is string, and return is string too.
         self::assertMatchesRegularExpression('/\$text\s+:\s+string$/m', $output);
         self::assertMatchesRegularExpression('/return\s+:\s+string$/m', $output);
     }
@@ -47,10 +47,10 @@ final class AnnotateCommandTest extends TestCase
         $output = ob_get_clean();
 
         self::assertSame(0, $exitCode);
-        self::assertMatchesRegularExpression('/\$a\s+:\s+42$/m', $output);          // 汎関数の置換
+        self::assertMatchesRegularExpression('/\$a\s+:\s+42$/m', $output);          // generic function substitution
         self::assertMatchesRegularExpression("/\\\$b\s+:\s+'hello'$/m", $output);
-        self::assertMatchesRegularExpression('/\$box\s+:\s+Box<int>$/m', $output);   // @var ジェネリック
-        self::assertMatchesRegularExpression('/\$value\s+:\s+int$/m', $output);      // メソッド戻り値の置換
+        self::assertMatchesRegularExpression('/\$box\s+:\s+Box<int>$/m', $output);   // @var generic
+        self::assertMatchesRegularExpression('/\$value\s+:\s+int$/m', $output);      // method return value substitution
     }
 
     public function testPhpDocDrivesInference(): void
@@ -60,9 +60,9 @@ final class AnnotateCommandTest extends TestCase
         $output = ob_get_clean();
 
         self::assertSame(0, $exitCode);
-        // @return array<int, string> が呼び出し結果に伝わる。
+        // @return array<int, string> propagates to the call result.
         self::assertMatchesRegularExpression('/\$result\s+:\s+array<int, string>$/m', $output);
-        // @var int が右辺の mixed を上書きする。
+        // @var int overrides the mixed on the right-hand side.
         self::assertMatchesRegularExpression('/\$count\s+:\s+int$/m', $output);
     }
 }

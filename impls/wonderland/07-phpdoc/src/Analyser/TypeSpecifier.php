@@ -17,10 +17,12 @@ use PhpParser\Node\Expr;
 use PhpParser\Node\Name;
 
 /**
- * 条件式から、真／偽それぞれの分岐で成り立つ型の絞り込みを導く。
+ * Derives, from a condition, the type narrowing that holds on the true and false
+ * branches respectively.
  *
- * PHPStan の {@see \PHPStan\Analyser\TypeSpecifier} に対応する核。`instanceof`、
- * `is_int()` 等の型述語、`=== null`、`isset()`、`!`・`&&`・`||` を扱う。
+ * The core corresponding to PHPStan's {@see \PHPStan\Analyser\TypeSpecifier}. It
+ * handles `instanceof`, type predicates such as `is_int()`, `=== null`, `isset()`,
+ * and `!`, `&&`, `||`.
  */
 final class TypeSpecifier
 {
@@ -61,7 +63,7 @@ final class TypeSpecifier
 
     private function specifyAnd(Expr\BinaryOp $condition, Scope $scope): SpecifiedTypes
     {
-        // 真: 両条件が真。偽: どちらかが偽（精密化は見送り、元のスコープ）。
+        // True: both conditions are true. False: either one is false (refinement skipped, original scope).
         $left = $this->specify($condition->left, $scope);
         $right = $this->specify($condition->right, $left->truthy);
 
@@ -70,7 +72,7 @@ final class TypeSpecifier
 
     private function specifyOr(Expr\BinaryOp $condition, Scope $scope): SpecifiedTypes
     {
-        // 偽: 両条件が偽。真: どちらかが真（精密化は見送り）。
+        // False: both conditions are false. True: either one is true (refinement skipped).
         $left = $this->specify($condition->left, $scope);
         $right = $this->specify($condition->right, $left->falsy);
 
@@ -85,7 +87,7 @@ final class TypeSpecifier
         ) {
             $truthy = $scope->assignVariable($condition->expr->name, new ObjectType($condition->class->toString()));
 
-            // falsy 側の引き算は継承関係が要るので Part 6 まで見送り。
+            // Subtracting on the falsy side needs the inheritance hierarchy, so it waits until Part 6.
             return new SpecifiedTypes($truthy, $scope);
         }
 
@@ -137,7 +139,7 @@ final class TypeSpecifier
         $truthy = $scope;
         foreach ($condition->vars as $var) {
             if ($var instanceof Expr\Variable && is_string($var->name)) {
-                // 真の枝では「定義済みかつ非 null」。未定義なら mixed として定義される。
+                // On the true branch the variable is "defined and non-null"; if it was undefined, it becomes defined as mixed.
                 $current = $scope->getVariableType($var->name);
                 $truthy = $truthy->assignVariable($var->name, TypeCombinator::remove($current, new NullType()));
             }
@@ -166,7 +168,8 @@ final class TypeSpecifier
     }
 
     /**
-     * 等価比較の片側が「変数」、もう片側が「値の式」になるよう並べ替える。
+     * Reorders an equality comparison so that one side is a "variable" and the
+     * other is a "value expression".
      *
      * @return array{Expr\Variable, Expr}|array{null, null}
      */

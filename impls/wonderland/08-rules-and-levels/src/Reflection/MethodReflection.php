@@ -10,10 +10,11 @@ use PhpParser\Node\Stmt\ClassMethod;
 use ReflectionMethod;
 
 /**
- * メソッド 1 つのシグネチャ。名前・パラメータ型・戻り値型。
+ * The signature of a single method: name, parameter types, and return type.
  *
- * 型は「PHPDoc があれば PHPDoc、無ければネイティブ宣言」で決める。PHPStan と同じく
- * PHPDoc を上位に置くのは、`array<int, string>` のようにネイティブより精密に書けるから。
+ * Types are decided as "PHPDoc if present, otherwise the native declaration." Like PHPStan,
+ * PHPDoc is given priority because it can express more precise types than the native one,
+ * such as `array<int, string>`.
  */
 final readonly class MethodReflection
 {

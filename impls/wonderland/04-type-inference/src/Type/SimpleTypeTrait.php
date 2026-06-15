@@ -7,12 +7,12 @@ namespace Ministan\Type;
 use Ministan\TrinaryLogic;
 
 /**
- * 単純な値型（int, string, null …）が共有する定型処理。
+ * Boilerplate shared by simple value types (int, string, null …).
  *
- * - `accepts` は `isSuperTypeOf` に委譲する（これらの型では代入可能性＝部分型関係）。
- *   float が int を受け入れる、といった暗黙変換は後の章の精密化に回す。
- * - `equals` は同じクラスかどうか。定数型は値も比べるので個別に上書きする。
- * - `relateToTopAndBottom` は、どの型にも共通の「上端 mixed・下端 never」との関係を返す。
+ * - `accepts` delegates to `isSuperTypeOf` (for these types, assignability = the subtype relation).
+ *   Implicit conversions, such as float accepting int, are deferred to a refinement in a later chapter.
+ * - `equals` checks whether the class is the same. Constant types also compare values, so they override it individually.
+ * - `relateToTopAndBottom` returns the relation to the "top mixed, bottom never" that is common to every type.
  */
 trait SimpleTypeTrait
 {
@@ -27,8 +27,8 @@ trait SimpleTypeTrait
     }
 
     /**
-     * never はあらゆる型の部分型（= 常に Yes）。mixed はどの型でもありうる（= Maybe）。
-     * どちらでもなければ null を返し、呼び出し側の固有判定に委ねる。
+     * never is a subtype of every type (= always Yes). mixed could be any type (= Maybe).
+     * If it is neither, return null and defer to the caller's own decision.
      */
     protected static function relateToTopAndBottom(Type $type): ?TrinaryLogic
     {

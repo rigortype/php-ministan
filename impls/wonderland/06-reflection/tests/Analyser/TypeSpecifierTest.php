@@ -17,7 +17,7 @@ use PHPUnit\Framework\TestCase;
 final class TypeSpecifierTest extends TestCase
 {
     /**
-     * 与えた条件式 1 つを含む小さなコードをパースし、その条件ノードを取り出す。
+     * Parse a small snippet containing a single condition expression and extract that condition node.
      */
     private function conditionOf(string $expr): \PhpParser\Node\Expr
     {
@@ -35,7 +35,7 @@ final class TypeSpecifierTest extends TestCase
         $specified = (new TypeSpecifier())->specify($this->conditionOf('is_int($x)'), $scope);
 
         self::assertSame('int', $specified->truthy->getVariableType('x')->describe());
-        // mixed から int を引いても mixed のまま（mixed は分解できない）。
+        // Removing int from mixed still leaves mixed (mixed cannot be decomposed).
         self::assertSame('mixed', $specified->falsy->getVariableType('x')->describe());
     }
 

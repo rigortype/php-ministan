@@ -7,7 +7,7 @@ namespace Ministan\Output;
 use Ministan\Analyser\Error;
 
 /**
- * 人間向けの既定フォーマット。ファイルごとにまとめて表示する。
+ * The default human-facing format. Groups and displays findings by file.
  */
 final class TableErrorFormatter implements ErrorFormatter
 {

@@ -7,16 +7,16 @@ namespace Ministan\Type;
 use Ministan\TrinaryLogic;
 
 /**
- * 型を表す代数的オブジェクト。PHPStan の {@see \PHPStan\Type\Type} に対応する核。
+ * The algebraic object that represents a type. The core corresponding to PHPStan's {@see \PHPStan\Type\Type}.
  *
- * 3 つの基本演算で型どうしの関係を問う:
+ * Three basic operations ask about the relation between types:
  *
- * - {@see describe()} … 人間向けの文字列（`int`, `'foo'`, `mixed` …）
- * - {@see isSuperTypeOf()} … 部分型関係。「$type の値はすべて自分の値か？」
- * - {@see accepts()} … 代入可能性。「自分の場所に $type の値を入れてよいか？」
+ * - {@see describe()} … a human-facing string (`int`, `'foo'`, `mixed` …)
+ * - {@see isSuperTypeOf()} … the subtype relation. "Are all of $type's values also my values?"
+ * - {@see accepts()} … assignability. "May I put a value of $type into my slot?"
  *
- * いずれも答えは {@see TrinaryLogic}。`int` は `mixed` を「たぶん」受け入れ、
- * `string` は決して `int` を受け入れない（いいえ）。この「たぶん」がレベル制の鍵。
+ * Every answer is a {@see TrinaryLogic}. `int` accepts `mixed` with "maybe", and
+ * `string` never accepts `int` (no). That "maybe" is the key to the level system.
  */
 interface Type
 {

@@ -8,7 +8,7 @@ use Ministan\Command\AnalyseCommand;
 use Ministan\Command\AnnotateCommand;
 
 /**
- * CLI のエントリポイント。サブコマンドを振り分けるだけの薄い層。
+ * The CLI entry point. A thin layer that only dispatches to subcommands.
  */
 final class Application
 {
@@ -36,8 +36,8 @@ final class Application
             ministan {$this->versionLine()}
 
             Usage:
-              ministan analyse [--level=N] <file>   PHP ファイルを解析する（N=0..9, 既定 5）
-              ministan annotate <file>              推論された型を表示する
+              ministan analyse [--level=N] <file>   analyse a PHP file (N=0..9, default 5)
+              ministan annotate <file>              show the inferred types
 
             TXT;
 

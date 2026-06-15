@@ -5,10 +5,11 @@ declare(strict_types=1);
 namespace Ministan\Analyser;
 
 /**
- * ある条件式が真／偽だったとき、それぞれで成り立つスコープの組。
+ * The pair of scopes that hold when a given condition is true vs. false.
  *
- * `if ($x instanceof Foo)` なら truthy では $x: Foo、falsy では元のまま、というふうに、
- * 条件が分岐の両側で型をどう狭めるかを表す。PHPStan の `SpecifiedTypes` に相当。
+ * For `if ($x instanceof Foo)`, the truthy scope has $x: Foo while the falsy scope
+ * keeps it unchanged. This captures how a condition narrows types on each side of
+ * the branch. Corresponds to PHPStan's `SpecifiedTypes`.
  */
 final readonly class SpecifiedTypes
 {
@@ -18,7 +19,7 @@ final readonly class SpecifiedTypes
     ) {
     }
 
-    /** 否定（`!`）は真偽を入れ替えるだけ。 */
+    /** Negation (`!`) simply swaps the truthy and falsy scopes. */
     public function negate(): self
     {
         return new self($this->falsy, $this->truthy);

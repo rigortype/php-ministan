@@ -14,11 +14,12 @@ use PhpParser\Node\Expr\MethodCall;
 use PhpParser\Node\Identifier;
 
 /**
- * 既知のクラスに対する、存在しないメソッド呼び出しを検出する。
+ * Detects a call to a non-existent method on a known class.
  *
- * non-rejecting を厳守する。オブジェクトの型が確定した {@see ObjectType} で、その
- * クラスがリフレクションで引け、メソッドが確実に無く、`__call` も無い——この全部が
- * 揃ったときだけ報告する。少しでも不明なら黙る。
+ * It strictly honors non-rejecting. It reports only when all of the following hold: the
+ * object's type is a determined {@see ObjectType}, that class can be looked up via reflection,
+ * the method is definitely absent, and there is no `__call` either. If anything is the least
+ * bit uncertain, it stays silent.
  *
  * @implements Rule<MethodCall>
  */
@@ -29,12 +30,12 @@ final class CallToUndefinedMethodRule implements Rule
         assert($node instanceof MethodCall);
 
         if (!$node->name instanceof Identifier) {
-            return []; // 動的メソッド名 $obj->$m() は追わない
+            return []; // do not follow a dynamic method name like $obj->$m()
         }
 
         $objectType = $scope->getType($node->var);
         if (!$objectType instanceof ObjectType) {
-            return []; // 型が確定していない → 黙る
+            return []; // type not determined -> stay silent
         }
 
         $provider = ReflectionProviderStaticAccessor::getInstanceOrNull();

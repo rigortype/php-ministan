@@ -1,5 +1,5 @@
 diff --git a/dev/src/Analyser/Analyser.php b/dev/src/Analyser/Analyser.php
-index a594505..4c7ef57 100644
+index 9e16573..67c2580 100644
 --- a/dev/src/Analyser/Analyser.php
 +++ b/dev/src/Analyser/Analyser.php
 @@ -6,14 +6,14 @@ namespace Ministan\Analyser;
@@ -10,12 +10,12 @@ index a594505..4c7ef57 100644
  use PhpParser\ParserFactory;
  
  /**
-  * 解析パイプラインの入口。
+  * The entry point of the analysis pipeline.
   *
-  * Part 0: 構文エラーの翻訳。
-- * Part 1: パース済み AST にルール群を適用する（← イマココ）。
-+ * Part 1: パース済み AST にルール群を適用する。
-+ * Part 2: スコープを伝播させながらルールを適用する（← イマココ）。
+  * Part 0: translate syntax errors.
+- * Part 1: apply the rules to a parsed AST (<- we are here).
++ * Part 1: apply the rules to a parsed AST.
++ * Part 2: apply the rules while propagating scope (<- we are here).
   */
  final class Analyser
  {
@@ -33,10 +33,10 @@ index a594505..4c7ef57 100644
  }
 diff --git a/dev/src/Analyser/NodeScopeResolver.php b/dev/src/Analyser/NodeScopeResolver.php
 new file mode 100644
-index 0000000..3b83fa5
+index 0000000..f4b59e1
 --- /dev/null
 +++ b/dev/src/Analyser/NodeScopeResolver.php
-@@ -0,0 +1,361 @@
+@@ -0,0 +1,365 @@
 +<?php
 +
 +declare(strict_types=1);
@@ -49,20 +49,23 @@ index 0000000..3b83fa5
 +use PhpParser\Node\Stmt;
 +
 +/**
-+ * AST を下りながら {@see Scope} を運び、各ノードでルールを適用する。
++ * Walks down the AST, carrying a {@see Scope} along, and applies rules at each node.
 + *
-+ * PHPStan の {@see \PHPStan\Analyser\NodeScopeResolver} に対応する核。
-+ * Part 1 の RuleApplyingVisitor（ノードを訪れるだけ）を、ここで「スコープを
-+ * 伝播させる再帰下降」へと育てた。
++ * The core corresponding to PHPStan's {@see \PHPStan\Analyser\NodeScopeResolver}.
++ * Part 1's RuleApplyingVisitor (which only visited nodes) is grown here into a
++ * recursive descent that propagates a scope.
 + *
-+ * 設計の要は「読み取り文脈と書き込み文脈を区別する」こと。`$x = 1` の左辺 `$x` は
-+ * **定義**であって未定義チェックの対象ではない。`foreach (... as $v)` の `$v` も同様。
-+ * そうした束縛構文だけを個別に捌き、それ以外は {@see processChildren()} で機械的に
-+ * 子へ降りる。降りた先で出会う Variable は「読み取り」なのでルールに掛かる。
++ * The crux of the design is to "distinguish between read and write context". The
++ * `$x` on the left-hand side of `$x = 1` is a **definition**, not a target of the
++ * undefined-variable check. The `$v` in `foreach (... as $v)` is the same. We handle
++ * only such binding constructs individually, and for everything else descend
++ * mechanically into the children via {@see processChildren()}. A Variable we meet
++ * once we have descended is a "read", so it is subject to rules.
 + *
-+ * 制御構文（if/while/for/try…）は専用処理を持たず、子を順に辿るだけにしている。
-+ * 代入は前方へ伝播し、合流は {@see Scope::mergeWith()} の楽観的和集合になるため、
-+ * 偽陽性を出さない。経路に敏感な精密化（「全経路で定義されたか」）は Part 5 で扱う。
++ * Control constructs (if/while/for/try...) have no dedicated handling; they merely
++ * walk their children in order. Assignments propagate forward, and merges become the
++ * optimistic union of {@see Scope::mergeWith()}, so no false positives are emitted.
++ * Path-sensitive refinement ("is it defined on every path?") is covered in Part 5.
 + */
 +final class NodeScopeResolver
 +{
@@ -105,13 +108,13 @@ index 0000000..3b83fa5
 +        $this->applyRules($node, $scope);
 +
 +        return match (true) {
-+            // --- スコープ境界を作る構文 ---
++            // --- constructs that create a scope boundary ---
 +            $node instanceof Stmt\Function_,
 +            $node instanceof Stmt\ClassMethod    => $this->processFunctionLike($node, $scope),
 +            $node instanceof Expr\Closure        => $this->processClosure($node, $scope),
 +            $node instanceof Expr\ArrowFunction  => $this->processArrowFunction($node, $scope),
 +
-+            // --- 変数を束縛する構文 ---
++            // --- constructs that bind variables ---
 +            $node instanceof Expr\Assign,
 +            $node instanceof Expr\AssignRef      => $this->processAssign($node, $scope),
 +            $node instanceof Expr\AssignOp       => $this->processAssignOp($node, $scope),
@@ -120,16 +123,16 @@ index 0000000..3b83fa5
 +            $node instanceof Stmt\Global_        => $this->processGlobal($node, $scope),
 +            $node instanceof Stmt\Static_        => $this->processStaticVars($node, $scope),
 +
-+            // --- 未定義変数を許容する読み取り文脈 ---
-+            // isset($x) / empty($x) は未定義でも合法。中は未定義チェックしない。
++            // --- read context that tolerates undefined variables ---
++            // isset($x) / empty($x) is legal even when undefined. We do not run the undefined check inside.
 +            $node instanceof Expr\Isset_,
 +            $node instanceof Expr\Empty_         => $scope,
 +            $node instanceof Expr\BinaryOp\Coalesce => $this->processCoalesce($node, $scope),
 +
-+            // --- 変数そのもの（読み取り）。ルール適用済み、子はない ---
++            // --- the variable itself (a read). Rules already applied, no children ---
 +            $node instanceof Expr\Variable       => $scope,
 +
-+            // --- それ以外は子へ降り、スコープを順に伝播 ---
++            // --- everything else descends into children, propagating the scope in order ---
 +            default => $this->processChildren($node, $scope),
 +        };
 +    }
@@ -158,11 +161,11 @@ index 0000000..3b83fa5
 +        return $scope;
 +    }
 +
-+    // --- 代入 ---
++    // --- assignment ---
 +
 +    private function processAssign(Expr\Assign|Expr\AssignRef $node, Scope $scope): Scope
 +    {
-+        // 右辺を先に解析する（右辺の変数は読み取りなので未定義チェックの対象）。
++        // Analyse the right-hand side first (a variable on the right is a read, so it is subject to the undefined check).
 +        $scope = $this->processNode($node->expr, $scope);
 +
 +        return $this->processAssignTarget($node->var, $scope);
@@ -170,16 +173,17 @@ index 0000000..3b83fa5
 +
 +    private function processAssignOp(Expr\AssignOp $node, Scope $scope): Scope
 +    {
-+        // 複合代入（+= など）の対象は読みも兼ねるが、ここでは定義として扱い
-+        // 偽陽性を避ける（厳密な「未定義への +=」検出は後の章へ）。
++        // A compound assignment (+= etc.) target also reads, but here we treat it as a definition
++        // to avoid false positives (precise detection of "+= on an undefined variable" comes in a later chapter).
 +        $scope = $this->processNode($node->expr, $scope);
 +
 +        return $this->processAssignTarget($node->var, $scope);
 +    }
 +
 +    /**
-+     * 代入の**左辺**を処理し、束縛された変数をスコープに加える。
-+     * 左辺の Variable は「定義」なので未定義チェックには掛けない。
++     * Processes the **left-hand side** of an assignment and adds the bound variable
++     * to the scope. A Variable on the left-hand side is a "definition", so it is not
++     * subject to the undefined check.
 +     */
 +    private function processAssignTarget(Expr $target, Scope $scope): Scope
 +    {
@@ -188,14 +192,14 @@ index 0000000..3b83fa5
 +                ? $scope->assignVariable($target->name)
 +                : $this->processNode($target, $scope),
 +
-+            // 分割代入: [$a, $b] = ... / list($a, $b) = ...
++            // destructuring assignment: [$a, $b] = ... / list($a, $b) = ...
 +            $target instanceof Expr\List_,
 +            $target instanceof Expr\Array_ => $this->processListAssign($target, $scope),
 +
-+            // $arr[$i] = ... / $arr[] = ... : 添字は読み取り、根の変数は定義（自動生成）
++            // $arr[$i] = ... / $arr[] = ... : the index is a read, the root variable is a definition (auto-created)
 +            $target instanceof Expr\ArrayDimFetch => $this->processArrayDimAssign($target, $scope),
 +
-+            // $obj->p = ... / Foo::$p = ... : オブジェクト側は読み取り。新しい変数は生まれない
++            // $obj->p = ... / Foo::$p = ... : the object side is a read. No new variable is born
 +            default => $this->processNode($target, $scope),
 +        };
 +    }
@@ -204,11 +208,11 @@ index 0000000..3b83fa5
 +    {
 +        foreach ($node->items as $item) {
 +            if ($item === null) {
-+                continue; // [, $b] = ... の空き
++                continue; // a hole in [, $b] = ...
 +            }
 +
 +            if ($item->key !== null) {
-+                $scope = $this->processNode($item->key, $scope); // キーは読み取り
++                $scope = $this->processNode($item->key, $scope); // the key is a read
 +            }
 +
 +            $scope = $this->processAssignTarget($item->value, $scope);
@@ -220,17 +224,17 @@ index 0000000..3b83fa5
 +    private function processArrayDimAssign(Expr\ArrayDimFetch $node, Scope $scope): Scope
 +    {
 +        if ($node->dim !== null) {
-+            $scope = $this->processNode($node->dim, $scope); // 添字は読み取り
++            $scope = $this->processNode($node->dim, $scope); // the index is a read
 +        }
 +
-+        return $this->processAssignTarget($node->var, $scope); // 根を定義
++        return $this->processAssignTarget($node->var, $scope); // the root is a definition
 +    }
 +
-+    // --- ループ・例外・宣言 ---
++    // --- loops, exceptions, declarations ---
 +
 +    private function processForeach(Stmt\Foreach_ $node, Scope $scope): Scope
 +    {
-+        $scope = $this->processNode($node->expr, $scope); // 反復対象は読み取り
++        $scope = $this->processNode($node->expr, $scope); // the iterated expression is a read
 +
 +        $loopScope = $scope;
 +        if ($node->keyVar !== null) {
@@ -240,7 +244,7 @@ index 0000000..3b83fa5
 +
 +        $bodyScope = $this->processStmts($node->stmts, $loopScope);
 +
-+        // ループは 0 回かもしれない。楽観的に合流して偽陽性を避ける（ループ変数は残る）。
++        // The loop may run zero times. Merge optimistically to avoid false positives (the loop variables remain).
 +        return $scope->mergeWith($bodyScope);
 +    }
 +
@@ -280,15 +284,15 @@ index 0000000..3b83fa5
 +
 +    private function processCoalesce(Expr\BinaryOp\Coalesce $node, Scope $scope): Scope
 +    {
-+        // `$x ?? d` は左辺が未定義でも安全（短絡）。左辺は未定義チェックせず辿る。
++        // `$x ?? d` is safe even when the left-hand side is undefined (short-circuit). We walk the left-hand side without the undefined check.
 +        $scope = $this->processSilently($node->left, $scope);
 +
 +        return $this->processNode($node->right, $scope);
 +    }
 +
 +    /**
-+     * スコープは伝播させつつ、配下の Variable 読み取りを未定義チェックに掛けない。
-+     * isset() 相当の寛容な文脈で使う。
++     * Propagates the scope while not subjecting the Variable reads beneath it to the
++     * undefined check. Used in the lenient context equivalent to isset().
 +     */
 +    private function processSilently(Node $node, Scope $scope): Scope
 +    {
@@ -312,7 +316,7 @@ index 0000000..3b83fa5
 +        return $scope;
 +    }
 +
-+    // --- 関数・クロージャ（スコープ境界）---
++    // --- functions and closures (scope boundaries) ---
 +
 +    private function processFunctionLike(Stmt\Function_|Stmt\ClassMethod $node, Scope $outer): Scope
 +    {
@@ -323,11 +327,11 @@ index 0000000..3b83fa5
 +            $inner = $inner->assignVariable('this');
 +        }
 +
-+        if ($node->stmts !== null) { // 抽象メソッド・インターフェイスは null
++        if ($node->stmts !== null) { // null for abstract methods and interfaces
 +            $this->processStmts($node->stmts, $inner);
 +        }
 +
-+        return $outer; // 関数定義は外側の変数を増やさない
++        return $outer; // a function definition does not add variables to the outer scope
 +    }
 +
 +    private function processClosure(Expr\Closure $node, Scope $outer): Scope
@@ -336,7 +340,7 @@ index 0000000..3b83fa5
 +        $inner = $this->bindParams($node->params, $inner);
 +
 +        foreach ($node->uses as $use) {
-+            // 値渡しの use($x) は外側の読み取り。&付きは外側に変数を生む。
++            // A by-value use($x) is a read from the outer scope. One with & creates a variable in the outer scope.
 +            if ($use->byRef) {
 +                if (is_string($use->var->name)) {
 +                    $outer = $outer->assignVariable($use->var->name);
@@ -361,7 +365,7 @@ index 0000000..3b83fa5
 +
 +    private function processArrowFunction(Expr\ArrowFunction $node, Scope $outer): Scope
 +    {
-+        // アロー関数は外側を値で自動キャプチャする。
++        // An arrow function captures the outer scope automatically by value.
 +        $inner = $this->bindParams($node->params, $outer);
 +
 +        if (!$node->static) {
@@ -400,10 +404,10 @@ index 0000000..3b83fa5
 +}
 diff --git a/dev/src/Analyser/RuleApplyingVisitor.php b/dev/src/Analyser/RuleApplyingVisitor.php
 deleted file mode 100644
-index bd93f97..0000000
+index 88d4edd..0000000
 --- a/dev/src/Analyser/RuleApplyingVisitor.php
 +++ /dev/null
-@@ -1,47 +0,0 @@
+@@ -1,48 +0,0 @@
 -<?php
 -
 -declare(strict_types=1);
@@ -415,11 +419,12 @@ index bd93f97..0000000
 -use PhpParser\NodeVisitorAbstract;
 -
 -/**
-- * AST を 1 ノードずつ歩き、各ノードに反応するルールを適用して {@see Error} を集める。
+- * Walks the AST one node at a time, applies the rules that react to each node, and
+- * collects {@see Error}s.
 - *
-- * PHPStan ではスコープを伝播させる NodeScopeResolver がこの役目を担うが、
-- * Part 1 ではまだ型もスコープもない。「ノードを訪れてルールを当てる」核だけを置く。
-- * Part 2 でここに {@see Scope} の伝播が加わる。
+- * In PHPStan this role is played by NodeScopeResolver, which also propagates scope; in
+- * Part 1 we have neither types nor scope yet, so this holds just the core: "visit a node,
+- * apply the rules." Part 2 adds {@see Scope} propagation here.
 - */
 -final class RuleApplyingVisitor extends NodeVisitorAbstract
 -{
@@ -453,10 +458,10 @@ index bd93f97..0000000
 -}
 diff --git a/dev/src/Analyser/Scope.php b/dev/src/Analyser/Scope.php
 new file mode 100644
-index 0000000..e589c0b
+index 0000000..4262b7b
 --- /dev/null
 +++ b/dev/src/Analyser/Scope.php
-@@ -0,0 +1,80 @@
+@@ -0,0 +1,82 @@
 +<?php
 +
 +declare(strict_types=1);
@@ -464,19 +469,20 @@ index 0000000..e589c0b
 +namespace Ministan\Analyser;
 +
 +/**
-+ * ある地点で「いま何が分かっているか」を表す不変オブジェクト。
++ * An immutable object representing "what is known at a given point".
 + *
-+ * PHPStan の {@see \PHPStan\Analyser\Scope} に対応する。Part 2 では
-+ * 「どの変数が定義済みか」だけを持つ。Part 3〜4 で、ここに変数→**型**の
-+ * 対応が乗る。
++ * It corresponds to PHPStan's {@see \PHPStan\Analyser\Scope}. In Part 2 it holds
++ * only "which variables are defined". In Parts 3-4 a variable -> **type** mapping
++ * is layered on top of it.
 + *
-+ * 不変なのが肝心。木を下りながら `assignVariable()` で**新しい** Scope を
-+ * 作って渡すことで、分岐ごとに別の事実を持たせ、後から安全に合流できる。
++ * Immutability is essential. As we walk down the tree, `assignVariable()` produces
++ * a **new** Scope to pass along, so each branch carries its own set of facts and can
++ * be merged back safely later.
 + */
 +final readonly class Scope
 +{
 +    /**
-+     * @param array<string, true> $variables 定義済み変数名の集合
++     * @param array<string, true> $variables the set of defined variable names
 +     */
 +    private function __construct(
 +        private array $variables,
@@ -484,7 +490,7 @@ index 0000000..e589c0b
 +    }
 +
 +    /**
-+     * ファイル直下（グローバル）スコープ。スーパーグローバルは常に定義済み。
++     * The file-level (global) scope. Superglobals are always defined.
 +     */
 +    public static function createForFile(): self
 +    {
@@ -492,8 +498,8 @@ index 0000000..e589c0b
 +    }
 +
 +    /**
-+     * 関数境界の新しいスコープ。外側のローカル変数は見えないが、
-+     * スーパーグローバルは関数内でも参照できる。
++     * A new scope at a function boundary. Local variables from the outside are not
++     * visible, but superglobals can still be referenced inside the function.
 +     */
 +    public static function createForFunction(): self
 +    {
@@ -525,12 +531,13 @@ index 0000000..e589c0b
 +    }
 +
 +    /**
-+     * 2 つのスコープを合流する。
++     * Merges two scopes.
 +     *
-+     * Part 2 では「どちらかで定義されていれば定義済み」とする楽観的な和集合。
-+     * これにより条件分岐をまたいでも**偽陽性を出さない**（non-rejecting）。
-+     * PHPStan は「全経路で定義された場合のみ確定」とし、そうでなければ
-+     * 「未定義かもしれない」を別途報告する——その精密化は Part 5 で扱う。
++     * In Part 2 this is an optimistic union: "defined in either branch means defined".
++     * This keeps it from producing **false positives** across conditional branches
++     * (non-rejecting). PHPStan instead treats a variable as certain only when it is
++     * defined on every path, and otherwise reports "may be undefined" separately --
++     * that refinement is covered in Part 5.
 +     */
 +    public function mergeWith(self $other): self
 +    {
@@ -538,7 +545,7 @@ index 0000000..e589c0b
 +    }
 +}
 diff --git a/dev/src/Rules/Functions/NoVarDumpRule.php b/dev/src/Rules/Functions/NoVarDumpRule.php
-index d3eabb3..a9c6a46 100644
+index 25cc681..1d28069 100644
 --- a/dev/src/Rules/Functions/NoVarDumpRule.php
 +++ b/dev/src/Rules/Functions/NoVarDumpRule.php
 @@ -4,6 +4,7 @@ declare(strict_types=1);
@@ -549,7 +556,7 @@ index d3eabb3..a9c6a46 100644
  use Ministan\Rules\Rule;
  use Ministan\Rules\RuleError;
  use PhpParser\Node;
-@@ -28,7 +29,7 @@ final class NoVarDumpRule implements Rule
+@@ -29,7 +30,7 @@ final class NoVarDumpRule implements Rule
          return FuncCall::class;
      }
  
@@ -559,7 +566,7 @@ index d3eabb3..a9c6a46 100644
          assert($node instanceof FuncCall);
  
 diff --git a/dev/src/Rules/Rule.php b/dev/src/Rules/Rule.php
-index cc3842d..ce9b1b3 100644
+index 9fe478e..27ca3bd 100644
 --- a/dev/src/Rules/Rule.php
 +++ b/dev/src/Rules/Rule.php
 @@ -4,6 +4,7 @@ declare(strict_types=1);
@@ -571,12 +578,12 @@ index cc3842d..ce9b1b3 100644
  
  /**
 @@ -12,6 +13,10 @@ use PhpParser\Node;
-  * PHPStan の {@see \PHPStan\Rules\Rule} に対応する。`getNodeType()` が
-  * 「どのノードに反応するか」を、`processNode()` が「何を報告するか」を決める。
+  * Corresponds to PHPStan's {@see \PHPStan\Rules\Rule}. `getNodeType()` decides
+  * "which node to react to", and `processNode()` decides "what to report".
   *
-+ * Part 2 で `processNode()` に {@see Scope} が加わった。これにより、ルールは
-+ * 「このノードの地点で何が分かっているか（どの変数が定義済みか、Part 4 以降は
-+ * 各式の型）」を踏まえて判断できる。
++ * In Part 2, a {@see Scope} was added to `processNode()`. With it, a rule can decide
++ * based on "what is known at this node's location (which variables are defined, and from
++ * Part 4 onward the type of each expression)".
 + *
   * @template TNodeType of Node
   */
@@ -589,7 +596,7 @@ index cc3842d..ce9b1b3 100644
 +    public function processNode(Node $node, Scope $scope): array;
  }
 diff --git a/dev/src/Rules/RuleRegistryFactory.php b/dev/src/Rules/RuleRegistryFactory.php
-index 5a4db94..a23e403 100644
+index 3a47be8..687b4af 100644
 --- a/dev/src/Rules/RuleRegistryFactory.php
 +++ b/dev/src/Rules/RuleRegistryFactory.php
 @@ -5,6 +5,7 @@ declare(strict_types=1);
@@ -599,7 +606,7 @@ index 5a4db94..a23e403 100644
 +use Ministan\Rules\Variables\UndefinedVariableRule;
  
  /**
-  * 既定のルール一式を組み立てる。
+  * Assembles the default set of rules.
 @@ -18,6 +19,7 @@ final class RuleRegistryFactory
      {
          return new RuleRegistry([
@@ -610,10 +617,10 @@ index 5a4db94..a23e403 100644
  }
 diff --git a/dev/src/Rules/Variables/UndefinedVariableRule.php b/dev/src/Rules/Variables/UndefinedVariableRule.php
 new file mode 100644
-index 0000000..906e0ee
+index 0000000..fe8706b
 --- /dev/null
 +++ b/dev/src/Rules/Variables/UndefinedVariableRule.php
-@@ -0,0 +1,48 @@
+@@ -0,0 +1,49 @@
 +<?php
 +
 +declare(strict_types=1);
@@ -627,12 +634,13 @@ index 0000000..906e0ee
 +use PhpParser\Node\Expr\Variable;
 +
 +/**
-+ * 定義されていない変数の**読み取り**を検出する。PHPStan level 0 の代表選手。
++ * Detects a **read** of an undefined variable. A flagship of PHPStan level 0.
 + *
-+ * このルールは木の走査を知らない。ただ「いまこの地点の {@see Scope} に、この変数は
-+ * 定義済みとして載っているか？」を問うだけ。読み取りか書き込みかの区別、isset() の
-+ * 内側か否か、といった文脈判断は {@see \Ministan\Analyser\NodeScopeResolver} が担い、
-+ * このルールには「報告すべき読み取り地点」でのみ Variable ノードが渡る。
++ * This rule knows nothing about tree traversal. It only asks "is this variable listed as defined
++ * in the {@see Scope} at this point?" Contextual judgments such as distinguishing a read from a
++ * write, or whether we are inside an isset(), are handled by
++ * {@see \Ministan\Analyser\NodeScopeResolver}, and this rule is handed a Variable node only at a
++ * "read location that should be reported".
 + *
 + * @implements Rule<Variable>
 + */
@@ -647,7 +655,7 @@ index 0000000..906e0ee
 +    {
 +        assert($node instanceof Variable);
 +
-+        // 可変変数 $$name は静的に名前が定まらない → 追わない（non-rejecting）。
++        // A variable variable $$name has no statically determined name -> do not follow (non-rejecting).
 +        if (!is_string($node->name)) {
 +            return [];
 +        }
@@ -663,7 +671,7 @@ index 0000000..906e0ee
 +    }
 +}
 diff --git a/dev/tests/AnalyserTest.php b/dev/tests/AnalyserTest.php
-index 4667d06..e3a3703 100644
+index 4667d06..2b36728 100644
 --- a/dev/tests/AnalyserTest.php
 +++ b/dev/tests/AnalyserTest.php
 @@ -7,13 +7,17 @@ namespace Ministan\Tests;
@@ -700,8 +708,8 @@ index 4667d06..e3a3703 100644
 +    }
 +
 +    /**
-+     * パラメータ・代入・foreach・アロー関数・条件分岐をまたいで定義された変数は、
-+     * 偽陽性を出してはならない（non-rejecting の回帰テスト）。
++     * Variables defined across parameters, assignments, foreach, arrow functions, and
++     * conditional branches must not produce false positives (non-rejecting regression test).
 +     */
 +    public function testScopedVariablesProduceNoFalsePositives(): void
 +    {
@@ -761,7 +769,7 @@ index 0000000..eddd305
 +echo $id, $host;
 diff --git a/dev/tests/fixtures/undefined-variable.php b/dev/tests/fixtures/undefined-variable.php
 new file mode 100644
-index 0000000..ef6c1c8
+index 0000000..22e66ce
 --- /dev/null
 +++ b/dev/tests/fixtures/undefined-variable.php
 @@ -0,0 +1,10 @@
@@ -773,5 +781,5 @@ index 0000000..ef6c1c8
 +{
 +    $greeting = 'Hello, ' . $name;
 +
-+    return $greetnig; // タイポ: $greeting のつもり → 未定義
++    return $greetnig; // typo: meant $greeting → undefined
 +}

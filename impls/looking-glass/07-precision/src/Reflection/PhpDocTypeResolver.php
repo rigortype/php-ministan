@@ -32,11 +32,11 @@ use PHPStan\PhpDocParser\Parser\TypeParser;
 use PHPStan\PhpDocParser\ParserConfig;
 
 /**
- * docblock を解析し、`@return`/`@param`/`@var`/`@template` の型を {@see Type} に写す。
+ * Parses a docblock and maps the types of `@return`/`@param`/`@var`/`@template` onto {@see Type}.
  *
- * 型変数を扱うのが S3 での拡張点。`@template T` を集め、その名前の識別子は
- * {@see TemplateType} に、`Collection<int>` のような識別子付きジェネリックは
- * {@see GenericObjectType} に解決する。
+ * Handling type variables is the extension point introduced in S3. It collects `@template T`,
+ * resolves identifiers with those names to {@see TemplateType}, and resolves named generics like
+ * `Collection<int>` to {@see GenericObjectType}.
  */
 final class PhpDocTypeResolver
 {
@@ -55,7 +55,7 @@ final class PhpDocTypeResolver
     }
 
     /**
-     * @param list<string> $outerTemplateNames 外側（クラス）から見えている型変数名
+     * @param list<string> $outerTemplateNames type variable names visible from the outer scope (the class)
      */
     public function parse(?string $docComment, array $outerTemplateNames = []): ParsedPhpDoc
     {
@@ -146,7 +146,7 @@ final class PhpDocTypeResolver
             $base === 'array' && count($args) === 1 => new ArrayType(new MixedType(), $args[0]),
             ($base === 'list' || $base === 'non-empty-list') && count($args) >= 1
                 => new ArrayType(new IntegerType(), $args[0]),
-            // それ以外の `Foo<…>` はジェネリッククラス。
+            // Any other `Foo<…>` is a generic class.
             default => new GenericObjectType(ltrim($node->type->name, '\\'), array_values($args)),
         };
     }

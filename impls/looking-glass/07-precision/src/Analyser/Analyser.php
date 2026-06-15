@@ -12,13 +12,13 @@ use PhpParser\Error as ParserError;
 use PhpParser\Node;
 
 /**
- * 解析パイプラインの入口。
+ * The entry point of the analysis pipeline.
  *
- * Part 0: 構文エラーの翻訳。
- * Part 1: パース済み AST にルール群を適用する。
- * Part 2: スコープを伝播させながらルールを適用する。
- * Part 4: スコープが各式の型を推論する。ルール適用は走査へのコールバックとして渡す。
- * S6:     ファイル内容が変わっていなければ結果キャッシュを使う。
+ * Part 0: translate syntax errors.
+ * Part 1: apply the rules to a parsed AST.
+ * Part 2: apply the rules while propagating scope.
+ * Part 4: the scope infers the type of each expression. Rule application is passed as a callback to the traversal.
+ * S6:     reuse the result cache when the file contents have not changed.
  */
 final class Analyser
 {
@@ -29,7 +29,7 @@ final class Analyser
     }
 
     /**
-     * 複数ファイルを解析し、エラーをまとめて返す。
+     * Analyse multiple files and return all errors together.
      *
      * @param list<string> $files
      *
@@ -60,7 +60,7 @@ final class Analyser
         if ($this->cache !== null) {
             $cached = $this->cache->load($code);
             if ($cached !== null) {
-                // キャッシュは (メッセージ, 行) だけ持つ。ファイル名は今のものを付け直す。
+                // The cache holds only (message, line). Reattach the current file name.
                 return array_map(
                     static fn (array $entry): Error => new Error($entry['message'], $file, $entry['line']),
                     $cached,

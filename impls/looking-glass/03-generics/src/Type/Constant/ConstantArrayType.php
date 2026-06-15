@@ -12,17 +12,17 @@ use Ministan\Type\Type;
 use Ministan\Type\TypeCombinator;
 
 /**
- * キーごとに値の型が分かっている配列。`array{a: 1, b: 'x'}`。
+ * An array whose value type is known per key. `array{a: 1, b: 'x'}`.
  *
- * 配列リテラルから生まれる。`['id' => 42]` の型は `array<string, int>` ではなく
- * `array{id: 42}`。だから `$row['id']` がちょうど `42` だと分かる——定数型が配列にも
- * 効く、PHPStan の切れ味の核。
+ * It arises from array literals. The type of `['id' => 42]` is not `array<string, int>` but
+ * `array{id: 42}`. That is why we know `$row['id']` is exactly `42` — constant types working on
+ * arrays too is the core of PHPStan's sharpness.
  */
 final class ConstantArrayType implements Type
 {
     /**
-     * @param list<Type> $keyTypes   各要素のキー型（定数）
-     * @param list<Type> $valueTypes 各要素の値型（$keyTypes と同じ並び）
+     * @param list<Type> $keyTypes   the key type of each element (constant)
+     * @param list<Type> $valueTypes the value type of each element (in the same order as $keyTypes)
      */
     public function __construct(
         private readonly array $keyTypes,
@@ -46,7 +46,7 @@ final class ConstantArrayType implements Type
         return 'array{' . implode(', ', $parts) . '}';
     }
 
-    /** 指定オフセットの値型。定数キーが一致すればその値型、不明なら全値型の union。 */
+    /** The value type at the given offset. If a constant key matches, its value type; otherwise the union of all value types. */
     public function getOffsetValueType(Type $offset): Type
     {
         foreach ($this->keyTypes as $i => $keyType) {

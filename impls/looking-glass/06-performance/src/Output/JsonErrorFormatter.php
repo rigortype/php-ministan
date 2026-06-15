@@ -5,8 +5,8 @@ declare(strict_types=1);
 namespace Ministan\Output;
 
 /**
- * 機械可読な JSON フォーマット。CI やエディタ連携で使う。
- * PHPStan の JSON 出力を簡略化した形。
+ * A machine-readable JSON format, used for CI and editor integration.
+ * A simplified form of PHPStan's JSON output.
  */
 final class JsonErrorFormatter implements ErrorFormatter
 {

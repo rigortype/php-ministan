@@ -30,11 +30,11 @@ use PHPStan\PhpDocParser\Parser\TypeParser;
 use PHPStan\PhpDocParser\ParserConfig;
 
 /**
- * docblock を解析し、`@return`/`@param`/`@var` の型を {@see Type} に写す。
+ * Parses a docblock and maps the types of `@return`/`@param`/`@var` onto {@see Type}.
  *
- * phpstan/phpdoc-parser で文字列をパースし、その型 AST を ministan の型へ変換する。
- * PHPStan の `TypeNodeResolver` に対応。クラス名の名前空間解決（use の解釈）までは
- * 追わない——そこは応用編で。
+ * It parses the string with phpstan/phpdoc-parser and converts that type AST into ministan's
+ * types. This corresponds to PHPStan's `TypeNodeResolver`. It does not go as far as namespace
+ * resolution of class names (interpreting `use`) — that comes in the applied volume.
  */
 final class PhpDocTypeResolver
 {

@@ -10,10 +10,10 @@ use Ministan\Type\SimpleTypeTrait;
 use Ministan\Type\Type;
 
 /**
- * 単一の整数値を表す定数型（リテラル型）。`42` の型は `int` ではなく `42`。
+ * The constant type (literal type) representing a single integer value. The type of `42` is not `int` but `42`.
  *
- * 定数型こそ PHPStan の推論を鋭くする源。`$x = 42;` の直後、$x の型は `int` ではなく
- * `42` なので、`match` の網羅性や到達不能分岐まで判定できる。
+ * Constant types are precisely what makes PHPStan's inference sharp. Right after `$x = 42;`, the type
+ * of $x is not `int` but `42`, so we can judge `match` exhaustiveness and even unreachable branches.
  */
 final class ConstantIntegerType implements Type
 {
@@ -36,7 +36,7 @@ final class ConstantIntegerType implements Type
                 $type instanceof self => $this->value === $type->value
                     ? TrinaryLogic::Yes
                     : TrinaryLogic::No,
-                // 一般の int は、たまたまこの値かもしれない。
+                // A general int might happen to be this value.
                 $type instanceof IntegerType => TrinaryLogic::Maybe,
                 default => TrinaryLogic::No,
             };

@@ -63,8 +63,8 @@ final class AnalyserTest extends TestCase
     }
 
     /**
-     * パラメータ・代入・foreach・アロー関数・条件分岐をまたいで定義された変数は、
-     * 偽陽性を出してはならない（non-rejecting の回帰テスト）。
+     * Variables defined across parameters, assignments, foreach, arrow functions, and
+     * conditional branches must not produce false positives (non-rejecting regression test).
      */
     public function testScopedVariablesProduceNoFalsePositives(): void
     {

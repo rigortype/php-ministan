@@ -5,14 +5,16 @@ declare(strict_types=1);
 namespace Ministan\Cache;
 
 /**
- * ファイル単位の解析結果キャッシュ。
+ * A per-file cache of analysis results.
  *
- * 大規模コードベースで毎回全ファイルを解析するのは遅い。ファイルの**内容**が変わって
- * いなければ結果も変わらない——という事実を使い、内容ハッシュをキーに結果を保存する。
- * PHPStan の結果キャッシュを大きく簡略化したもの。
+ * On a large codebase, analysing every file from scratch each time is slow. We use the
+ * fact that if a file's **contents** have not changed, neither has its result, and store
+ * results keyed by a hash of the contents. A heavily simplified version of PHPStan's
+ * result cache.
  *
- * キーには salt（解析器のバージョン＋レベル）を混ぜる。解析ロジックやレベルが変われば
- * 自動的にキャッシュが無効になる。ファイルパスはキーに含めない（同一内容なら結果も同一）。
+ * The key mixes in a salt (analyser version + level), so when the analysis logic or the
+ * level changes the cache is invalidated automatically. The file path is not part of the
+ * key (identical contents yield identical results).
  */
 final class ResultCache
 {
@@ -23,7 +25,7 @@ final class ResultCache
     }
 
     /**
-     * @return list<array{message: string, line: int}>|null ヒットすれば結果、無ければ null
+     * @return list<array{message: string, line: int}>|null the result on a hit, null otherwise
      */
     public function load(string $code): ?array
     {

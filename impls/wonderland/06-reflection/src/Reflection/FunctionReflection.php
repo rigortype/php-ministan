@@ -9,7 +9,7 @@ use PhpParser\Node\Stmt\Function_;
 use ReflectionFunction;
 
 /**
- * 関数 1 つのシグネチャ。
+ * The signature of a single function.
  */
 final readonly class FunctionReflection
 {

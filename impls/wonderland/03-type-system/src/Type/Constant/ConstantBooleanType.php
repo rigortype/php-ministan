@@ -10,7 +10,7 @@ use Ministan\Type\SimpleTypeTrait;
 use Ministan\Type\Type;
 
 /**
- * `true` / `false` を表す定数型。条件の絞り込み（Part 5）で主役になる。
+ * The constant type representing `true` / `false`. It takes the lead role in condition narrowing (Part 5).
  */
 final class ConstantBooleanType implements Type
 {

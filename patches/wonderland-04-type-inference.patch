@@ -1,5 +1,5 @@
 diff --git a/dev/src/Analyser/Analyser.php b/dev/src/Analyser/Analyser.php
-index 4c7ef57..07ae18e 100644
+index 67c2580..10c77cf 100644
 --- a/dev/src/Analyser/Analyser.php
 +++ b/dev/src/Analyser/Analyser.php
 @@ -6,6 +6,7 @@ namespace Ministan\Analyser;
@@ -12,11 +12,11 @@ index 4c7ef57..07ae18e 100644
  /**
 @@ -13,7 +14,8 @@ use PhpParser\ParserFactory;
   *
-  * Part 0: 構文エラーの翻訳。
-  * Part 1: パース済み AST にルール群を適用する。
-- * Part 2: スコープを伝播させながらルールを適用する（← イマココ）。
-+ * Part 2: スコープを伝播させながらルールを適用する。
-+ * Part 4: スコープが各式の型を推論する。ルール適用は走査へのコールバックとして渡す。
+  * Part 0: translate syntax errors.
+  * Part 1: apply the rules to a parsed AST.
+- * Part 2: apply the rules while propagating scope (<- we are here).
++ * Part 2: apply the rules while propagating scope.
++ * Part 4: the scope infers the type of each expression. Rule application is passed as a callback to the traversal.
   */
  final class Analyser
  {
@@ -43,10 +43,10 @@ index 4c7ef57..07ae18e 100644
      }
  }
 diff --git a/dev/src/Analyser/NodeScopeResolver.php b/dev/src/Analyser/NodeScopeResolver.php
-index 3b83fa5..4241a9a 100644
+index f4b59e1..e70b0f1 100644
 --- a/dev/src/Analyser/NodeScopeResolver.php
 +++ b/dev/src/Analyser/NodeScopeResolver.php
-@@ -4,49 +4,48 @@ declare(strict_types=1);
+@@ -4,52 +4,51 @@ declare(strict_types=1);
  
  namespace Ministan\Analyser;
  
@@ -64,27 +64,32 @@ index 3b83fa5..4241a9a 100644
  use PhpParser\Node\Stmt;
  
  /**
-- * AST を下りながら {@see Scope} を運び、各ノードでルールを適用する。
-+ * AST を下りながら {@see Scope} を運び、各ノードで**コールバック**を呼ぶ。
+- * Walks down the AST, carrying a {@see Scope} along, and applies rules at each node.
++ * Walks down the AST, carrying a {@see Scope} along, and invokes a **callback**
++ * at each node.
   *
-- * PHPStan の {@see \PHPStan\Analyser\NodeScopeResolver} に対応する核。
-- * Part 1 の RuleApplyingVisitor（ノードを訪れるだけ）を、ここで「スコープを
-- * 伝播させる再帰下降」へと育てた。
-+ * PHPStan の {@see \PHPStan\Analyser\NodeScopeResolver} に対応する核。Part 2 では
-+ * ルール適用を直接抱えていたが、Part 4 で「各ノードで (node, scope) を渡して呼ぶ」
-+ * 汎用コールバックに一般化した。これにより、ルールを走らせる解析（{@see Analyser}）も、
-+ * 推論型を覗く `annotate` も、同じ走査を再利用できる。
+  * The core corresponding to PHPStan's {@see \PHPStan\Analyser\NodeScopeResolver}.
+- * Part 1's RuleApplyingVisitor (which only visited nodes) is grown here into a
+- * recursive descent that propagates a scope.
++ * In Part 2 it held rule application directly, but Part 4 generalizes it into a
++ * generic callback that is "called with (node, scope) at each node". This lets the
++ * rule-running analysis ({@see Analyser}) and the `annotate` that peeks at inferred
++ * types both reuse the same traversal.
   *
-- * 設計の要は「読み取り文脈と書き込み文脈を区別する」こと。`$x = 1` の左辺 `$x` は
-- * **定義**であって未定義チェックの対象ではない。`foreach (... as $v)` の `$v` も同様。
-- * そうした束縛構文だけを個別に捌き、それ以外は {@see processChildren()} で機械的に
-- * 子へ降りる。降りた先で出会う Variable は「読み取り」なのでルールに掛かる。
+- * The crux of the design is to "distinguish between read and write context". The
+- * `$x` on the left-hand side of `$x = 1` is a **definition**, not a target of the
+- * undefined-variable check. The `$v` in `foreach (... as $v)` is the same. We handle
+- * only such binding constructs individually, and for everything else descend
+- * mechanically into the children via {@see processChildren()}. A Variable we meet
+- * once we have descended is a "read", so it is subject to rules.
 - *
-- * 制御構文（if/while/for/try…）は専用処理を持たず、子を順に辿るだけにしている。
-- * 代入は前方へ伝播し、合流は {@see Scope::mergeWith()} の楽観的和集合になるため、
-- * 偽陽性を出さない。経路に敏感な精密化（「全経路で定義されたか」）は Part 5 で扱う。
-+ * 走査の要は Part 2 と同じ「読み取り文脈と書き込み文脈の区別」。加えて Part 4 では、
-+ * 代入のたびに右辺の型を {@see Scope::getType()} で推論し、変数に結びつける。
+- * Control constructs (if/while/for/try...) have no dedicated handling; they merely
+- * walk their children in order. Assignments propagate forward, and merges become the
+- * optimistic union of {@see Scope::mergeWith()}, so no false positives are emitted.
+- * Path-sensitive refinement ("is it defined on every path?") is covered in Part 5.
++ * The crux of the traversal is the same "distinction between read and write
++ * context" as in Part 2. On top of that, Part 4 infers the right-hand side's type
++ * with {@see Scope::getType()} on every assignment and binds it to the variable.
   */
  final class NodeScopeResolver
  {
@@ -120,7 +125,7 @@ index 3b83fa5..4241a9a 100644
      }
  
      /**
-@@ -63,16 +62,14 @@ final class NodeScopeResolver
+@@ -66,16 +65,14 @@ final class NodeScopeResolver
  
      private function processNode(Node $node, Scope $scope): Scope
      {
@@ -128,43 +133,43 @@ index 3b83fa5..4241a9a 100644
 +        ($this->nodeCallback)($node, $scope);
  
          return match (true) {
--            // --- スコープ境界を作る構文 ---
+-            // --- constructs that create a scope boundary ---
              $node instanceof Stmt\Function_,
              $node instanceof Stmt\ClassMethod    => $this->processFunctionLike($node, $scope),
              $node instanceof Expr\Closure        => $this->processClosure($node, $scope),
              $node instanceof Expr\ArrowFunction  => $this->processArrowFunction($node, $scope),
  
--            // --- 変数を束縛する構文 ---
+-            // --- constructs that bind variables ---
              $node instanceof Expr\Assign,
              $node instanceof Expr\AssignRef      => $this->processAssign($node, $scope),
              $node instanceof Expr\AssignOp       => $this->processAssignOp($node, $scope),
-@@ -81,16 +78,12 @@ final class NodeScopeResolver
+@@ -84,16 +81,12 @@ final class NodeScopeResolver
              $node instanceof Stmt\Global_        => $this->processGlobal($node, $scope),
              $node instanceof Stmt\Static_        => $this->processStaticVars($node, $scope),
  
--            // --- 未定義変数を許容する読み取り文脈 ---
--            // isset($x) / empty($x) は未定義でも合法。中は未定義チェックしない。
+-            // --- read context that tolerates undefined variables ---
+-            // isset($x) / empty($x) is legal even when undefined. We do not run the undefined check inside.
              $node instanceof Expr\Isset_,
              $node instanceof Expr\Empty_         => $scope,
              $node instanceof Expr\BinaryOp\Coalesce => $this->processCoalesce($node, $scope),
  
--            // --- 変数そのもの（読み取り）。ルール適用済み、子はない ---
+-            // --- the variable itself (a read). Rules already applied, no children ---
              $node instanceof Expr\Variable       => $scope,
  
--            // --- それ以外は子へ降り、スコープを順に伝播 ---
+-            // --- everything else descends into children, propagating the scope in order ---
              default => $this->processChildren($node, $scope),
          };
      }
-@@ -119,44 +112,36 @@ final class NodeScopeResolver
+@@ -122,45 +115,36 @@ final class NodeScopeResolver
          return $scope;
      }
  
--    // --- 代入 ---
-+    // --- 代入: 右辺の型を推論して変数に結びつける ---
+-    // --- assignment ---
++    // --- assignment: infer the right-hand side's type and bind it to the variable ---
  
      private function processAssign(Expr\Assign|Expr\AssignRef $node, Scope $scope): Scope
      {
--        // 右辺を先に解析する（右辺の変数は読み取りなので未定義チェックの対象）。
+-        // Analyse the right-hand side first (a variable on the right is a read, so it is subject to the undefined check).
          $scope = $this->processNode($node->expr, $scope);
 +        $type = $scope->getType($node->expr);
  
@@ -174,18 +179,19 @@ index 3b83fa5..4241a9a 100644
  
      private function processAssignOp(Expr\AssignOp $node, Scope $scope): Scope
      {
--        // 複合代入（+= など）の対象は読みも兼ねるが、ここでは定義として扱い
--        // 偽陽性を避ける（厳密な「未定義への +=」検出は後の章へ）。
+-        // A compound assignment (+= etc.) target also reads, but here we treat it as a definition
+-        // to avoid false positives (precise detection of "+= on an undefined variable" comes in a later chapter).
          $scope = $this->processNode($node->expr, $scope);
  
 -        return $this->processAssignTarget($node->var, $scope);
-+        // 複合代入（+= 等）の結果型は後章で精密化。ここでは mixed に縮退して安全側に。
++        // The result type of a compound assignment (+=, etc.) is refined in a later chapter. For now collapse to mixed to stay on the safe side.
 +        return $this->processAssignTarget($node->var, new MixedType(), $scope);
      }
  
 -    /**
--     * 代入の**左辺**を処理し、束縛された変数をスコープに加える。
--     * 左辺の Variable は「定義」なので未定義チェックには掛けない。
+-     * Processes the **left-hand side** of an assignment and adds the bound variable
+-     * to the scope. A Variable on the left-hand side is a "definition", so it is not
+-     * subject to the undefined check.
 -     */
 -    private function processAssignTarget(Expr $target, Scope $scope): Scope
 +    private function processAssignTarget(Expr $target, Type $type, Scope $scope): Scope
@@ -196,54 +202,54 @@ index 3b83fa5..4241a9a 100644
 +                ? $scope->assignVariable($target->name, $type)
                  : $this->processNode($target, $scope),
  
--            // 分割代入: [$a, $b] = ... / list($a, $b) = ...
+-            // destructuring assignment: [$a, $b] = ... / list($a, $b) = ...
              $target instanceof Expr\List_,
              $target instanceof Expr\Array_ => $this->processListAssign($target, $scope),
  
--            // $arr[$i] = ... / $arr[] = ... : 添字は読み取り、根の変数は定義（自動生成）
+-            // $arr[$i] = ... / $arr[] = ... : the index is a read, the root variable is a definition (auto-created)
              $target instanceof Expr\ArrayDimFetch => $this->processArrayDimAssign($target, $scope),
  
--            // $obj->p = ... / Foo::$p = ... : オブジェクト側は読み取り。新しい変数は生まれない
+-            // $obj->p = ... / Foo::$p = ... : the object side is a read. No new variable is born
              default => $this->processNode($target, $scope),
          };
      }
-@@ -165,14 +150,15 @@ final class NodeScopeResolver
+@@ -169,14 +153,15 @@ final class NodeScopeResolver
      {
          foreach ($node->items as $item) {
              if ($item === null) {
--                continue; // [, $b] = ... の空き
+-                continue; // a hole in [, $b] = ...
 +                continue;
              }
  
              if ($item->key !== null) {
--                $scope = $this->processNode($item->key, $scope); // キーは読み取り
+-                $scope = $this->processNode($item->key, $scope); // the key is a read
 +                $scope = $this->processNode($item->key, $scope);
              }
  
 -            $scope = $this->processAssignTarget($item->value, $scope);
-+            // 分割代入の要素型はまだ追えない → mixed
++            // The element type of a destructuring assignment cannot be tracked yet -> mixed
 +            $scope = $this->processAssignTarget($item->value, new MixedType(), $scope);
          }
  
          return $scope;
-@@ -181,27 +167,27 @@ final class NodeScopeResolver
+@@ -185,27 +170,27 @@ final class NodeScopeResolver
      private function processArrayDimAssign(Expr\ArrayDimFetch $node, Scope $scope): Scope
      {
          if ($node->dim !== null) {
--            $scope = $this->processNode($node->dim, $scope); // 添字は読み取り
+-            $scope = $this->processNode($node->dim, $scope); // the index is a read
 +            $scope = $this->processNode($node->dim, $scope);
          }
  
--        return $this->processAssignTarget($node->var, $scope); // 根を定義
-+        // $arr[...] = ... で $arr は配列になるが、配列型は後章。ここでは mixed。
+-        return $this->processAssignTarget($node->var, $scope); // the root is a definition
++        // $arr[...] = ... makes $arr an array, but array types come in a later chapter. For now mixed.
 +        return $this->processAssignTarget($node->var, new MixedType(), $scope);
      }
  
-     // --- ループ・例外・宣言 ---
+     // --- loops, exceptions, declarations ---
  
      private function processForeach(Stmt\Foreach_ $node, Scope $scope): Scope
      {
--        $scope = $this->processNode($node->expr, $scope); // 反復対象は読み取り
+-        $scope = $this->processNode($node->expr, $scope); // the iterated expression is a read
 +        $scope = $this->processNode($node->expr, $scope);
  
          $loopScope = $scope;
@@ -256,21 +262,21 @@ index 3b83fa5..4241a9a 100644
  
          $bodyScope = $this->processStmts($node->stmts, $loopScope);
  
--        // ループは 0 回かもしれない。楽観的に合流して偽陽性を避ける（ループ変数は残る）。
+-        // The loop may run zero times. Merge optimistically to avoid false positives (the loop variables remain).
          return $scope->mergeWith($bodyScope);
      }
  
-@@ -209,7 +195,8 @@ final class NodeScopeResolver
+@@ -213,7 +198,8 @@ final class NodeScopeResolver
      {
          $catchScope = $scope;
          if ($node->var !== null && is_string($node->var->name)) {
 -            $catchScope = $catchScope->assignVariable($node->var->name);
-+            // 例外の型は ObjectType を持つ Part 6 で精密化。
++            // The exception's type is refined in Part 6, once we have ObjectType.
 +            $catchScope = $catchScope->assignVariable($node->var->name, new MixedType());
          }
  
          $bodyScope = $this->processStmts($node->stmts, $catchScope);
-@@ -221,7 +208,7 @@ final class NodeScopeResolver
+@@ -225,7 +211,7 @@ final class NodeScopeResolver
      {
          foreach ($node->vars as $var) {
              if ($var instanceof Expr\Variable && is_string($var->name)) {
@@ -279,7 +285,7 @@ index 3b83fa5..4241a9a 100644
              }
          }
  
-@@ -232,7 +219,7 @@ final class NodeScopeResolver
+@@ -236,7 +222,7 @@ final class NodeScopeResolver
      {
          foreach ($node->vars as $staticVar) {
              if (is_string($staticVar->var->name)) {
@@ -288,24 +294,24 @@ index 3b83fa5..4241a9a 100644
              }
          }
  
-@@ -241,16 +228,11 @@ final class NodeScopeResolver
+@@ -245,16 +231,11 @@ final class NodeScopeResolver
  
      private function processCoalesce(Expr\BinaryOp\Coalesce $node, Scope $scope): Scope
      {
--        // `$x ?? d` は左辺が未定義でも安全（短絡）。左辺は未定義チェックせず辿る。
+-        // `$x ?? d` is safe even when the left-hand side is undefined (short-circuit). We walk the left-hand side without the undefined check.
          $scope = $this->processSilently($node->left, $scope);
  
          return $this->processNode($node->right, $scope);
      }
  
 -    /**
--     * スコープは伝播させつつ、配下の Variable 読み取りを未定義チェックに掛けない。
--     * isset() 相当の寛容な文脈で使う。
+-     * Propagates the scope while not subjecting the Variable reads beneath it to the
+-     * undefined check. Used in the lenient context equivalent to isset().
 -     */
      private function processSilently(Node $node, Scope $scope): Scope
      {
          if ($node instanceof Expr\Variable) {
-@@ -281,14 +263,14 @@ final class NodeScopeResolver
+@@ -285,14 +266,14 @@ final class NodeScopeResolver
          $inner = $this->bindParams($node->params, $inner);
  
          if ($node instanceof Stmt\ClassMethod && !$node->isStatic()) {
@@ -313,21 +319,21 @@ index 3b83fa5..4241a9a 100644
 +            $inner = $inner->assignVariable('this', new MixedType());
          }
  
--        if ($node->stmts !== null) { // 抽象メソッド・インターフェイスは null
+-        if ($node->stmts !== null) { // null for abstract methods and interfaces
 +        if ($node->stmts !== null) {
              $this->processStmts($node->stmts, $inner);
          }
  
--        return $outer; // 関数定義は外側の変数を増やさない
+-        return $outer; // a function definition does not add variables to the outer scope
 +        return $outer;
      }
  
      private function processClosure(Expr\Closure $node, Scope $outer): Scope
-@@ -297,22 +279,26 @@ final class NodeScopeResolver
+@@ -301,22 +282,26 @@ final class NodeScopeResolver
          $inner = $this->bindParams($node->params, $inner);
  
          foreach ($node->uses as $use) {
--            // 値渡しの use($x) は外側の読み取り。&付きは外側に変数を生む。
+-            // A by-value use($x) is a read from the outer scope. One with & creates a variable in the outer scope.
 +            $name = is_string($use->var->name) ? $use->var->name : null;
 +
              if ($use->byRef) {
@@ -338,7 +344,7 @@ index 3b83fa5..4241a9a 100644
                  }
              } else {
 -                $this->applyRules($use->var, $outer);
-+                ($this->nodeCallback)($use->var, $outer); // 値渡し use は外側の読み取り
++                ($this->nodeCallback)($use->var, $outer); // a by-value use reads from the outer scope
              }
  
 -            if (is_string($use->var->name)) {
@@ -357,13 +363,13 @@ index 3b83fa5..4241a9a 100644
          }
  
          $this->processStmts($node->stmts, $inner);
-@@ -322,11 +308,10 @@ final class NodeScopeResolver
+@@ -326,11 +311,10 @@ final class NodeScopeResolver
  
      private function processArrowFunction(Expr\ArrowFunction $node, Scope $outer): Scope
      {
--        // アロー関数は外側を値で自動キャプチャする。
+-        // An arrow function captures the outer scope automatically by value.
 -        $inner = $this->bindParams($node->params, $outer);
-+        $inner = $this->bindParams($node->params, $outer); // 外側を値で自動キャプチャ
++        $inner = $this->bindParams($node->params, $outer); // captures the outer scope automatically by value
  
          if (!$node->static) {
 -            $inner = $inner->assignVariable('this');
@@ -371,7 +377,7 @@ index 3b83fa5..4241a9a 100644
          }
  
          $this->processNode($node->expr, $inner);
-@@ -340,22 +325,33 @@ final class NodeScopeResolver
+@@ -344,22 +328,34 @@ final class NodeScopeResolver
      private function bindParams(array $params, Scope $scope): Scope
      {
          foreach ($params as $param) {
@@ -389,8 +395,9 @@ index 3b83fa5..4241a9a 100644
  
 -    private function applyRules(Node $node, Scope $scope): void
 +    /**
-+     * パラメータの型宣言を {@see Type} に写す最小版。クラス型・nullable・union は
-+     * リフレクションと PHPDoc を扱う Part 6〜7 で精密化する。
++     * A minimal version that maps a parameter's type declaration onto a {@see Type}.
++     * Class types, nullable, and union types are refined in Parts 6-7, which handle
++     * reflection and PHPDoc.
 +     */
 +    private function typeFromHint(?Node $node): Type
      {
@@ -413,10 +420,10 @@ index 3b83fa5..4241a9a 100644
      }
  }
 diff --git a/dev/src/Analyser/Scope.php b/dev/src/Analyser/Scope.php
-index e589c0b..23a0acf 100644
+index 4262b7b..1fc130f 100644
 --- a/dev/src/Analyser/Scope.php
 +++ b/dev/src/Analyser/Scope.php
-@@ -4,38 +4,41 @@ declare(strict_types=1);
+@@ -4,39 +4,42 @@ declare(strict_types=1);
  
  namespace Ministan\Analyser;
  
@@ -434,23 +441,25 @@ index e589c0b..23a0acf 100644
 +use PhpParser\Node\Scalar;
 +
  /**
-  * ある地点で「いま何が分かっているか」を表す不変オブジェクト。
+  * An immutable object representing "what is known at a given point".
   *
-- * PHPStan の {@see \PHPStan\Analyser\Scope} に対応する。Part 2 では
-- * 「どの変数が定義済みか」だけを持つ。Part 3〜4 で、ここに変数→**型**の
-- * 対応が乗る。
+- * It corresponds to PHPStan's {@see \PHPStan\Analyser\Scope}. In Part 2 it holds
+- * only "which variables are defined". In Parts 3-4 a variable -> **type** mapping
+- * is layered on top of it.
 - *
-- * 不変なのが肝心。木を下りながら `assignVariable()` で**新しい** Scope を
-- * 作って渡すことで、分岐ごとに別の事実を持たせ、後から安全に合流できる。
-+ * Part 2 では「変数が定義済みか」だけを持っていた。Part 4 でそれを **変数→型** の
-+ * 対応へ育て、さらに {@see getType()} で任意の式の型を推論できるようにする。
-+ * これが PHPStan の `Scope::getType()` に対応する、型推論の本体。
+- * Immutability is essential. As we walk down the tree, `assignVariable()` produces
+- * a **new** Scope to pass along, so each branch carries its own set of facts and can
+- * be merged back safely later.
++ * In Part 2 it held only "whether a variable is defined". Part 4 grows that into a
++ * **variable -> type** mapping and, via {@see getType()}, lets it infer the type of
++ * any expression. This is the heart of type inference, corresponding to PHPStan's
++ * `Scope::getType()`.
   */
  final readonly class Scope
  {
      /**
--     * @param array<string, true> $variables 定義済み変数名の集合
-+     * @param array<string, Type> $variableTypes 定義済み変数名 → その型
+-     * @param array<string, true> $variables the set of defined variable names
++     * @param array<string, Type> $variableTypes defined variable name -> its type
       */
      private function __construct(
 -        private array $variables,
@@ -459,7 +468,7 @@ index e589c0b..23a0acf 100644
      }
  
 -    /**
--     * ファイル直下（グローバル）スコープ。スーパーグローバルは常に定義済み。
+-     * The file-level (global) scope. Superglobals are always defined.
 -     */
      public static function createForFile(): self
      {
@@ -467,13 +476,13 @@ index e589c0b..23a0acf 100644
      }
  
 -    /**
--     * 関数境界の新しいスコープ。外側のローカル変数は見えないが、
--     * スーパーグローバルは関数内でも参照できる。
+-     * A new scope at a function boundary. Local variables from the outside are not
+-     * visible, but superglobals can still be referenced inside the function.
 -     */
      public static function createForFunction(): self
      {
          $superglobals = [
-@@ -43,38 +46,141 @@ final readonly class Scope
+@@ -44,39 +47,144 @@ final readonly class Scope
              '_COOKIE', '_SESSION', '_REQUEST', '_ENV',
          ];
  
@@ -495,7 +504,7 @@ index e589c0b..23a0acf 100644
 +    }
 +
 +    /**
-+     * 変数の型。未定義なら mixed に縮退する（non-rejecting）。
++     * The type of a variable. If undefined, it collapses to mixed (non-rejecting).
 +     */
 +    public function getVariableType(string $name): Type
 +    {
@@ -511,9 +520,10 @@ index e589c0b..23a0acf 100644
 +    }
 +
 +    /**
-+     * 2 つのスコープを合流する。両方で定義され型が食い違う変数は mixed に広げる
-+     * （union 型はまだ無いため）。片方だけの変数は楽観的に残す（偽陽性を出さない）。
-+     * 全経路で同じ型のときだけ型を保てる。精密な合流（union）は Part 5 で。
++     * Merges two scopes. A variable defined in both but with conflicting types is
++     * widened to mixed (since there is no union type yet). A variable present in only
++     * one branch is kept optimistically (no false positives). The type is preserved
++     * only when it is the same on every path. The precise merge (union) comes in Part 5.
 +     */
 +    public function mergeWith(self $other): self
 +    {
@@ -531,37 +541,40 @@ index e589c0b..23a0acf 100644
      }
  
      /**
--     * 2 つのスコープを合流する。
-+     * 式の型を推論する。型システムが初めて「動いて見える」場所。
+-     * Merges two scopes.
++     * Infers the type of an expression. The first place where the type system
++     * "visibly comes to life".
       *
--     * Part 2 では「どちらかで定義されていれば定義済み」とする楽観的な和集合。
--     * これにより条件分岐をまたいでも**偽陽性を出さない**（non-rejecting）。
--     * PHPStan は「全経路で定義された場合のみ確定」とし、そうでなければ
--     * 「未定義かもしれない」を別途報告する——その精密化は Part 5 で扱う。
-+     * Part 4 ではリテラル・定数・変数参照・基本的な二項/単項演算を扱う。
-+     * メソッド呼び出しや配列アクセスは、リフレクション（Part 6）以降で精密化する。
+-     * In Part 2 this is an optimistic union: "defined in either branch means defined".
+-     * This keeps it from producing **false positives** across conditional branches
+-     * (non-rejecting). PHPStan instead treats a variable as certain only when it is
+-     * defined on every path, and otherwise reports "may be undefined" separately --
+-     * that refinement is covered in Part 5.
++     * Part 4 handles literals, constants, variable references, and basic
++     * binary/unary operations. Method calls and array access are refined from
++     * reflection (Part 6) onward.
       */
 -    public function mergeWith(self $other): self
 +    public function getType(Expr $expr): Type
 +    {
 +        return match (true) {
-+            // --- リテラル → 定数型 ---
++            // --- literal -> constant type ---
 +            $expr instanceof Scalar\Int_    => new ConstantIntegerType($expr->value),
 +            $expr instanceof Scalar\String_ => new ConstantStringType($expr->value),
-+            $expr instanceof Scalar\Float_  => new FloatType(), // 定数 float 型は後章
++            $expr instanceof Scalar\Float_  => new FloatType(), // constant float type comes in a later chapter
 +
 +            // --- true / false / null ---
 +            $expr instanceof Expr\ConstFetch => $this->constFetchType($expr),
 +
-+            // --- 変数参照 ---
++            // --- variable reference ---
 +            $expr instanceof Expr\Variable => is_string($expr->name)
 +                ? $this->getVariableType($expr->name)
 +                : new MixedType(),
 +
-+            // --- 文字列連結は常に string ---
++            // --- string concatenation is always string ---
 +            $expr instanceof Expr\BinaryOp\Concat => new StringType(),
 +
-+            // --- 算術 ---
++            // --- arithmetic ---
 +            $expr instanceof Expr\BinaryOp\Plus,
 +            $expr instanceof Expr\BinaryOp\Minus,
 +            $expr instanceof Expr\BinaryOp\Mul => $this->arithmeticType($expr),
@@ -569,7 +582,7 @@ index e589c0b..23a0acf 100644
 +            $expr instanceof Expr\UnaryMinus,
 +            $expr instanceof Expr\UnaryPlus => $this->toNumeric($this->getType($expr->expr)),
 +
-+            // --- 比較・論理は常に bool ---
++            // --- comparison and logical operators are always bool ---
 +            $expr instanceof Expr\BinaryOp\Identical,
 +            $expr instanceof Expr\BinaryOp\NotIdentical,
 +            $expr instanceof Expr\BinaryOp\Equal,
@@ -582,7 +595,7 @@ index e589c0b..23a0acf 100644
 +            $expr instanceof Expr\BinaryOp\BooleanOr,
 +            $expr instanceof Expr\BooleanNot => new BooleanType(),
 +
-+            // --- 分からないものは mixed に縮退 ---
++            // --- anything unknown collapses to mixed ---
 +            default => new MixedType(),
 +        };
 +    }
@@ -632,10 +645,10 @@ index e589c0b..23a0acf 100644
  }
 diff --git a/dev/src/Command/AnnotateCommand.php b/dev/src/Command/AnnotateCommand.php
 new file mode 100644
-index 0000000..72cbe00
+index 0000000..4b4466c
 --- /dev/null
 +++ b/dev/src/Command/AnnotateCommand.php
-@@ -0,0 +1,107 @@
+@@ -0,0 +1,108 @@
 +<?php
 +
 +declare(strict_types=1);
@@ -651,13 +664,14 @@ index 0000000..72cbe00
 +use PhpParser\ParserFactory;
 +
 +/**
-+ * `ministan annotate <file>` の実装。
++ * Implementation of `ministan annotate <file>`.
 + *
-+ * 各代入・各 return について、推論された型を表示する。PHPStan には無いが、
-+ * chibirigor の `annotate` に倣ったコマンド。型推論を「目で見える」ものにし、
-+ * 解析器の頭の中を覗くデバッグ手段にもなる。
++ * For each assignment and each return, show the inferred type. PHPStan has no such
++ * command; this one follows chibirigor's `annotate`. It makes type inference
++ * "visible" and doubles as a way to debug-peek inside the analyser's head.
 + *
-+ * 解析（ルール適用）と同じ {@see NodeScopeResolver} を、別のコールバックで再利用する。
++ * It reuses the same {@see NodeScopeResolver} as analysis (rule application), driven
++ * by a different callback.
 + */
 +final class AnnotateCommand
 +{
@@ -698,7 +712,7 @@ index 0000000..72cbe00
 +                    && $node->var instanceof Expr\Variable
 +                    && is_string($node->var->name)
 +                ) {
-+                    // コールバックは代入の処理前に呼ばれるので、右辺は現在のスコープで推論できる。
++                    // The callback runs before the assignment is processed, so the right-hand side can be inferred in the current scope.
 +                    $rows[] = [
 +                        $node->getStartLine(),
 +                        '$' . $node->var->name,
@@ -727,7 +741,7 @@ index 0000000..72cbe00
 +    private function format(string $file, array $rows): string
 +    {
 +        if ($rows === []) {
-+            return sprintf("%s\n  (推論できる代入・return がありません)\n", $file);
++            return sprintf("%s\n  (no assignments or returns to infer from)\n", $file);
 +        }
 +
 +        $labelWidth = 0;
@@ -744,7 +758,7 @@ index 0000000..72cbe00
 +    }
 +}
 diff --git a/dev/src/Console/Application.php b/dev/src/Console/Application.php
-index 8288113..7d4f4cd 100644
+index c35e0af..3fba9dd 100644
 --- a/dev/src/Console/Application.php
 +++ b/dev/src/Console/Application.php
 @@ -5,6 +5,7 @@ declare(strict_types=1);
@@ -754,7 +768,7 @@ index 8288113..7d4f4cd 100644
 +use Ministan\Command\AnnotateCommand;
  
  /**
-  * CLI のエントリポイント。サブコマンドを振り分けるだけの薄い層。
+  * The CLI entry point. A thin layer that only dispatches to subcommands.
 @@ -23,6 +24,7 @@ final class Application
  
          return match ($command) {
@@ -767,9 +781,9 @@ index 8288113..7d4f4cd 100644
              ministan {$this->versionLine()}
  
              Usage:
--              ministan analyse <file>   PHP ファイルを解析する
-+              ministan analyse <file>    PHP ファイルを解析する
-+              ministan annotate <file>   推論された型を表示する
+-              ministan analyse <file>   analyse a PHP file
++              ministan analyse <file>    analyse a PHP file
++              ministan annotate <file>   show the inferred types
  
              TXT;
  
@@ -839,7 +853,7 @@ index 0000000..0aecf36
 +}
 diff --git a/dev/tests/Command/AnnotateCommandTest.php b/dev/tests/Command/AnnotateCommandTest.php
 new file mode 100644
-index 0000000..12d2855
+index 0000000..4124292
 --- /dev/null
 +++ b/dev/tests/Command/AnnotateCommandTest.php
 @@ -0,0 +1,30 @@
@@ -862,13 +876,13 @@ index 0000000..12d2855
 +
 +        self::assertSame(0, $exitCode);
 +
-+        // 定数畳み込みはしないので $a = 42 は 42、$b = $a + 1 は int。
++        // No constant folding, so $a = 42 is 42 and $b = $a + 1 is int.
 +        self::assertMatchesRegularExpression('/\$a\s+:\s+42$/m', $output);
 +        self::assertMatchesRegularExpression('/\$b\s+:\s+int$/m', $output);
 +        self::assertMatchesRegularExpression("/\\\$c\s+:\s+'hello'$/m", $output);
 +        self::assertMatchesRegularExpression('/\$d\s+:\s+string$/m', $output);
 +        self::assertMatchesRegularExpression('/\$e\s+:\s+bool$/m', $output);
-+        // 関数内: $text は string、return も string。
++        // Inside the function: $text is string, and return is string too.
 +        self::assertMatchesRegularExpression('/\$text\s+:\s+string$/m', $output);
 +        self::assertMatchesRegularExpression('/return\s+:\s+string$/m', $output);
 +    }

@@ -5,10 +5,10 @@ declare(strict_types=1);
 namespace Ministan\Type;
 
 /**
- * 型変数名 → 具体型 の対応。型の中の {@see TemplateType} を一括置換する。
+ * A mapping from type-variable name to concrete type. Substitutes every {@see TemplateType} within a type at once.
  *
- * `identity(42)` で `T → 42` を作り、戻り値型 `T` を `42` に解決する、といった
- * substitution の本体。複合型（union・配列・ジェネリック）の中まで再帰する。
+ * The heart of substitution: e.g. `identity(42)` builds `T → 42`, then resolves the return type `T`
+ * to `42`. It recurses into compound types (union, array, generic).
  */
 final class TemplateTypeMap
 {

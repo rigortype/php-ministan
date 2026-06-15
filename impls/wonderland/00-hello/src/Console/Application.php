@@ -7,7 +7,7 @@ namespace Ministan\Console;
 use Ministan\Command\AnalyseCommand;
 
 /**
- * CLI のエントリポイント。サブコマンドを振り分けるだけの薄い層。
+ * The CLI entry point. A thin layer that only dispatches to subcommands.
  */
 final class Application
 {
@@ -34,7 +34,7 @@ final class Application
             ministan {$this->versionLine()}
 
             Usage:
-              ministan analyse <file>   PHP ファイルを解析する
+              ministan analyse <file>   analyse a PHP file
 
             TXT;
 

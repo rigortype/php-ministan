@@ -11,12 +11,12 @@ use PhpParser\Error as ParserError;
 use PhpParser\Node;
 
 /**
- * 解析パイプラインの入口。
+ * The entry point of the analysis pipeline.
  *
- * Part 0: 構文エラーの翻訳。
- * Part 1: パース済み AST にルール群を適用する。
- * Part 2: スコープを伝播させながらルールを適用する。
- * Part 4: スコープが各式の型を推論する。ルール適用は走査へのコールバックとして渡す。
+ * Part 0: translate syntax errors.
+ * Part 1: apply the rules to a parsed AST.
+ * Part 2: apply the rules while propagating scope.
+ * Part 4: the scope infers the type of each expression. Rule application is passed as a callback to the traversal.
  */
 final class Analyser
 {
@@ -38,11 +38,11 @@ final class Analyser
         try {
             $ast = Parsing::parse($code);
         } catch (ParserError $e) {
-            // 構文エラーがある間はルールを走らせても意味がないので、ここで打ち切る。
+            // While there are syntax errors, running the rules is pointless, so bail out here.
             return [new Error($e->getRawMessage(), $file, $e->getStartLine())];
         }
 
-        // 解析対象の宣言からリフレクションを組み、型オブジェクトから引けるようにする。
+        // Build reflection from the declarations under analysis so type objects can look it up.
         ReflectionProviderStaticAccessor::set(ReflectionProvider::fromNodes($ast));
 
         $errors = [];

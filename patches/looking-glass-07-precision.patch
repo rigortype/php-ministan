@@ -1,8 +1,8 @@
 diff --git a/dev/src/Analyser/NodeScopeResolver.php b/dev/src/Analyser/NodeScopeResolver.php
-index f8f2cf2..114c276 100644
+index 1dd0de6..254b6e3 100644
 --- a/dev/src/Analyser/NodeScopeResolver.php
 +++ b/dev/src/Analyser/NodeScopeResolver.php
-@@ -93,6 +93,7 @@ final class NodeScopeResolver
+@@ -96,6 +96,7 @@ final class NodeScopeResolver
              $node instanceof Expr\Match_         => $this->processMatch($node, $scope),
              $node instanceof Expr\Ternary        => $this->processTernary($node, $scope),
              $node instanceof Stmt\Foreach_       => $this->processForeach($node, $scope),
@@ -10,7 +10,7 @@ index f8f2cf2..114c276 100644
              $node instanceof Stmt\Catch_         => $this->processCatch($node, $scope),
              $node instanceof Stmt\Global_        => $this->processGlobal($node, $scope),
              $node instanceof Stmt\Static_        => $this->processStaticVars($node, $scope),
-@@ -386,11 +387,60 @@ final class NodeScopeResolver
+@@ -391,11 +392,62 @@ final class NodeScopeResolver
          }
          $loopScope = $this->processAssignTarget($node->valueVar, $this->iterableValueType($iterableType), $loopScope);
  
@@ -27,16 +27,18 @@ index f8f2cf2..114c276 100644
 +
 +        $bodyScope = $this->analyseLoopBody($node->stmts, $specified->truthy);
 +
-+        // ループ後: 条件が偽になった世界線（falsy）か、本体を回った後（bodyScope）。
++        // After the loop: either the world line where the condition became false (falsy), or after running the body (bodyScope).
 +        return $specified->falsy->mergeWith($bodyScope);
 +    }
 +
 +    /**
-+     * ループ本体を不動点近似で解析する。
++     * Analyses the loop body with a fixed-point approximation.
 +     *
-+     * まず**無音**（ルール非発火）で本体を辿り、ループをまたぐ代入で型を広げた
-+     * スコープを得る。そのうえで本体を 1 度だけ本解析する（ルールはこの 1 回のみ発火）。
-+     * これにより、2 周目以降の変数の型（union）を踏まえて解析できる。
++     * First it walks the body **silently** (no rules fired) to obtain a scope where
++     * the types have been widened by assignments that cross the loop. Then it does
++     * the real analysis of the body exactly once (rules fire only on this one pass).
++     * This lets the analysis account for the variable types (unions) seen from the
++     * second iteration onward.
 +     *
 +     * @param Node[] $stmts
 +     */
@@ -51,8 +53,8 @@ index f8f2cf2..114c276 100644
 +    }
 +
 +    /**
-+     * コールバック（ルール適用）を一時的に無効化して関数を実行する。スコープ発見だけ
-+     * したいループの不動点パスで使う。
++     * Runs a function with the callback (rule application) temporarily disabled.
++     * Used in the loop's fixed-point pass, where we only want to discover scopes.
 +     *
 +     * @param callable(): Scope $fn
 +     */
@@ -73,24 +75,25 @@ index f8f2cf2..114c276 100644
      {
          if ($type instanceof ConstantArrayType) {
 diff --git a/dev/src/Analyser/Scope.php b/dev/src/Analyser/Scope.php
-index 54c6e73..76394ca 100644
+index cac4d37..61915a4 100644
 --- a/dev/src/Analyser/Scope.php
 +++ b/dev/src/Analyser/Scope.php
-@@ -146,6 +146,7 @@ final readonly class Scope
+@@ -150,6 +150,7 @@ final readonly class Scope
                  : new MixedType(),
              $expr instanceof Expr\MethodCall => $this->methodCallType($expr),
              $expr instanceof Expr\FuncCall => $this->funcCallType($expr),
 +            $expr instanceof Expr\Match_ => $this->matchType($expr),
  
-             // --- 文字列連結は常に string ---
+             // --- string concatenation is always string ---
              $expr instanceof Expr\BinaryOp\Concat => new StringType(),
-@@ -296,6 +297,40 @@ final readonly class Scope
+@@ -300,6 +301,41 @@ final readonly class Scope
          return (new TemplateTypeMap($map))->resolve($function->returnType);
      }
  
 +    /**
-+     * match 式の結果型 = 各腕の本体の型の union。各腕は、その条件で絞り込んだ
-+     * スコープで評価する（`$x instanceof Foo => $x->bar()` の bar() を解決できる）。
++     * The result type of a match expression = the union of each arm body's type.
++     * Each arm is evaluated in the scope narrowed by its condition (so bar() in
++     * `$x instanceof Foo => $x->bar()` can be resolved).
 +     */
 +    private function matchType(Expr\Match_ $expr): Type
 +    {
@@ -126,16 +129,16 @@ index 54c6e73..76394ca 100644
      {
          return match ($expr->name->toLowerString()) {
 diff --git a/dev/src/Reflection/FunctionReflection.php b/dev/src/Reflection/FunctionReflection.php
-index 9824b2a..da747a9 100644
+index 2610776..50f1825 100644
 --- a/dev/src/Reflection/FunctionReflection.php
 +++ b/dev/src/Reflection/FunctionReflection.php
 @@ -16,6 +16,7 @@ final readonly class FunctionReflection
  {
      /**
       * @param list<Type>   $parameterTypes
-+     * @param list<string> $parameterNames 名前付き引数の照合に使う
-      * @param list<bool>   $byRefParams   各パラメータが参照渡し（出力引数）か
-      * @param list<string> $templateNames この関数が宣言する型変数（@template）
++     * @param list<string> $parameterNames used to match named arguments
+      * @param list<bool>   $byRefParams   whether each parameter is passed by reference (an output argument)
+      * @param list<string> $templateNames the type variables this function declares (@template)
       */
 @@ -23,6 +24,7 @@ final readonly class FunctionReflection
          public string $name,
@@ -182,18 +185,18 @@ index 9824b2a..da747a9 100644
                  static fn ($param): bool => $param->isPassedByReference(),
                  $function->getParameters(),
 diff --git a/dev/src/Reflection/MethodReflection.php b/dev/src/Reflection/MethodReflection.php
-index 9404096..cd8817b 100644
+index 38b3f91..9c7b2bd 100644
 --- a/dev/src/Reflection/MethodReflection.php
 +++ b/dev/src/Reflection/MethodReflection.php
-@@ -18,13 +18,15 @@ use ReflectionMethod;
+@@ -19,13 +19,15 @@ use ReflectionMethod;
  final readonly class MethodReflection
  {
      /**
 -     * @param list<Type> $parameterTypes
--     * @param list<bool> $byRefParams   各パラメータが参照渡し（出力引数）か
+-     * @param list<bool> $byRefParams   whether each parameter is passed by reference (an output argument)
 +     * @param list<Type>   $parameterTypes
-+     * @param list<string> $parameterNames 名前付き引数の照合に使う
-+     * @param list<bool>   $byRefParams   各パラメータが参照渡し（出力引数）か
++     * @param list<string> $parameterNames used to match named arguments
++     * @param list<bool>   $byRefParams   whether each parameter is passed by reference (an output argument)
       */
      public function __construct(
          public string $name,
@@ -203,7 +206,7 @@ index 9404096..cd8817b 100644
          public array $byRefParams = [],
      ) {
      }
-@@ -37,12 +39,14 @@ final readonly class MethodReflection
+@@ -38,12 +40,14 @@ final readonly class MethodReflection
          $doc = $phpDoc->parse($node->getDocComment()?->getText(), $classTemplateNames);
  
          $parameterTypes = [];
@@ -220,7 +223,7 @@ index 9404096..cd8817b 100644
              $byRefParams[] = $param->byRef;
          }
  
-@@ -50,6 +54,7 @@ final readonly class MethodReflection
+@@ -51,6 +55,7 @@ final readonly class MethodReflection
              $node->name->toString(),
              $doc->returnType ?? $resolver->resolve($node->returnType),
              $parameterTypes,
@@ -228,7 +231,7 @@ index 9404096..cd8817b 100644
              $byRefParams,
          );
      }
-@@ -63,6 +68,10 @@ final readonly class MethodReflection
+@@ -64,6 +69,10 @@ final readonly class MethodReflection
                  static fn ($param): Type => $resolver->resolveNative($param->getType()),
                  $method->getParameters(),
              ),
@@ -240,7 +243,7 @@ index 9404096..cd8817b 100644
                  static fn ($param): bool => $param->isPassedByReference(),
                  $method->getParameters(),
 diff --git a/dev/src/Rules/ArgumentTypeChecker.php b/dev/src/Rules/ArgumentTypeChecker.php
-index f61c2cd..e7f1f68 100644
+index e654e00..5f16d22 100644
 --- a/dev/src/Rules/ArgumentTypeChecker.php
 +++ b/dev/src/Rules/ArgumentTypeChecker.php
 @@ -20,28 +20,34 @@ final readonly class ArgumentTypeChecker
@@ -249,10 +252,10 @@ index f61c2cd..e7f1f68 100644
      /**
 -     * @param list<Type> $parameterTypes
 +     * @param list<Type>   $parameterTypes
-+     * @param list<string> $parameterNames 名前付き引数を位置へ対応づけるための名前
++     * @param list<string> $parameterNames names used to map named arguments to positions
       * @param array<Arg|\PhpParser\Node\VariadicPlaceholder> $args
       *
-      * @return list<array{int, Type, Type}> [位置(1始まり), 期待型, 実際の型] の不一致
+      * @return list<array{int, Type, Type}> mismatches as [position (1-based), expected type, actual type]
       */
 -    public function check(array $parameterTypes, array $args, Scope $scope): array
 +    public function check(array $parameterTypes, array $parameterNames, array $args, Scope $scope): array
@@ -261,14 +264,14 @@ index f61c2cd..e7f1f68 100644
  
          foreach ($args as $position => $arg) {
 -            if (!$arg instanceof Arg || $arg->unpack || $arg->name !== null) {
--                continue; // ...$spread・名前付き引数は位置対応が崩れるので見送り
+-                continue; // ...$spread and named arguments break positional correspondence, so skip them
 +            if (!$arg instanceof Arg || $arg->unpack) {
-+                continue; // ...$spread は位置対応が崩れるので見送り
++                continue; // ...$spread breaks positional correspondence, so skip it
              }
 -            if (!isset($parameterTypes[$position])) {
--                continue; // 余剰引数・可変長は見送り（non-rejecting）
+-                continue; // skip surplus arguments and variadics (non-rejecting)
 +
-+            // 名前付き引数は、宣言の何番目かを名前から解決する。
++            // For a named argument, resolve its position in the declaration from its name.
 +            $index = $arg->name !== null
 +                ? array_search($arg->name->toString(), $parameterNames, true)
 +                : $position;
@@ -287,7 +290,7 @@ index f61c2cd..e7f1f68 100644
          }
  
 diff --git a/dev/src/Rules/Functions/FunctionCallParameterTypesRule.php b/dev/src/Rules/Functions/FunctionCallParameterTypesRule.php
-index 70aa2c7..d5940fb 100644
+index 0b0761c..589c100 100644
 --- a/dev/src/Rules/Functions/FunctionCallParameterTypesRule.php
 +++ b/dev/src/Rules/Functions/FunctionCallParameterTypesRule.php
 @@ -42,7 +42,7 @@ final class FunctionCallParameterTypesRule implements Rule
@@ -300,7 +303,7 @@ index 70aa2c7..d5940fb 100644
                  sprintf(
                      'Parameter #%d of function %s() expects %s, %s given.',
 diff --git a/dev/src/Rules/Methods/MethodCallParameterTypesRule.php b/dev/src/Rules/Methods/MethodCallParameterTypesRule.php
-index b5c46f5..0b45727 100644
+index c6858e3..48cfa30 100644
 --- a/dev/src/Rules/Methods/MethodCallParameterTypesRule.php
 +++ b/dev/src/Rules/Methods/MethodCallParameterTypesRule.php
 @@ -53,7 +53,7 @@ final class MethodCallParameterTypesRule implements Rule
@@ -313,23 +316,23 @@ index b5c46f5..0b45727 100644
                  sprintf(
                      'Parameter #%d of method %s::%s() expects %s, %s given.',
 diff --git a/dev/src/Type/TypeCombinator.php b/dev/src/Type/TypeCombinator.php
-index ca00927..975e6a2 100644
+index 811e2c2..9de3a4d 100644
 --- a/dev/src/Type/TypeCombinator.php
 +++ b/dev/src/Type/TypeCombinator.php
 @@ -38,11 +38,18 @@ final class TypeCombinator
-                 return new MixedType(); // mixed は全てを吸収する
+                 return new MixedType(); // mixed absorbs everything
              }
  
-+            // 既存メンバが $type の上位型なら、$type は不要（int があれば 0 は要らない）。
++            // If an existing member is a supertype of $type, then $type is unneeded (with int present, 0 is not needed).
              foreach ($result as $existing) {
 -                if ($existing->equals($type)) {
--                    continue 2; // 重複は捨てる
+-                    continue 2; // drop duplicates
 +                if ($existing->isSuperTypeOf($type)->yes()) {
 +                    continue 2;
                  }
              }
 +
-+            // 逆に $type が上位型なら、その部分型の既存メンバを取り除く（0 を捨てて int を残す）。
++            // Conversely, if $type is a supertype, remove the existing members that are its subtypes (drop 0, keep int).
 +            $result = array_values(array_filter(
 +                $result,
 +                static fn (Type $existing): bool => !$type->isSuperTypeOf($existing)->yes(),
@@ -339,7 +342,7 @@ index ca00927..975e6a2 100644
  
 diff --git a/dev/tests/Analyser/PrecisionTest.php b/dev/tests/Analyser/PrecisionTest.php
 new file mode 100644
-index 0000000..33d8bc1
+index 0000000..67974f4
 --- /dev/null
 +++ b/dev/tests/Analyser/PrecisionTest.php
 @@ -0,0 +1,48 @@
@@ -369,8 +372,8 @@ index 0000000..33d8bc1
 +
 +    public function testMatchResultTypeSatisfiesDeclaredReturn(): void
 +    {
-+        // area(): int は match(...) を返す。match 式の結果型が int と推論できれば、
-+        // 最も厳しい level 9 でも戻り値検査を通る。
++        // area(): int returns match(...). If the match expression's result type is inferred
++        // as int, the return-type check passes even at the strictest level 9.
 +        self::assertSame([], $this->messages('narrowing.php', 9));
 +    }
 +
@@ -387,12 +390,12 @@ index 0000000..33d8bc1
 +        (new AnnotateCommand())->run([__DIR__ . '/../fixtures/precision.php']);
 +        $output = ob_get_clean();
 +
-+        // $current = $prev は、前周で $prev が 'item' になりうるため 'item' を含む union。
++        // $current = $prev is a union containing 'item', since on the previous iteration $prev could become 'item'.
 +        self::assertMatchesRegularExpression("/\\\$current\s+:\s+'item'\|'start'$/m", $output);
 +    }
 +}
 diff --git a/dev/tests/Type/TypeCombinatorTest.php b/dev/tests/Type/TypeCombinatorTest.php
-index 5821dd3..594106f 100644
+index 5821dd3..5c5911c 100644
 --- a/dev/tests/Type/TypeCombinatorTest.php
 +++ b/dev/tests/Type/TypeCombinatorTest.php
 @@ -5,6 +5,7 @@ declare(strict_types=1);
@@ -409,7 +412,7 @@ index 5821dd3..594106f 100644
  
 +    public function testUnionAbsorbsSubtypes(): void
 +    {
-+        // 0 は int の部分型 → int に吸収される。
++        // 0 is a subtype of int → absorbed into int.
 +        self::assertSame('int', TypeCombinator::union(new IntegerType(), new ConstantIntegerType(0))->describe());
 +        self::assertSame('int', TypeCombinator::union(new ConstantIntegerType(0), new IntegerType())->describe());
 +    }
@@ -419,7 +422,7 @@ index 5821dd3..594106f 100644
          $intOrNull = TypeCombinator::union(new IntegerType(), new NullType());
 diff --git a/dev/tests/fixtures/precision.php b/dev/tests/fixtures/precision.php
 new file mode 100644
-index 0000000..6ef3348
+index 0000000..dfef586
 --- /dev/null
 +++ b/dev/tests/fixtures/precision.php
 @@ -0,0 +1,23 @@
@@ -427,28 +430,28 @@ index 0000000..6ef3348
 +
 +declare(strict_types=1);
 +
-+// ループの型ワイドニング: 2 周目以降は前周の代入を踏まえる。
++// Loop type widening: from the 2nd iteration on, the previous iteration's assignment is taken into account.
 +function last_label(array $items): string
 +{
 +    $prev = 'start';
 +    foreach ($items as $item) {
-+        $current = $prev; // 前周で $prev は 'item' になりうる → string
++        $current = $prev; // on the previous iteration $prev could become 'item' → string
 +        $prev = 'item';
 +    }
 +
 +    return $prev;
 +}
 +
-+// 名前付き引数の型照合。
++// Type matching of named arguments.
 +function box(string $name, int $size): string
 +{
 +    return $name;
 +}
 +
-+box(name: 'x', size: 'big'); // size は int を期待 → 'big' は不一致
++box(name: 'x', size: 'big'); // size expects int → 'big' is a mismatch
 diff --git a/examples/looking-glass/precision.php b/examples/looking-glass/precision.php
 new file mode 100644
-index 0000000..6ef3348
+index 0000000..d81a256
 --- /dev/null
 +++ b/examples/looking-glass/precision.php
 @@ -0,0 +1,23 @@
@@ -456,22 +459,22 @@ index 0000000..6ef3348
 +
 +declare(strict_types=1);
 +
-+// ループの型ワイドニング: 2 周目以降は前周の代入を踏まえる。
++// Loop type widening: from the second iteration on, the previous iteration's assignment is taken into account.
 +function last_label(array $items): string
 +{
 +    $prev = 'start';
 +    foreach ($items as $item) {
-+        $current = $prev; // 前周で $prev は 'item' になりうる → string
++        $current = $prev; // $prev may have become 'item' on the previous iteration → string
 +        $prev = 'item';
 +    }
 +
 +    return $prev;
 +}
 +
-+// 名前付き引数の型照合。
++// Type matching for named arguments.
 +function box(string $name, int $size): string
 +{
 +    return $name;
 +}
 +
-+box(name: 'x', size: 'big'); // size は int を期待 → 'big' は不一致
++box(name: 'x', size: 'big'); // size expects int → 'big' is a mismatch

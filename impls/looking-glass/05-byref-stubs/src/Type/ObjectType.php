@@ -8,11 +8,11 @@ use Ministan\Reflection\ReflectionProviderStaticAccessor;
 use Ministan\TrinaryLogic;
 
 /**
- * あるクラス／インターフェイスのインスタンスを表す型。
+ * A type representing an instance of some class or interface.
  *
- * Part 6 で継承対応に強化。{@see ReflectionProviderStaticAccessor} 経由でクラス階層を
- * 引き、`$child instanceof $parent` を正しく Yes/No 判定する。provider が無い、または
- * クラスが未知のときは Maybe に縮退（non-rejecting）。
+ * Strengthened to handle inheritance in Part 6. It walks the class hierarchy via
+ * {@see ReflectionProviderStaticAccessor} and decides `$child instanceof $parent` correctly as Yes/No.
+ * When there is no provider, or the class is unknown, it collapses to Maybe (non-rejecting).
  */
 class ObjectType implements Type
 {
@@ -50,7 +50,7 @@ class ObjectType implements Type
                 : TrinaryLogic::No;
         }
 
-        return TrinaryLogic::Maybe; // 階層が分からなければ狭めも広げもしない
+        return TrinaryLogic::Maybe; // if the hierarchy is unknown, neither narrow nor widen
     }
 
     public function equals(Type $type): bool

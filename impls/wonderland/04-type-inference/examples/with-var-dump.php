@@ -9,7 +9,7 @@ function total(array $items): int
         $sum += $item;
     }
 
-    var_dump($sum); // デバッグ用の消し忘れ
+    var_dump($sum); // a leftover debug call
 
     return $sum;
 }

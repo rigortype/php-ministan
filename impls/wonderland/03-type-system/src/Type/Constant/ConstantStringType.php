@@ -10,7 +10,7 @@ use Ministan\Type\StringType;
 use Ministan\Type\Type;
 
 /**
- * 単一の文字列値を表す定数型。`'foo'` の型は `string` ではなく `'foo'`。
+ * The constant type representing a single string value. The type of `'foo'` is not `string` but `'foo'`.
  */
 final class ConstantStringType implements Type
 {

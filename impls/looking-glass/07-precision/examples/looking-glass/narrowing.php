@@ -8,7 +8,7 @@ function plus_one(?int $x): int
         return 0;
     }
 
-    $y = $x + 1; // 早期 return により $x は int → $y : int
+    $y = $x + 1; // early return makes $x an int → $y : int
 
     return $y;
 }
@@ -17,7 +17,7 @@ function from_assert(mixed $value): int
 {
     assert(is_int($value));
 
-    $r = $value + 1; // assert により $value は int → $r : int
+    $r = $value + 1; // assert makes $value an int → $r : int
 
     return $r;
 }
@@ -37,7 +37,7 @@ class Circle implements Shape
 function area(Shape $shape): int
 {
     return match (true) {
-        $shape instanceof Circle => $shape->radius(), // match の腕で Circle に絞り込み
+        $shape instanceof Circle => $shape->radius(), // narrowed to Circle in this match arm
         default => 0,
     };
 }

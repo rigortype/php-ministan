@@ -13,7 +13,7 @@ index f1cbcf2..b535a2b 100644
      "require-dev": {
          "phpunit/phpunit": "^11.0"
 diff --git a/dev/src/Analyser/NodeScopeResolver.php b/dev/src/Analyser/NodeScopeResolver.php
-index 4ec08bc..14b60ae 100644
+index 172f400..b81b2f0 100644
 --- a/dev/src/Analyser/NodeScopeResolver.php
 +++ b/dev/src/Analyser/NodeScopeResolver.php
 @@ -5,6 +5,7 @@ declare(strict_types=1);
@@ -24,7 +24,7 @@ index 4ec08bc..14b60ae 100644
  use Ministan\Reflection\TypeNodeResolver;
  use Ministan\Type\MixedType;
  use Ministan\Type\Type;
-@@ -32,6 +33,8 @@ final class NodeScopeResolver
+@@ -35,6 +36,8 @@ final class NodeScopeResolver
  
      private TypeNodeResolver $typeNodeResolver;
  
@@ -33,7 +33,7 @@ index 4ec08bc..14b60ae 100644
      /**
       * @param callable(Node, Scope): void $nodeCallback
       */
-@@ -40,6 +43,7 @@ final class NodeScopeResolver
+@@ -43,6 +46,7 @@ final class NodeScopeResolver
          $this->nodeCallback = Closure::fromCallable($nodeCallback);
          $this->typeSpecifier = new TypeSpecifier();
          $this->typeNodeResolver = new TypeNodeResolver();
@@ -41,7 +41,7 @@ index 4ec08bc..14b60ae 100644
      }
  
      /**
-@@ -75,6 +79,7 @@ final class NodeScopeResolver
+@@ -78,6 +82,7 @@ final class NodeScopeResolver
              $node instanceof Expr\Assign,
              $node instanceof Expr\AssignRef      => $this->processAssign($node, $scope),
              $node instanceof Expr\AssignOp       => $this->processAssignOp($node, $scope),
@@ -49,11 +49,11 @@ index 4ec08bc..14b60ae 100644
              $node instanceof Stmt\If_            => $this->processIf($node, $scope),
              $node instanceof Expr\Ternary        => $this->processTernary($node, $scope),
              $node instanceof Stmt\Foreach_       => $this->processForeach($node, $scope),
-@@ -178,6 +183,32 @@ final class NodeScopeResolver
+@@ -181,6 +186,32 @@ final class NodeScopeResolver
          return $this->processAssignTarget($node->var, new MixedType(), $scope);
      }
  
-+    // --- 文と @var ---
++    // --- statements and @var ---
 +
 +    private function processExpressionStmt(Stmt\Expression $node, Scope $scope): Scope
 +    {
@@ -69,7 +69,7 @@ index 4ec08bc..14b60ae 100644
 +            $varType = $parsed->varTypes[$expr->var->name] ?? $parsed->varTypes[''] ?? null;
 +
 +            if ($varType !== null) {
-+                // 通常どおり代入を処理（ルール適用・右辺読み取り）した上で、@var で型を上書きする。
++                // Process the assignment as usual (apply rules, read the right-hand side), then override the type with @var.
 +                $scope = $this->processNode($expr, $scope);
 +
 +                return $scope->assignVariable($expr->var->name, $varType);
@@ -79,11 +79,11 @@ index 4ec08bc..14b60ae 100644
 +        return $this->processChildren($node, $scope);
 +    }
 +
-     // --- 条件分岐: 型の絞り込みを適用する ---
+     // --- conditional branches: apply type narrowing ---
  
      private function processIf(Stmt\If_ $node, Scope $scope): Scope
 diff --git a/dev/src/Command/AnnotateCommand.php b/dev/src/Command/AnnotateCommand.php
-index 570dc28..fbcbf57 100644
+index 25e0602..92d8976 100644
 --- a/dev/src/Command/AnnotateCommand.php
 +++ b/dev/src/Command/AnnotateCommand.php
 @@ -7,6 +7,7 @@ namespace Ministan\Command;
@@ -94,7 +94,7 @@ index 570dc28..fbcbf57 100644
  use Ministan\Reflection\ReflectionProvider;
  use Ministan\Reflection\ReflectionProviderStaticAccessor;
  use PhpParser\Error as ParserError;
-@@ -56,18 +57,26 @@ final class AnnotateCommand
+@@ -57,18 +58,26 @@ final class AnnotateCommand
  
          /** @var list<array{int, string, string}> $rows */
          $rows = [];
@@ -110,7 +110,7 @@ index 570dc28..fbcbf57 100644
 +                    && $node->expr->var instanceof Expr\Variable
 +                    && is_string($node->expr->var->name)
                  ) {
--                    // コールバックは代入の処理前に呼ばれるので、右辺は現在のスコープで推論できる。
+-                    // The callback runs before the assignment is processed, so the right-hand side can be inferred in the current scope.
 -                    $rows[] = [
 -                        $node->getStartLine(),
 -                        '$' . $node->var->name,
@@ -118,7 +118,7 @@ index 570dc28..fbcbf57 100644
 -                    ];
 +                    $name = $node->expr->var->name;
 +
-+                    // @var があればそれを、無ければ右辺の推論型を表示する。
++                    // Use @var if present; otherwise show the inferred type of the right-hand side.
 +                    $type = null;
 +                    $doc = $node->getDocComment();
 +                    if ($doc !== null) {
@@ -132,7 +132,7 @@ index 570dc28..fbcbf57 100644
                      $rows[] = [
                          $node->getStartLine(),
 diff --git a/dev/src/Reflection/ClassReflection.php b/dev/src/Reflection/ClassReflection.php
-index 93a2907..14542af 100644
+index 3586a30..300d9d7 100644
 --- a/dev/src/Reflection/ClassReflection.php
 +++ b/dev/src/Reflection/ClassReflection.php
 @@ -33,7 +33,7 @@ final class ClassReflection
@@ -154,7 +154,7 @@ index 93a2907..14542af 100644
  
          return new self($name, $parents, $methods, $provider);
 diff --git a/dev/src/Reflection/FunctionReflection.php b/dev/src/Reflection/FunctionReflection.php
-index cbb4bd6..6f1ac83 100644
+index a835f3b..dcb0651 100644
 --- a/dev/src/Reflection/FunctionReflection.php
 +++ b/dev/src/Reflection/FunctionReflection.php
 @@ -5,11 +5,12 @@ declare(strict_types=1);
@@ -166,8 +166,8 @@ index cbb4bd6..6f1ac83 100644
  use ReflectionFunction;
  
  /**
-- * 関数 1 つのシグネチャ。
-+ * 関数 1 つのシグネチャ。PHPDoc を上位、ネイティブ宣言を下位に置く。
+- * The signature of a single function.
++ * The signature of a single function. PHPDoc takes priority, with the native declaration below it.
   */
  final readonly class FunctionReflection
  {
@@ -198,10 +198,10 @@ index cbb4bd6..6f1ac83 100644
      }
  
 diff --git a/dev/src/Reflection/MethodReflection.php b/dev/src/Reflection/MethodReflection.php
-index 94a7743..984c3ab 100644
+index d399ba9..7744b8d 100644
 --- a/dev/src/Reflection/MethodReflection.php
 +++ b/dev/src/Reflection/MethodReflection.php
-@@ -5,11 +5,15 @@ declare(strict_types=1);
+@@ -5,11 +5,16 @@ declare(strict_types=1);
  namespace Ministan\Reflection;
  
  use Ministan\Type\Type;
@@ -210,14 +210,15 @@ index 94a7743..984c3ab 100644
  use ReflectionMethod;
  
  /**
-  * メソッド 1 つのシグネチャ。名前・パラメータ型・戻り値型。
+  * The signature of a single method: name, parameter types, and return type.
 + *
-+ * 型は「PHPDoc があれば PHPDoc、無ければネイティブ宣言」で決める。PHPStan と同じく
-+ * PHPDoc を上位に置くのは、`array<int, string>` のようにネイティブより精密に書けるから。
++ * Types are decided as "PHPDoc if present, otherwise the native declaration." Like PHPStan,
++ * PHPDoc is given priority because it can express more precise types than the native one,
++ * such as `array<int, string>`.
   */
  final readonly class MethodReflection
  {
-@@ -23,12 +27,22 @@ final readonly class MethodReflection
+@@ -23,12 +28,22 @@ final readonly class MethodReflection
      ) {
      }
  
@@ -245,7 +246,7 @@ index 94a7743..984c3ab 100644
  
 diff --git a/dev/src/Reflection/ParsedPhpDoc.php b/dev/src/Reflection/ParsedPhpDoc.php
 new file mode 100644
-index 0000000..aea1fd7
+index 0000000..047a944
 --- /dev/null
 +++ b/dev/src/Reflection/ParsedPhpDoc.php
 @@ -0,0 +1,29 @@
@@ -258,13 +259,13 @@ index 0000000..aea1fd7
 +use Ministan\Type\Type;
 +
 +/**
-+ * 1 つの docblock から取り出した型情報。`@return`・`@param`・`@var`。
++ * Type information extracted from a single docblock: `@return`, `@param`, `@var`.
 + */
 +final readonly class ParsedPhpDoc
 +{
 +    /**
-+     * @param array<string, Type> $paramTypes パラメータ名（$ なし）→ 型
-+     * @param array<string, Type> $varTypes   変数名（$ なし、無名は ''）→ 型
++     * @param array<string, Type> $paramTypes parameter name (without $) => type
++     * @param array<string, Type> $varTypes   variable name (without $, '' if anonymous) => type
 +     */
 +    public function __construct(
 +        public ?Type $returnType,
@@ -280,7 +281,7 @@ index 0000000..aea1fd7
 +}
 diff --git a/dev/src/Reflection/PhpDocTypeResolver.php b/dev/src/Reflection/PhpDocTypeResolver.php
 new file mode 100644
-index 0000000..718a15c
+index 0000000..0b61818
 --- /dev/null
 +++ b/dev/src/Reflection/PhpDocTypeResolver.php
 @@ -0,0 +1,126 @@
@@ -316,11 +317,11 @@ index 0000000..718a15c
 +use PHPStan\PhpDocParser\ParserConfig;
 +
 +/**
-+ * docblock を解析し、`@return`/`@param`/`@var` の型を {@see Type} に写す。
++ * Parses a docblock and maps the types of `@return`/`@param`/`@var` onto {@see Type}.
 + *
-+ * phpstan/phpdoc-parser で文字列をパースし、その型 AST を ministan の型へ変換する。
-+ * PHPStan の `TypeNodeResolver` に対応。クラス名の名前空間解決（use の解釈）までは
-+ * 追わない——そこは応用編で。
++ * It parses the string with phpstan/phpdoc-parser and converts that type AST into ministan's
++ * types. This corresponds to PHPStan's `TypeNodeResolver`. It does not go as far as namespace
++ * resolution of class names (interpreting `use`) — that comes in the applied volume.
 + */
 +final class PhpDocTypeResolver
 +{
@@ -411,7 +412,7 @@ index 0000000..718a15c
 +    }
 +}
 diff --git a/dev/src/Reflection/ReflectionProvider.php b/dev/src/Reflection/ReflectionProvider.php
-index 7b2e253..1b9de61 100644
+index 3774379..13c6db1 100644
 --- a/dev/src/Reflection/ReflectionProvider.php
 +++ b/dev/src/Reflection/ReflectionProvider.php
 @@ -30,9 +30,12 @@ final class ReflectionProvider
@@ -442,7 +443,7 @@ index 7b2e253..1b9de61 100644
      }
 diff --git a/dev/src/Type/ArrayType.php b/dev/src/Type/ArrayType.php
 new file mode 100644
-index 0000000..c2909ae
+index 0000000..fb646e0
 --- /dev/null
 +++ b/dev/src/Type/ArrayType.php
 @@ -0,0 +1,46 @@
@@ -455,10 +456,10 @@ index 0000000..c2909ae
 +use Ministan\TrinaryLogic;
 +
 +/**
-+ * 配列型。キーと要素の型を持つ。`array<int, string>` や `list<Foo>`（= array<int, Foo>）。
++ * Array type. Carries a key type and an item type. `array<int, string>` or `list<Foo>` (= array<int, Foo>).
 + *
-+ * PHPDoc から生まれる最初の「複合型」。要素型を保つことで `foreach` の要素や配列アクセスの
-+ * 型推論につながる（本格化は応用編）。PHPStan の配列型を大きく簡略化したもの。
++ * The first "compound type" born from PHPDoc. Keeping the item type lets us infer the type of `foreach`
++ * elements and array accesses (fully developed in the Applied volume). A heavy simplification of PHPStan's array types.
 + */
 +final class ArrayType implements Type
 +{
@@ -493,7 +494,7 @@ index 0000000..c2909ae
 +    }
 +}
 diff --git a/dev/tests/Command/AnnotateCommandTest.php b/dev/tests/Command/AnnotateCommandTest.php
-index 12d2855..36826e7 100644
+index 4124292..c71076b 100644
 --- a/dev/tests/Command/AnnotateCommandTest.php
 +++ b/dev/tests/Command/AnnotateCommandTest.php
 @@ -27,4 +27,17 @@ final class AnnotateCommandTest extends TestCase
@@ -508,9 +509,9 @@ index 12d2855..36826e7 100644
 +        $output = ob_get_clean();
 +
 +        self::assertSame(0, $exitCode);
-+        // @return array<int, string> が呼び出し結果に伝わる。
++        // @return array<int, string> propagates to the call result.
 +        self::assertMatchesRegularExpression('/\$result\s+:\s+array<int, string>$/m', $output);
-+        // @var int が右辺の mixed を上書きする。
++        // @var int overrides the mixed on the right-hand side.
 +        self::assertMatchesRegularExpression('/\$count\s+:\s+int$/m', $output);
 +    }
  }
@@ -608,7 +609,7 @@ index 0000000..c202bf7
 +$count = compute();
 diff --git a/examples/phpdoc.php b/examples/phpdoc.php
 new file mode 100644
-index 0000000..a62ff87
+index 0000000..fec5ae0
 --- /dev/null
 +++ b/examples/phpdoc.php
 @@ -0,0 +1,17 @@
@@ -625,7 +626,7 @@ index 0000000..a62ff87
 +    return array_map(static fn (string $name): string => strtoupper($name), $names);
 +}
 +
-+$result = shout(['a', 'b']); // array<int, string>（@return から）
++$result = shout(['a', 'b']); // array<int, string> (from @return)
 +
 +/** @var int $count */
-+$count = compute(); // int（@var が mixed を上書き）
++$count = compute(); // int (@var overrides mixed)

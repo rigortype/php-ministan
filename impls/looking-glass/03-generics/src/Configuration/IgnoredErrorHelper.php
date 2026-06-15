@@ -7,15 +7,15 @@ namespace Ministan\Configuration;
 use Ministan\Analyser\Error;
 
 /**
- * `ignoreErrors` の正規表現にマッチした指摘を取り除く。
+ * Removes findings that match an `ignoreErrors` regular expression.
  *
- * baseline が「この具体的な箇所」を無視するのに対し、ignoreErrors は「この種の
- * メッセージ」をパターンで無視する。PHPStan の同名機能に対応。
+ * Where a baseline ignores "this specific spot", ignoreErrors ignores "this kind of
+ * message" by pattern. Corresponds to PHPStan's feature of the same name.
  */
 final readonly class IgnoredErrorHelper
 {
     /**
-     * @param list<string> $patterns デリミタ付き正規表現
+     * @param list<string> $patterns regular expressions with delimiters
      */
     public function __construct(
         private array $patterns,

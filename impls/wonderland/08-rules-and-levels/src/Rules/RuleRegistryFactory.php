@@ -12,11 +12,12 @@ use Ministan\Rules\Methods\MethodCallParameterTypesRule;
 use Ministan\Rules\Variables\UndefinedVariableRule;
 
 /**
- * レベルに応じたルール束を組み立てる。
+ * Assembles the bundle of rules for a given level.
  *
- * PHPStan では neon と DI がこの役目を担うが、ここでは素朴に「各ルールに最低レベルを
- * 添えた表」を持ち、要求レベル以下のものを集める。レベルを上げるほどルールが増え、
- * かつ {@see RuleLevelHelper} が型照合自体も厳しくする——二段構えで厳しさが増す。
+ * In PHPStan, neon and DI take on this role, but here we simply keep a "table that pairs each
+ * rule with a minimum level" and collect those at or below the requested level. The higher the
+ * level, the more rules there are, and {@see RuleLevelHelper} also makes the type matching itself
+ * stricter -- strictness grows in two stages.
  */
 final class RuleRegistryFactory
 {

@@ -10,16 +10,17 @@ use PhpParser\Node\Stmt\ClassMethod;
 use ReflectionMethod;
 
 /**
- * メソッド 1 つのシグネチャ。名前・パラメータ型・戻り値型。
+ * The signature of a single method: name, parameter types, and return type.
  *
- * 型は「PHPDoc があれば PHPDoc、無ければネイティブ宣言」で決める。PHPStan と同じく
- * PHPDoc を上位に置くのは、`array<int, string>` のようにネイティブより精密に書けるから。
+ * Types are decided as "PHPDoc if present, otherwise the native declaration." Like PHPStan,
+ * PHPDoc is given priority because it can express more precise types than the native one,
+ * such as `array<int, string>`.
  */
 final readonly class MethodReflection
 {
     /**
      * @param list<Type> $parameterTypes
-     * @param list<bool> $byRefParams   各パラメータが参照渡し（出力引数）か
+     * @param list<bool> $byRefParams   whether each parameter is passed by reference (an output argument)
      */
     public function __construct(
         public string $name,
@@ -30,7 +31,7 @@ final readonly class MethodReflection
     }
 
     /**
-     * @param list<string> $classTemplateNames クラスが宣言する型変数（メソッドの @return T 等が参照する）
+     * @param list<string> $classTemplateNames the type variables the class declares (referenced by the method's @return T etc.)
      */
     public static function fromNode(ClassMethod $node, TypeNodeResolver $resolver, PhpDocTypeResolver $phpDoc, array $classTemplateNames = []): self
     {

@@ -7,10 +7,10 @@ namespace Ministan\Output;
 use Ministan\Analyser\Error;
 
 /**
- * 解析結果を人間向けに整形する。
+ * Formats analysis results for humans.
  *
- * PHPStan の {@see \PHPStan\Command\ErrorFormatter\ErrorFormatter} に対応。
- * Part 9 で JSON など複数フォーマットに拡張する。
+ * Corresponds to PHPStan's {@see \PHPStan\Command\ErrorFormatter\ErrorFormatter}.
+ * Extended to multiple formats such as JSON in Part 9.
  */
 final class ErrorFormatter
 {

@@ -8,10 +8,10 @@ use PhpParser\Error as ParserError;
 use PhpParser\ParserFactory;
 
 /**
- * 解析パイプラインの入口。
+ * The entry point of the analysis pipeline.
  *
- * Part 0 では「構文を検証し、構文エラーを {@see Error} に変換する」だけ。
- * Part 1 以降、ここでパース済み AST にルール群を適用していく。
+ * In Part 0 it only "validates the syntax and converts syntax errors into {@see Error}".
+ * From Part 1 onward, this is where the rules are applied to the parsed AST.
  */
 final class Analyser
 {
@@ -30,11 +30,11 @@ final class Analyser
         try {
             $parser->parse($code);
         } catch (ParserError $e) {
-            // php-parser の構文エラーを ministan の診断に翻訳する。
+            // Translate php-parser's syntax errors into ministan diagnostics.
             return [new Error($e->getRawMessage(), $file, $e->getStartLine())];
         }
 
-        // 構文が通れば、Part 0 では報告すべき問題はない。
+        // If the syntax is valid, there is nothing to report in Part 0.
         return [];
     }
 }

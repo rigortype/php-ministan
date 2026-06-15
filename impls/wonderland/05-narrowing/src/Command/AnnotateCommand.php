@@ -13,13 +13,14 @@ use PhpParser\Node\Stmt;
 use PhpParser\ParserFactory;
 
 /**
- * `ministan annotate <file>` の実装。
+ * Implementation of `ministan annotate <file>`.
  *
- * 各代入・各 return について、推論された型を表示する。PHPStan には無いが、
- * chibirigor の `annotate` に倣ったコマンド。型推論を「目で見える」ものにし、
- * 解析器の頭の中を覗くデバッグ手段にもなる。
+ * For each assignment and each return, show the inferred type. PHPStan has no such
+ * command; this one follows chibirigor's `annotate`. It makes type inference
+ * "visible" and doubles as a way to debug-peek inside the analyser's head.
  *
- * 解析（ルール適用）と同じ {@see NodeScopeResolver} を、別のコールバックで再利用する。
+ * It reuses the same {@see NodeScopeResolver} as analysis (rule application), driven
+ * by a different callback.
  */
 final class AnnotateCommand
 {
@@ -60,7 +61,7 @@ final class AnnotateCommand
                     && $node->var instanceof Expr\Variable
                     && is_string($node->var->name)
                 ) {
-                    // コールバックは代入の処理前に呼ばれるので、右辺は現在のスコープで推論できる。
+                    // The callback runs before the assignment is processed, so the right-hand side can be inferred in the current scope.
                     $rows[] = [
                         $node->getStartLine(),
                         '$' . $node->var->name,
@@ -89,7 +90,7 @@ final class AnnotateCommand
     private function format(string $file, array $rows): string
     {
         if ($rows === []) {
-            return sprintf("%s\n  (推論できる代入・return がありません)\n", $file);
+            return sprintf("%s\n  (no assignments or returns to infer from)\n", $file);
         }
 
         $labelWidth = 0;

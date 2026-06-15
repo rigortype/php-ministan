@@ -1,8 +1,8 @@
 diff --git a/dev/src/Analyser/NodeScopeResolver.php b/dev/src/Analyser/NodeScopeResolver.php
-index 4241a9a..7564608 100644
+index e70b0f1..f6c6063 100644
 --- a/dev/src/Analyser/NodeScopeResolver.php
 +++ b/dev/src/Analyser/NodeScopeResolver.php
-@@ -32,12 +32,15 @@ final class NodeScopeResolver
+@@ -35,12 +35,15 @@ final class NodeScopeResolver
      /** @var Closure(Node, Scope): void */
      private Closure $nodeCallback;
  
@@ -18,7 +18,7 @@ index 4241a9a..7564608 100644
      }
  
      /**
-@@ -73,6 +76,8 @@ final class NodeScopeResolver
+@@ -76,6 +79,8 @@ final class NodeScopeResolver
              $node instanceof Expr\Assign,
              $node instanceof Expr\AssignRef      => $this->processAssign($node, $scope),
              $node instanceof Expr\AssignOp       => $this->processAssignOp($node, $scope),
@@ -27,11 +27,11 @@ index 4241a9a..7564608 100644
              $node instanceof Stmt\Foreach_       => $this->processForeach($node, $scope),
              $node instanceof Stmt\Catch_         => $this->processCatch($node, $scope),
              $node instanceof Stmt\Global_        => $this->processGlobal($node, $scope),
-@@ -174,6 +179,54 @@ final class NodeScopeResolver
+@@ -177,6 +182,54 @@ final class NodeScopeResolver
          return $this->processAssignTarget($node->var, new MixedType(), $scope);
      }
  
-+    // --- 条件分岐: 型の絞り込みを適用する ---
++    // --- conditional branches: apply type narrowing ---
 +
 +    private function processIf(Stmt\If_ $node, Scope $scope): Scope
 +    {
@@ -41,7 +41,7 @@ index 4241a9a..7564608 100644
 +        $endScopes = [];
 +        $endScopes[] = $this->processStmts($node->stmts, $specified->truthy);
 +
-+        // それまでの条件がすべて偽だった世界線を運びながら elseif を辿る。
++        // Carry the world line where every preceding condition was false while walking the elseifs.
 +        $falsy = $specified->falsy;
 +        foreach ($node->elseifs as $elseif) {
 +            $falsy = $this->processNode($elseif->cond, $falsy);
@@ -53,7 +53,7 @@ index 4241a9a..7564608 100644
 +        if ($node->else !== null) {
 +            $endScopes[] = $this->processStmts($node->else->stmts, $falsy);
 +        } else {
-+            $endScopes[] = $falsy; // else が無ければ「全条件が偽」の経路がそのまま続く
++            $endScopes[] = $falsy; // with no else, the "all conditions false" path simply continues
 +        }
 +
 +        $result = array_shift($endScopes);
@@ -69,8 +69,8 @@ index 4241a9a..7564608 100644
 +        $scope = $this->processNode($node->cond, $scope);
 +        $specified = $this->typeSpecifier->specify($node->cond, $scope);
 +
-+        // `$x ? $x->foo() : null` のように、各枝は絞り込まれたスコープで解析する。
-+        // これにより `isset($y) ? $y : d` の $y も真の枝では定義済みになる。
++        // As in `$x ? $x->foo() : null`, each branch is analysed in its narrowed scope.
++        // This is also why $y in `isset($y) ? $y : d` is defined on the true branch.
 +        if ($node->if !== null) {
 +            $this->processNode($node->if, $specified->truthy);
 +        }
@@ -79,11 +79,11 @@ index 4241a9a..7564608 100644
 +        return $scope;
 +    }
 +
-     // --- ループ・例外・宣言 ---
+     // --- loops, exceptions, declarations ---
  
      private function processForeach(Stmt\Foreach_ $node, Scope $scope): Scope
 diff --git a/dev/src/Analyser/Scope.php b/dev/src/Analyser/Scope.php
-index 23a0acf..a7a49ba 100644
+index 1fc130f..1f86f99 100644
 --- a/dev/src/Analyser/Scope.php
 +++ b/dev/src/Analyser/Scope.php
 @@ -14,6 +14,7 @@ use Ministan\Type\MixedType;
@@ -94,16 +94,18 @@ index 23a0acf..a7a49ba 100644
  use PhpParser\Node\Expr;
  use PhpParser\Node\Scalar;
  
-@@ -73,19 +74,17 @@ final readonly class Scope
+@@ -74,20 +75,18 @@ final readonly class Scope
      }
  
      /**
--     * 2 つのスコープを合流する。両方で定義され型が食い違う変数は mixed に広げる
--     * （union 型はまだ無いため）。片方だけの変数は楽観的に残す（偽陽性を出さない）。
--     * 全経路で同じ型のときだけ型を保てる。精密な合流（union）は Part 5 で。
-+     * 2 つのスコープを合流する。両方で定義された変数は型を **union** で合併する
-+     * （then で int・else で string なら、合流後は int|string）。片方だけの変数は
-+     * 楽観的に残し、偽陽性を出さない。
+-     * Merges two scopes. A variable defined in both but with conflicting types is
+-     * widened to mixed (since there is no union type yet). A variable present in only
+-     * one branch is kept optimistically (no false positives). The type is preserved
+-     * only when it is the same on every path. The precise merge (union) comes in Part 5.
++     * Merges two scopes. A variable defined in both has its types combined with a
++     * **union** (int in the then-branch and string in the else-branch becomes
++     * int|string after the merge). A variable present in only one branch is kept
++     * optimistically, so no false positives are produced.
       */
      public function mergeWith(self $other): self
      {
@@ -122,10 +124,10 @@ index 23a0acf..a7a49ba 100644
          return new self($merged);
 diff --git a/dev/src/Analyser/SpecifiedTypes.php b/dev/src/Analyser/SpecifiedTypes.php
 new file mode 100644
-index 0000000..784a673
+index 0000000..0ae5c56
 --- /dev/null
 +++ b/dev/src/Analyser/SpecifiedTypes.php
-@@ -0,0 +1,26 @@
+@@ -0,0 +1,27 @@
 +<?php
 +
 +declare(strict_types=1);
@@ -133,10 +135,11 @@ index 0000000..784a673
 +namespace Ministan\Analyser;
 +
 +/**
-+ * ある条件式が真／偽だったとき、それぞれで成り立つスコープの組。
++ * The pair of scopes that hold when a given condition is true vs. false.
 + *
-+ * `if ($x instanceof Foo)` なら truthy では $x: Foo、falsy では元のまま、というふうに、
-+ * 条件が分岐の両側で型をどう狭めるかを表す。PHPStan の `SpecifiedTypes` に相当。
++ * For `if ($x instanceof Foo)`, the truthy scope has $x: Foo while the falsy scope
++ * keeps it unchanged. This captures how a condition narrows types on each side of
++ * the branch. Corresponds to PHPStan's `SpecifiedTypes`.
 + */
 +final readonly class SpecifiedTypes
 +{
@@ -146,7 +149,7 @@ index 0000000..784a673
 +    ) {
 +    }
 +
-+    /** 否定（`!`）は真偽を入れ替えるだけ。 */
++    /** Negation (`!`) simply swaps the truthy and falsy scopes. */
 +    public function negate(): self
 +    {
 +        return new self($this->falsy, $this->truthy);
@@ -154,10 +157,10 @@ index 0000000..784a673
 +}
 diff --git a/dev/src/Analyser/TypeSpecifier.php b/dev/src/Analyser/TypeSpecifier.php
 new file mode 100644
-index 0000000..581297a
+index 0000000..cc1b83c
 --- /dev/null
 +++ b/dev/src/Analyser/TypeSpecifier.php
-@@ -0,0 +1,185 @@
+@@ -0,0 +1,188 @@
 +<?php
 +
 +declare(strict_types=1);
@@ -177,10 +180,12 @@ index 0000000..581297a
 +use PhpParser\Node\Name;
 +
 +/**
-+ * 条件式から、真／偽それぞれの分岐で成り立つ型の絞り込みを導く。
++ * Derives, from a condition, the type narrowing that holds on the true and false
++ * branches respectively.
 + *
-+ * PHPStan の {@see \PHPStan\Analyser\TypeSpecifier} に対応する核。`instanceof`、
-+ * `is_int()` 等の型述語、`=== null`、`isset()`、`!`・`&&`・`||` を扱う。
++ * The core corresponding to PHPStan's {@see \PHPStan\Analyser\TypeSpecifier}. It
++ * handles `instanceof`, type predicates such as `is_int()`, `=== null`, `isset()`,
++ * and `!`, `&&`, `||`.
 + */
 +final class TypeSpecifier
 +{
@@ -221,7 +226,7 @@ index 0000000..581297a
 +
 +    private function specifyAnd(Expr\BinaryOp $condition, Scope $scope): SpecifiedTypes
 +    {
-+        // 真: 両条件が真。偽: どちらかが偽（精密化は見送り、元のスコープ）。
++        // True: both conditions are true. False: either one is false (refinement skipped, original scope).
 +        $left = $this->specify($condition->left, $scope);
 +        $right = $this->specify($condition->right, $left->truthy);
 +
@@ -230,7 +235,7 @@ index 0000000..581297a
 +
 +    private function specifyOr(Expr\BinaryOp $condition, Scope $scope): SpecifiedTypes
 +    {
-+        // 偽: 両条件が偽。真: どちらかが真（精密化は見送り）。
++        // False: both conditions are false. True: either one is true (refinement skipped).
 +        $left = $this->specify($condition->left, $scope);
 +        $right = $this->specify($condition->right, $left->falsy);
 +
@@ -245,7 +250,7 @@ index 0000000..581297a
 +        ) {
 +            $truthy = $scope->assignVariable($condition->expr->name, new ObjectType($condition->class->toString()));
 +
-+            // falsy 側の引き算は継承関係が要るので Part 6 まで見送り。
++            // Subtracting on the falsy side needs the inheritance hierarchy, so it waits until Part 6.
 +            return new SpecifiedTypes($truthy, $scope);
 +        }
 +
@@ -297,7 +302,7 @@ index 0000000..581297a
 +        $truthy = $scope;
 +        foreach ($condition->vars as $var) {
 +            if ($var instanceof Expr\Variable && is_string($var->name)) {
-+                // 真の枝では「定義済みかつ非 null」。未定義なら mixed として定義される。
++                // On the true branch the variable is "defined and non-null"; if it was undefined, it becomes defined as mixed.
 +                $current = $scope->getVariableType($var->name);
 +                $truthy = $truthy->assignVariable($var->name, TypeCombinator::remove($current, new NullType()));
 +            }
@@ -326,7 +331,8 @@ index 0000000..581297a
 +    }
 +
 +    /**
-+     * 等価比較の片側が「変数」、もう片側が「値の式」になるよう並べ替える。
++     * Reorders an equality comparison so that one side is a "variable" and the
++     * other is a "value expression".
 +     *
 +     * @return array{Expr\Variable, Expr}|array{null, null}
 +     */
@@ -344,20 +350,21 @@ index 0000000..581297a
 +    }
 +}
 diff --git a/dev/src/TrinaryLogic.php b/dev/src/TrinaryLogic.php
-index b2d6650..6e0ad5d 100644
+index ac5ce32..a25b99a 100644
 --- a/dev/src/TrinaryLogic.php
 +++ b/dev/src/TrinaryLogic.php
-@@ -63,6 +63,28 @@ enum TrinaryLogic
+@@ -63,6 +63,29 @@ enum TrinaryLogic
          };
      }
  
 +    /**
-+     * 全 operand が一致すればその値、1 つでも異なれば Maybe。
++     * If all operands agree, that value; if even one differs, Maybe.
 +     *
-+     * union との関係に使う —— ある型が union の「全メンバに対して Yes」なら Yes、
-+     * 「全メンバに対して No」なら No、混在すれば部分一致なので Maybe。`and`（min）で
-+     * 畳むと部分一致が No に潰れ、union の一部不適合を低レベルで誤検出してしまう。
-+     * PHPStan の {@see \PHPStan\TrinaryLogic::extremeIdentity} に対応。
++     * Used for the relationship with a union -- if a type is "Yes against every member" of the
++     * union it is Yes, "No against every member" it is No, and if mixed it is a partial match so
++     * Maybe. Folding with `and` (min) would collapse a partial match into No, falsely detecting a
++     * union's partial non-conformance at low levels. Corresponds to PHPStan's
++     * {@see \PHPStan\TrinaryLogic::extremeIdentity}.
 +     *
 +     * @param non-empty-list<self> $operands
 +     */
@@ -390,7 +397,7 @@ index 257c975..b6993a4 100644
                  ? TrinaryLogic::Yes
                  : TrinaryLogic::No);
 diff --git a/dev/src/Type/Constant/ConstantBooleanType.php b/dev/src/Type/Constant/ConstantBooleanType.php
-index 89f273c..c507e5e 100644
+index 21bc5ce..dd7f5dc 100644
 --- a/dev/src/Type/Constant/ConstantBooleanType.php
 +++ b/dev/src/Type/Constant/ConstantBooleanType.php
 @@ -28,7 +28,7 @@ final class ConstantBooleanType implements Type
@@ -403,7 +410,7 @@ index 89f273c..c507e5e 100644
                  $type instanceof self => $this->value === $type->value
                      ? TrinaryLogic::Yes
 diff --git a/dev/src/Type/Constant/ConstantIntegerType.php b/dev/src/Type/Constant/ConstantIntegerType.php
-index bf9d261..28b0825 100644
+index e6cd5e3..5175c4a 100644
 --- a/dev/src/Type/Constant/ConstantIntegerType.php
 +++ b/dev/src/Type/Constant/ConstantIntegerType.php
 @@ -31,7 +31,7 @@ final class ConstantIntegerType implements Type
@@ -416,7 +423,7 @@ index bf9d261..28b0825 100644
                  $type instanceof self => $this->value === $type->value
                      ? TrinaryLogic::Yes
 diff --git a/dev/src/Type/Constant/ConstantStringType.php b/dev/src/Type/Constant/ConstantStringType.php
-index a37b9cf..8a14eb1 100644
+index 34b8157..e966fd7 100644
 --- a/dev/src/Type/Constant/ConstantStringType.php
 +++ b/dev/src/Type/Constant/ConstantStringType.php
 @@ -28,7 +28,7 @@ final class ConstantStringType implements Type
@@ -429,20 +436,20 @@ index a37b9cf..8a14eb1 100644
                  $type instanceof self => $this->value === $type->value
                      ? TrinaryLogic::Yes
 diff --git a/dev/src/Type/FloatType.php b/dev/src/Type/FloatType.php
-index 5d31e64..04c21aa 100644
+index 3d13358..7ce0b71 100644
 --- a/dev/src/Type/FloatType.php
 +++ b/dev/src/Type/FloatType.php
 @@ -18,7 +18,7 @@ final class FloatType implements Type
      public function isSuperTypeOf(Type $type): TrinaryLogic
      {
-         // int → float の暗黙拡大は accepts の精密化として後の章で扱う。ここでは厳密。
+         // The implicit int → float widening is handled in a later chapter as a refinement of accepts. Strict here.
 -        return self::relateToTopAndBottom($type)
 +        return $this->relateToSpecial($type)
              ?? ($type instanceof self ? TrinaryLogic::Yes : TrinaryLogic::No);
      }
  }
 diff --git a/dev/src/Type/IntegerType.php b/dev/src/Type/IntegerType.php
-index 0cc5d52..963e59a 100644
+index 426acfc..d22a78b 100644
 --- a/dev/src/Type/IntegerType.php
 +++ b/dev/src/Type/IntegerType.php
 @@ -18,7 +18,7 @@ final class IntegerType implements Type
@@ -452,7 +459,7 @@ index 0cc5d52..963e59a 100644
 -        return self::relateToTopAndBottom($type)
 +        return $this->relateToSpecial($type)
              ?? (($type instanceof self || $type instanceof ConstantIntegerType)
-                 ? TrinaryLogic::Yes   // int も、42 のような定数 int も、int の部分型
+                 ? TrinaryLogic::Yes   // both int and a constant int like 42 are subtypes of int
                  : TrinaryLogic::No);
 diff --git a/dev/src/Type/NullType.php b/dev/src/Type/NullType.php
 index ae0dc27..0797fe8 100644
@@ -469,7 +476,7 @@ index ae0dc27..0797fe8 100644
  }
 diff --git a/dev/src/Type/ObjectType.php b/dev/src/Type/ObjectType.php
 new file mode 100644
-index 0000000..1c6a105
+index 0000000..26081cb
 --- /dev/null
 +++ b/dev/src/Type/ObjectType.php
 @@ -0,0 +1,46 @@
@@ -482,12 +489,12 @@ index 0000000..1c6a105
 +use Ministan\TrinaryLogic;
 +
 +/**
-+ * あるクラス／インターフェイスのインスタンスを表す型。
++ * A type representing an instance of some class or interface.
 + *
-+ * Part 5 では「クラス名」しか知らない素朴な実装。同名なら Yes、別名なら
-+ * 継承関係が不明なので Maybe を返す（non-rejecting）。`$x instanceof Foo` の
-+ * 絞り込みで使う。継承を踏まえた厳密な部分型判定は、リフレクションを得る
-+ * Part 6 で本 ObjectType を強化して実現する。
++ * In Part 5 this is a naive implementation that knows only the "class name". For the same name it
++ * returns Yes; for a different name the inheritance relationship is unknown, so it returns Maybe
++ * (non-rejecting). Used for narrowing in `$x instanceof Foo`. Strict subtype decisions that account
++ * for inheritance are achieved in Part 6, where reflection becomes available and this ObjectType is strengthened.
 + */
 +final class ObjectType implements Type
 +{
@@ -509,7 +516,7 @@ index 0000000..1c6a105
 +            ?? match (true) {
 +                $type instanceof self => $this->className === $type->className
 +                    ? TrinaryLogic::Yes
-+                    : TrinaryLogic::Maybe, // 継承関係は Part 6 まで不明
++                    : TrinaryLogic::Maybe, // the inheritance relationship is unknown until Part 6
 +                default => TrinaryLogic::No,
 +            };
 +    }
@@ -520,17 +527,17 @@ index 0000000..1c6a105
 +    }
 +}
 diff --git a/dev/src/Type/SimpleTypeTrait.php b/dev/src/Type/SimpleTypeTrait.php
-index 167557d..a041776 100644
+index e1e4e34..9482678 100644
 --- a/dev/src/Type/SimpleTypeTrait.php
 +++ b/dev/src/Type/SimpleTypeTrait.php
 @@ -10,9 +10,8 @@ use Ministan\TrinaryLogic;
-  * 単純な値型（int, string, null …）が共有する定型処理。
+  * Boilerplate shared by simple value types (int, string, null …).
   *
-  * - `accepts` は `isSuperTypeOf` に委譲する（これらの型では代入可能性＝部分型関係）。
-- *   float が int を受け入れる、といった暗黙変換は後の章の精密化に回す。
-  * - `equals` は同じクラスかどうか。定数型は値も比べるので個別に上書きする。
-- * - `relateToTopAndBottom` は、どの型にも共通の「上端 mixed・下端 never」との関係を返す。
-+ * - `relateToSpecial` は、どの型にも共通の「上端 mixed・下端 never・union」との関係を返す。
+  * - `accepts` delegates to `isSuperTypeOf` (for these types, assignability = the subtype relation).
+- *   Implicit conversions, such as float accepting int, are deferred to a refinement in a later chapter.
+  * - `equals` checks whether the class is the same. Constant types also compare values, so they override it individually.
+- * - `relateToTopAndBottom` returns the relation to the "top mixed, bottom never" that is common to every type.
++ * - `relateToSpecial` returns the relation to the cases common to every type: the top mixed, the bottom never, and union.
   */
  trait SimpleTypeTrait
  {
@@ -538,14 +545,14 @@ index 167557d..a041776 100644
      }
  
      /**
--     * never はあらゆる型の部分型（= 常に Yes）。mixed はどの型でもありうる（= Maybe）。
--     * どちらでもなければ null を返し、呼び出し側の固有判定に委ねる。
-+     * 全型に共通する相手との関係:
-+     * - never はあらゆる型の部分型（= Yes）
-+     * - mixed はどの型でもありうる（= Maybe）
-+     * - union は各メンバとの関係の extreme-identity（全 Yes→Yes・全 No→No・混在→Maybe）
+-     * never is a subtype of every type (= always Yes). mixed could be any type (= Maybe).
+-     * If it is neither, return null and defer to the caller's own decision.
++     * The relation to operands common to all types:
++     * - never is a subtype of every type (= Yes)
++     * - mixed could be any type (= Maybe)
++     * - for a union, the extreme-identity of the relation to each member (all Yes→Yes, all No→No, mixed→Maybe)
 +     *
-+     * いずれでもなければ null を返し、呼び出し側の固有判定に委ねる。
++     * If it is none of these, return null and defer to the caller's own decision.
       */
 -    protected static function relateToTopAndBottom(Type $type): ?TrinaryLogic
 +    protected function relateToSpecial(Type $type): ?TrinaryLogic
@@ -557,8 +564,8 @@ index 167557d..a041776 100644
          }
  
 +        if ($type instanceof UnionType) {
-+            // 部分一致（一部メンバだけ適合）は No に潰さず Maybe にする。さもないと
-+            // union の一部不適合を低レベルで誤検出してしまう（高レベルでのみ咎める）。
++            // A partial match (only some members fit) becomes Maybe rather than collapsing to No.
++            // Otherwise we would falsely flag a partially-unfitting union at a low level (only blame it at a high level).
 +            $results = [];
 +            foreach ($type->getTypes() as $member) {
 +                $results[] = $this->isSuperTypeOf($member);
@@ -585,7 +592,7 @@ index dc933cf..873c275 100644
                  : TrinaryLogic::No);
 diff --git a/dev/src/Type/TypeCombinator.php b/dev/src/Type/TypeCombinator.php
 new file mode 100644
-index 0000000..ca00927
+index 0000000..811e2c2
 --- /dev/null
 +++ b/dev/src/Type/TypeCombinator.php
 @@ -0,0 +1,79 @@
@@ -596,16 +603,16 @@ index 0000000..ca00927
 +namespace Ministan\Type;
 +
 +/**
-+ * 型を合成・分解する操作の置き場。PHPStan の {@see \PHPStan\Type\TypeCombinator}。
++ * The home for operations that combine and decompose types. PHPStan's {@see \PHPStan\Type\TypeCombinator}.
 + *
-+ * 型クラス自身ではなくここに集約するのは、`union`/`remove` が「複数の型をまたいで
-+ * 正規化する」横断的な操作だから。各型は自分の関係だけ知っていればよい。
++ * These live here rather than on the type classes themselves because `union`/`remove` are cross-cutting
++ * operations that "normalize across multiple types". Each type only needs to know its own relations.
 + */
 +final class TypeCombinator
 +{
 +    /**
-+     * 複数の型を合併し、正規化する。
-+     * フラット化 → never 除去 → mixed 吸収 → 重複除去 → 0個は never・1個は単型。
++     * Union several types together and normalize.
++     * Flatten → drop never → absorb mixed → dedupe → 0 members is never, 1 member is the single type.
 +     */
 +    public static function union(Type ...$types): Type
 +    {
@@ -623,15 +630,15 @@ index 0000000..ca00927
 +        $result = [];
 +        foreach ($flattened as $type) {
 +            if ($type instanceof NeverType) {
-+                continue; // never は合併に寄与しない
++                continue; // never does not contribute to a union
 +            }
 +            if ($type instanceof MixedType) {
-+                return new MixedType(); // mixed は全てを吸収する
++                return new MixedType(); // mixed absorbs everything
 +            }
 +
 +            foreach ($result as $existing) {
 +                if ($existing->equals($type)) {
-+                    continue 2; // 重複は捨てる
++                    continue 2; // drop duplicates
 +                }
 +            }
 +            $result[] = $type;
@@ -645,8 +652,8 @@ index 0000000..ca00927
 +    }
 +
 +    /**
-+     * $from から $typeToRemove に含まれる部分を取り除く。
-+     * 例: remove(int|null, null) = int。else 分岐の絞り込みで使う。
++     * Remove from $from the part contained in $typeToRemove.
++     * Example: remove(int|null, null) = int. Used for narrowing in the else branch.
 +     */
 +    public static function remove(Type $from, Type $typeToRemove): Type
 +    {
@@ -670,7 +677,7 @@ index 0000000..ca00927
 +}
 diff --git a/dev/src/Type/UnionType.php b/dev/src/Type/UnionType.php
 new file mode 100644
-index 0000000..7f9dcbf
+index 0000000..af4c0f7
 --- /dev/null
 +++ b/dev/src/Type/UnionType.php
 @@ -0,0 +1,107 @@
@@ -683,13 +690,13 @@ index 0000000..7f9dcbf
 +use Ministan\TrinaryLogic;
 +
 +/**
-+ * 「いずれかの型」を表す合併型。`int|string`, `Foo|null` など。
++ * A union type meaning "one of these types". `int|string`, `Foo|null`, and so on.
 + *
-+ * 絞り込み（narrowing）の合流で生まれる。`if` の then で int、else で string に
-+ * なった変数は、合流後に `int|string` になる。PHPStan の {@see \PHPStan\Type\UnionType}。
++ * It arises where narrowing branches merge. A variable that became int in an `if`'s then and
++ * string in its else becomes `int|string` after the merge. PHPStan's {@see \PHPStan\Type\UnionType}.
 + *
-+ * 正規化（フラット化・重複除去・never 除去・1 個なら単型へ）は生成側の
-+ * {@see TypeCombinator::union()} が担う。ここでは正規化済みの構成要素を前提とする。
++ * Normalization (flattening, deduping, dropping never, collapsing to a single type when there is one
++ * member) is the job of the producer, {@see TypeCombinator::union()}. Here we assume already-normalized members.
 + */
 +final class UnionType implements Type
 +{
@@ -697,7 +704,7 @@ index 0000000..7f9dcbf
 +    private array $types;
 +
 +    /**
-+     * @param list<Type> $types 2 個以上の構成要素（正規化済み）
++     * @param list<Type> $types two or more members (already normalized)
 +     */
 +    public function __construct(array $types)
 +    {
@@ -715,15 +722,15 @@ index 0000000..7f9dcbf
 +    public function describe(): string
 +    {
 +        $parts = array_map(static fn (Type $t): string => $t->describe(), $this->types);
-+        sort($parts); // 安定した表示のため整列
++        sort($parts); // sort for stable display
 +
 +        return implode('|', $parts);
 +    }
 +
 +    public function isSuperTypeOf(Type $type): TrinaryLogic
 +    {
-+        // 相手が union なら、各メンバとの関係を集めて extreme-identity で畳む
-+        // （全 Yes→Yes・全 No→No・混在は部分一致で Maybe）。
++        // If the operand is a union, gather the relation to each member and fold with extreme-identity
++        // (all Yes→Yes, all No→No, a mixture is a partial match → Maybe).
 +        if ($type instanceof UnionType) {
 +            $results = [];
 +            foreach ($type->types as $member) {
@@ -733,7 +740,7 @@ index 0000000..7f9dcbf
 +            return TrinaryLogic::extremeIdentity($results);
 +        }
 +
-+        // 単型なら、どれか 1 つのメンバが受け入れればよい（OR）。
++        // For a single type, it suffices that any one member accepts it (OR).
 +        $result = TrinaryLogic::No;
 +        foreach ($this->types as $member) {
 +            $result = $result->or($member->isSuperTypeOf($type));
@@ -767,7 +774,7 @@ index 0000000..7f9dcbf
 +            return false;
 +        }
 +
-+        // 順序非依存で照合する。
++        // Compare in an order-independent way.
 +        foreach ($this->types as $a) {
 +            foreach ($type->types as $b) {
 +                if ($b->equals($a)) {
@@ -783,7 +790,7 @@ index 0000000..7f9dcbf
 +}
 diff --git a/dev/tests/Analyser/TypeSpecifierTest.php b/dev/tests/Analyser/TypeSpecifierTest.php
 new file mode 100644
-index 0000000..570233a
+index 0000000..eaab435
 --- /dev/null
 +++ b/dev/tests/Analyser/TypeSpecifierTest.php
 @@ -0,0 +1,82 @@
@@ -806,7 +813,7 @@ index 0000000..570233a
 +final class TypeSpecifierTest extends TestCase
 +{
 +    /**
-+     * 与えた条件式 1 つを含む小さなコードをパースし、その条件ノードを取り出す。
++     * Parse a small snippet containing a single condition expression and extract that condition node.
 +     */
 +    private function conditionOf(string $expr): \PhpParser\Node\Expr
 +    {
@@ -824,7 +831,7 @@ index 0000000..570233a
 +        $specified = (new TypeSpecifier())->specify($this->conditionOf('is_int($x)'), $scope);
 +
 +        self::assertSame('int', $specified->truthy->getVariableType('x')->describe());
-+        // mixed から int を引いても mixed のまま（mixed は分解できない）。
++        // Removing int from mixed still leaves mixed (mixed cannot be decomposed).
 +        self::assertSame('mixed', $specified->falsy->getVariableType('x')->describe());
 +    }
 +
@@ -870,7 +877,7 @@ index 0000000..570233a
 +    }
 +}
 diff --git a/dev/tests/AnalyserTest.php b/dev/tests/AnalyserTest.php
-index e3a3703..c94b7b1 100644
+index 2b36728..3fa8215 100644
 --- a/dev/tests/AnalyserTest.php
 +++ b/dev/tests/AnalyserTest.php
 @@ -79,4 +79,15 @@ final class AnalyserTest extends TestCase
@@ -879,8 +886,8 @@ index e3a3703..c94b7b1 100644
      }
 +
 +    /**
-+     * Part 2 で積み残した「isset で守られた三項」の取りこぼしが、
-+     * Part 5 の絞り込みで解消されたことの回帰テスト。
++     * Regression test: the "isset-guarded ternary" gap left over from Part 2 is
++     * resolved by the narrowing introduced in Part 5.
 +     */
 +    public function testIssetGuardedTernaryProducesNoFalsePositive(): void
 +    {
@@ -967,7 +974,7 @@ index 0000000..5821dd3
 +}
 diff --git a/dev/tests/fixtures/isset-ternary.php b/dev/tests/fixtures/isset-ternary.php
 new file mode 100644
-index 0000000..588d535
+index 0000000..e6e4f26
 --- /dev/null
 +++ b/dev/tests/fixtures/isset-ternary.php
 @@ -0,0 +1,9 @@
@@ -977,6 +984,6 @@ index 0000000..588d535
 +
 +function pick(): string
 +{
-+    // $name は一度も代入されないが、isset で守られた三項なら参照は安全。
++    // $name is never assigned, but an isset-guarded ternary makes the reference safe.
 +    return isset($name) ? $name : 'anon';
 +}

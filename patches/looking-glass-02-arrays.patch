@@ -1,5 +1,5 @@
 diff --git a/dev/src/Analyser/NodeScopeResolver.php b/dev/src/Analyser/NodeScopeResolver.php
-index c5c5d65..649c4c9 100644
+index 29639e1..0a05e6d 100644
 --- a/dev/src/Analyser/NodeScopeResolver.php
 +++ b/dev/src/Analyser/NodeScopeResolver.php
 @@ -7,6 +7,8 @@ namespace Ministan\Analyser;
@@ -11,7 +11,7 @@ index c5c5d65..649c4c9 100644
  use Ministan\Type\MixedType;
  use Ministan\Type\Type;
  use PhpParser\Node;
-@@ -280,18 +282,43 @@ final class NodeScopeResolver
+@@ -284,18 +286,43 @@ final class NodeScopeResolver
      private function processForeach(Stmt\Foreach_ $node, Scope $scope): Scope
      {
          $scope = $this->processNode($node->expr, $scope);
@@ -58,7 +58,7 @@ index c5c5d65..649c4c9 100644
      {
          $catchScope = $scope;
 diff --git a/dev/src/Analyser/Scope.php b/dev/src/Analyser/Scope.php
-index 75d3b0a..6a72d76 100644
+index 66742ea..8abb72f 100644
 --- a/dev/src/Analyser/Scope.php
 +++ b/dev/src/Analyser/Scope.php
 @@ -4,7 +4,9 @@ declare(strict_types=1);
@@ -79,18 +79,18 @@ index 75d3b0a..6a72d76 100644
  use PhpParser\Node\Expr;
  use PhpParser\Node\Identifier;
  use PhpParser\Node\Name;
-@@ -129,6 +132,10 @@ final readonly class Scope
+@@ -133,6 +136,10 @@ final readonly class Scope
                  ? $this->getVariableType($expr->name)
                  : new MixedType(),
  
-+            // --- 配列リテラルとアクセス ---
++            // --- array literals and access ---
 +            $expr instanceof Expr\Array_ => $this->arrayLiteralType($expr),
 +            $expr instanceof Expr\ArrayDimFetch => $this->arrayDimType($expr),
 +
-             // --- オブジェクト生成・呼び出し（リフレクションを使う）---
+             // --- object construction and calls (these use reflection) ---
              $expr instanceof Expr\New_ => $expr->class instanceof Name
                  ? new ObjectType($expr->class->toString())
-@@ -165,6 +172,65 @@ final readonly class Scope
+@@ -169,6 +176,65 @@ final readonly class Scope
          };
      }
  
@@ -103,7 +103,7 @@ index 75d3b0a..6a72d76 100644
 +
 +        foreach ($expr->items as $item) {
 +            if (!$item instanceof ArrayItem || $item->unpack) {
-+                $isConstant = false; // スプレッド ...$a は静的に分からない
++                $isConstant = false; // a spread ...$a cannot be known statically
 +                continue;
 +            }
 +
@@ -117,7 +117,7 @@ index 75d3b0a..6a72d76 100644
 +                if ($keyType instanceof ConstantIntegerType) {
 +                    $nextInt = max($nextInt, $keyType->value + 1);
 +                } elseif (!$keyType instanceof ConstantStringType) {
-+                    $isConstant = false; // キーが定数でなければ shape にできない
++                    $isConstant = false; // if the key is not constant, it cannot form a shape
 +                }
 +            }
 +
@@ -138,7 +138,7 @@ index 75d3b0a..6a72d76 100644
 +    private function arrayDimType(Expr\ArrayDimFetch $expr): Type
 +    {
 +        if ($expr->dim === null) {
-+            return new MixedType(); // $arr[] は書き込み専用構文
++            return new MixedType(); // $arr[] is write-only syntax
 +        }
 +
 +        $arrayType = $this->getType($expr->var);
@@ -157,7 +157,7 @@ index 75d3b0a..6a72d76 100644
      {
          if (!$expr->name instanceof Identifier) {
 diff --git a/dev/src/Type/ArrayType.php b/dev/src/Type/ArrayType.php
-index c2909ae..76d7ccf 100644
+index fb646e0..0e90970 100644
 --- a/dev/src/Type/ArrayType.php
 +++ b/dev/src/Type/ArrayType.php
 @@ -5,12 +5,13 @@ declare(strict_types=1);
@@ -167,12 +167,12 @@ index c2909ae..76d7ccf 100644
 +use Ministan\Type\Constant\ConstantArrayType;
  
  /**
-  * 配列型。キーと要素の型を持つ。`array<int, string>` や `list<Foo>`（= array<int, Foo>）。
+  * Array type. Carries a key type and an item type. `array<int, string>` or `list<Foo>` (= array<int, Foo>).
   *
-- * PHPDoc から生まれる最初の「複合型」。要素型を保つことで `foreach` の要素や配列アクセスの
-- * 型推論につながる（本格化は応用編）。PHPStan の配列型を大きく簡略化したもの。
-+ * 要素型を保つことで `foreach` の要素や配列アクセスの型推論につながる。キーごとに値型が
-+ * 分かる形は {@see ConstantArrayType}。PHPStan の配列型を大きく簡略化したもの。
+- * The first "compound type" born from PHPDoc. Keeping the item type lets us infer the type of `foreach`
+- * elements and array accesses (fully developed in the Applied volume). A heavy simplification of PHPStan's array types.
++ * Keeping the item type lets us infer the type of `foreach` elements and array accesses. When the
++ * value type is known per key, see {@see ConstantArrayType}. A heavy simplification of PHPStan's array types.
   */
  final class ArrayType implements Type
  {
@@ -208,7 +208,7 @@ index c2909ae..76d7ccf 100644
 +                ->and($this->itemType->isSuperTypeOf($type->itemType));
 +        }
 +
-+        // 定数配列は、キー/値の union が適合すれば一般配列の部分型。
++        // A constant array is a subtype of a general array when its key/value unions fit.
 +        if ($type instanceof ConstantArrayType) {
 +            return $this->keyType->isSuperTypeOf($type->getIterableKeyType())
 +                ->and($this->itemType->isSuperTypeOf($type->getIterableValueType()));
@@ -220,7 +220,7 @@ index c2909ae..76d7ccf 100644
      public function equals(Type $type): bool
 diff --git a/dev/src/Type/Constant/ConstantArrayType.php b/dev/src/Type/Constant/ConstantArrayType.php
 new file mode 100644
-index 0000000..3cadb56
+index 0000000..7013c96
 --- /dev/null
 +++ b/dev/src/Type/Constant/ConstantArrayType.php
 @@ -0,0 +1,104 @@
@@ -238,17 +238,17 @@ index 0000000..3cadb56
 +use Ministan\Type\TypeCombinator;
 +
 +/**
-+ * キーごとに値の型が分かっている配列。`array{a: 1, b: 'x'}`。
++ * An array whose value type is known per key. `array{a: 1, b: 'x'}`.
 + *
-+ * 配列リテラルから生まれる。`['id' => 42]` の型は `array<string, int>` ではなく
-+ * `array{id: 42}`。だから `$row['id']` がちょうど `42` だと分かる——定数型が配列にも
-+ * 効く、PHPStan の切れ味の核。
++ * It arises from array literals. The type of `['id' => 42]` is not `array<string, int>` but
++ * `array{id: 42}`. That is why we know `$row['id']` is exactly `42` — constant types working on
++ * arrays too is the core of PHPStan's sharpness.
 + */
 +final class ConstantArrayType implements Type
 +{
 +    /**
-+     * @param list<Type> $keyTypes   各要素のキー型（定数）
-+     * @param list<Type> $valueTypes 各要素の値型（$keyTypes と同じ並び）
++     * @param list<Type> $keyTypes   the key type of each element (constant)
++     * @param list<Type> $valueTypes the value type of each element (in the same order as $keyTypes)
 +     */
 +    public function __construct(
 +        private readonly array $keyTypes,
@@ -272,7 +272,7 @@ index 0000000..3cadb56
 +        return 'array{' . implode(', ', $parts) . '}';
 +    }
 +
-+    /** 指定オフセットの値型。定数キーが一致すればその値型、不明なら全値型の union。 */
++    /** The value type at the given offset. If a constant key matches, its value type; otherwise the union of all value types. */
 +    public function getOffsetValueType(Type $offset): Type
 +    {
 +        foreach ($this->keyTypes as $i => $keyType) {
@@ -329,7 +329,7 @@ index 0000000..3cadb56
 +    }
 +}
 diff --git a/dev/tests/Command/AnnotateCommandTest.php b/dev/tests/Command/AnnotateCommandTest.php
-index 36826e7..23e59f3 100644
+index c71076b..3f24c8a 100644
 --- a/dev/tests/Command/AnnotateCommandTest.php
 +++ b/dev/tests/Command/AnnotateCommandTest.php
 @@ -28,6 +28,18 @@ final class AnnotateCommandTest extends TestCase

@@ -7,10 +7,10 @@ namespace Ministan\Type;
 use Ministan\TrinaryLogic;
 
 /**
- * 最下位の型。値を一つも含まない（決して起こらない）。
+ * The bottom type. Contains no value at all (never happens).
  *
- * `throw` するだけの関数の戻り値や、到達しえない分岐の型。あらゆる型の部分型であり、
- * 上位型となるのは never だけ。mixed とは対極の存在。
+ * The return type of a function that only `throw`s, or the type of an unreachable branch. It is a
+ * subtype of every type, and the only supertype it has is never. The polar opposite of mixed.
  */
 final class NeverType implements Type
 {
@@ -23,7 +23,7 @@ final class NeverType implements Type
 
     public function isSuperTypeOf(Type $type): TrinaryLogic
     {
-        // never の上位型は never のみ。mixed に対しても「いいえ」。
+        // The only supertype of never is never. Even against mixed the answer is No.
         return $type instanceof self ? TrinaryLogic::Yes : TrinaryLogic::No;
     }
 }

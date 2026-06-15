@@ -52,7 +52,7 @@ final class ReflectionProviderTest extends TestCase
         $a = new ObjectType('A');
         $b = new ObjectType('B');
 
-        self::assertSame(TrinaryLogic::Yes, $a->isSuperTypeOf($b)); // A は B の上位
-        self::assertSame(TrinaryLogic::No, $b->isSuperTypeOf($a));  // 逆は成り立たない
+        self::assertSame(TrinaryLogic::Yes, $a->isSuperTypeOf($b)); // A is a supertype of B
+        self::assertSame(TrinaryLogic::No, $b->isSuperTypeOf($a));  // the reverse does not hold
     }
 }

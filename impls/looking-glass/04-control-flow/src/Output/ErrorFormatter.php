@@ -7,8 +7,8 @@ namespace Ministan\Output;
 use Ministan\Analyser\Error;
 
 /**
- * 解析結果を出力テキストに整形する。表・JSON など複数の表現を差し替えられる。
- * PHPStan の {@see \PHPStan\Command\ErrorFormatter\ErrorFormatter} に対応。
+ * Formats analysis results into output text. Several representations, such as table or JSON,
+ * can be swapped in. Corresponds to PHPStan's {@see \PHPStan\Command\ErrorFormatter\ErrorFormatter}.
  */
 interface ErrorFormatter
 {

@@ -4,6 +4,6 @@ declare(strict_types=1);
 
 function pick(): string
 {
-    // $name は一度も代入されないが、isset で守られた三項なら参照は安全。
+    // $name is never assigned, but an isset-guarded ternary makes the reference safe.
     return isset($name) ? $name : 'anon';
 }

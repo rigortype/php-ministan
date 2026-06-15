@@ -7,12 +7,12 @@ function needs_int(int $n): int
     return $n;
 }
 
-needs_int('hello'); // string を int パラメータに → 型不一致
+needs_int('hello'); // string into an int parameter → type mismatch
 
 /**
  * @return string
  */
 function make_string(): string
 {
-    return 42; // 戻り値が宣言と不一致（level 6 以上で検出）
+    return 42; // return value mismatches the declaration (detected at level 6 and above)
 }

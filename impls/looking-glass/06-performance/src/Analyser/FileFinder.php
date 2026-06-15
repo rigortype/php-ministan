@@ -10,7 +10,7 @@ use RecursiveIteratorIterator;
 use SplFileInfo;
 
 /**
- * 解析対象のパス（ファイルまたはディレクトリ）から .php ファイルを集める。
+ * Collect .php files from the target paths (files or directories).
  */
 final class FileFinder
 {
@@ -32,7 +32,7 @@ final class FileFinder
             }
         }
 
-        sort($files); // 出力を安定させる
+        sort($files); // keep the output stable
 
         return $files;
     }

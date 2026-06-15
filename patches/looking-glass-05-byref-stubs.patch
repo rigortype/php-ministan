@@ -1,5 +1,5 @@
 diff --git a/dev/src/Analyser/NodeScopeResolver.php b/dev/src/Analyser/NodeScopeResolver.php
-index 8915eeb..f8f2cf2 100644
+index 3b4599f..1dd0de6 100644
 --- a/dev/src/Analyser/NodeScopeResolver.php
 +++ b/dev/src/Analyser/NodeScopeResolver.php
 @@ -6,14 +6,17 @@ namespace Ministan\Analyser;
@@ -20,7 +20,7 @@ index 8915eeb..f8f2cf2 100644
  use PhpParser\Node\Name;
  use PhpParser\Node\Stmt;
  
-@@ -94,6 +97,9 @@ final class NodeScopeResolver
+@@ -97,6 +100,9 @@ final class NodeScopeResolver
              $node instanceof Stmt\Global_        => $this->processGlobal($node, $scope),
              $node instanceof Stmt\Static_        => $this->processStaticVars($node, $scope),
  
@@ -30,16 +30,16 @@ index 8915eeb..f8f2cf2 100644
              $node instanceof Expr\Isset_,
              $node instanceof Expr\Empty_         => $scope,
              $node instanceof Expr\BinaryOp\Coalesce => $this->processCoalesce($node, $scope),
-@@ -444,6 +450,80 @@ final class NodeScopeResolver
+@@ -449,6 +455,80 @@ final class NodeScopeResolver
          return $scope;
      }
  
-+    // --- 呼び出し: 参照渡しの出力引数は変数を「定義」する ---
++    // --- calls: a by-ref output argument "defines" the variable ---
 +
 +    private function processFuncCall(Expr\FuncCall $node, Scope $scope): Scope
 +    {
 +        if (!$node->name instanceof Name) {
-+            $scope = $this->processNode($node->name, $scope); // 動的呼び出し $fn()
++            $scope = $this->processNode($node->name, $scope); // dynamic call $fn()
 +        }
 +
 +        return $this->processCallArgs($node->args, $this->byRefParamsOfFunction($node), $scope);
@@ -47,7 +47,7 @@ index 8915eeb..f8f2cf2 100644
 +
 +    private function processMethodCall(Expr\MethodCall $node, Scope $scope): Scope
 +    {
-+        $scope = $this->processNode($node->var, $scope); // レシーバは読み取り
++        $scope = $this->processNode($node->var, $scope); // the receiver is read
 +
 +        return $this->processCallArgs($node->args, $this->byRefParamsOfMethod($node, $scope), $scope);
 +    }
@@ -64,7 +64,7 @@ index 8915eeb..f8f2cf2 100644
 +            }
 +
 +            if (($byRef[$position] ?? false) && $arg->value instanceof Expr\Variable && is_string($arg->value->name)) {
-+                // 参照渡しの出力引数: preg_match(..., $m) の $m を「定義」する。
++                // By-ref output argument: this "defines" $m in preg_match(..., $m).
 +                $scope = $scope->assignVariable($arg->value->name, new MixedType());
 +            } else {
 +                $scope = $this->processNode($arg->value, $scope);
@@ -112,15 +112,15 @@ index 8915eeb..f8f2cf2 100644
      {
          $scope = $this->processSilently($node->left, $scope);
 diff --git a/dev/src/Reflection/FunctionReflection.php b/dev/src/Reflection/FunctionReflection.php
-index 115e39f..9824b2a 100644
+index c29f551..2610776 100644
 --- a/dev/src/Reflection/FunctionReflection.php
 +++ b/dev/src/Reflection/FunctionReflection.php
 @@ -16,12 +16,14 @@ final readonly class FunctionReflection
  {
      /**
       * @param list<Type>   $parameterTypes
-+     * @param list<bool>   $byRefParams   各パラメータが参照渡し（出力引数）か
-      * @param list<string> $templateNames この関数が宣言する型変数（@template）
++     * @param list<bool>   $byRefParams   whether each parameter is passed by reference (an output argument)
+      * @param list<string> $templateNames the type variables this function declares (@template)
       */
      public function __construct(
          public string $name,
@@ -163,14 +163,14 @@ index 115e39f..9824b2a 100644
      }
  }
 diff --git a/dev/src/Reflection/MethodReflection.php b/dev/src/Reflection/MethodReflection.php
-index 6dcc4c8..9404096 100644
+index 44697ee..38b3f91 100644
 --- a/dev/src/Reflection/MethodReflection.php
 +++ b/dev/src/Reflection/MethodReflection.php
-@@ -19,11 +19,13 @@ final readonly class MethodReflection
+@@ -20,11 +20,13 @@ final readonly class MethodReflection
  {
      /**
       * @param list<Type> $parameterTypes
-+     * @param list<bool> $byRefParams   各パラメータが参照渡し（出力引数）か
++     * @param list<bool> $byRefParams   whether each parameter is passed by reference (an output argument)
       */
      public function __construct(
          public string $name,
@@ -180,7 +180,7 @@ index 6dcc4c8..9404096 100644
      ) {
      }
  
-@@ -35,17 +37,20 @@ final readonly class MethodReflection
+@@ -36,17 +38,20 @@ final readonly class MethodReflection
          $doc = $phpDoc->parse($node->getDocComment()?->getText(), $classTemplateNames);
  
          $parameterTypes = [];
@@ -201,7 +201,7 @@ index 6dcc4c8..9404096 100644
          );
      }
  
-@@ -58,6 +63,10 @@ final readonly class MethodReflection
+@@ -59,6 +64,10 @@ final readonly class MethodReflection
                  static fn ($param): Type => $resolver->resolveNative($param->getType()),
                  $method->getParameters(),
              ),
@@ -213,7 +213,7 @@ index 6dcc4c8..9404096 100644
      }
  }
 diff --git a/dev/src/Reflection/ReflectionProvider.php b/dev/src/Reflection/ReflectionProvider.php
-index 1b9de61..1d7b22b 100644
+index 13c6db1..382c295 100644
 --- a/dev/src/Reflection/ReflectionProvider.php
 +++ b/dev/src/Reflection/ReflectionProvider.php
 @@ -4,11 +4,13 @@ declare(strict_types=1);
@@ -229,12 +229,12 @@ index 1b9de61..1d7b22b 100644
 +use Throwable;
  
  /**
-  * クラス・関数のシグネチャを引く窓口。PHPStan の {@see \PHPStan\Reflection\ReflectionProvider}。
+  * The entry point for looking up class and function signatures. PHPStan's {@see \PHPStan\Reflection\ReflectionProvider}.
 @@ -28,6 +30,9 @@ final class ReflectionProvider
      /** @var array<string, FunctionReflection> */
      private array $functions = [];
  
-+    /** @var array<string, FunctionReflection> スタブで補ったシグネチャ（ネイティブより優先） */
++    /** @var array<string, FunctionReflection> signatures supplemented by stubs (preferred over native) */
 +    private array $stubFunctions = [];
 +
      private TypeNodeResolver $typeNodeResolver;
@@ -297,7 +297,7 @@ index 1b9de61..1d7b22b 100644
 -            new ReflectionFunction($name),
 -            $this->typeNodeResolver,
 -        );
-+        // 優先順: 解析対象の宣言 > スタブ > ネイティブ。
++        // Priority order: target declarations > stubs > native.
 +        return $this->functions[$key]
 +            ?? $this->stubFunctions[$key]
 +            ?? ($this->functions[$key] = FunctionReflection::fromNative(new ReflectionFunction($name), $this->typeNodeResolver));
@@ -305,14 +305,14 @@ index 1b9de61..1d7b22b 100644
  }
 diff --git a/dev/stubs/core.php b/dev/stubs/core.php
 new file mode 100644
-index 0000000..9a33ade
+index 0000000..0af66f7
 --- /dev/null
 +++ b/dev/stubs/core.php
 @@ -0,0 +1,16 @@
 +<?php
 +
-+// ministan のスタブ。実行されず、シグネチャを読むためだけにパースされる。
-+// ネイティブのリフレクションでは表現できない精密な型を、PHPStan の functionMap のように補う。
++// ministan stub. Never executed; parsed only to read the signatures.
++// Supplies precise types that native reflection cannot express, like PHPStan's functionMap.
 +
 +declare(strict_types=1);
 +
@@ -326,7 +326,7 @@ index 0000000..9a33ade
 + */
 +function preg_match(string $pattern, string $subject, array &$matches = []): int {}
 diff --git a/dev/tests/AnalyserTest.php b/dev/tests/AnalyserTest.php
-index 19d060f..1562704 100644
+index 0a3882d..c9a061a 100644
 --- a/dev/tests/AnalyserTest.php
 +++ b/dev/tests/AnalyserTest.php
 @@ -107,4 +107,12 @@ final class AnalyserTest extends TestCase
@@ -336,14 +336,14 @@ index 19d060f..1562704 100644
 +
 +    public function testByRefOutputParameterDefinesVariable(): void
 +    {
-+        // preg_match(..., $matches) の $matches は参照渡しの出力引数なので未定義にならない。
++        // $matches in preg_match(..., $matches) is a by-ref output parameter, so it is not undefined.
 +        $errors = $this->analyser()->analyseFile(__DIR__ . '/fixtures/byref.php');
 +
 +        self::assertSame([], $errors);
 +    }
  }
 diff --git a/dev/tests/Reflection/ReflectionProviderTest.php b/dev/tests/Reflection/ReflectionProviderTest.php
-index bfb2a6e..87873f1 100644
+index 379cf42..a0dbb4a 100644
 --- a/dev/tests/Reflection/ReflectionProviderTest.php
 +++ b/dev/tests/Reflection/ReflectionProviderTest.php
 @@ -44,6 +44,16 @@ final class ReflectionProviderTest extends TestCase
@@ -354,9 +354,9 @@ index bfb2a6e..87873f1 100644
 +    {
 +        $provider = $this->providerFor('');
 +
-+        // スタブが explode に精密な戻り値型を与える（ネイティブは array=mixed）。
++        // The stub gives explode a precise return type (the native one is array=mixed).
 +        self::assertSame('array<int, string>', $provider->getFunction('explode')->returnType->describe());
-+        // preg_match の第 3 引数は参照渡し。
++        // The 3rd argument of preg_match is passed by reference.
 +        self::assertTrue($provider->getFunction('preg_match')->byRefParams[2] ?? false);
 +    }
 +
@@ -378,7 +378,7 @@ index 0000000..a1cc148
 +echo $matches[0];
 diff --git a/examples/looking-glass/byref-stubs.php b/examples/looking-glass/byref-stubs.php
 new file mode 100644
-index 0000000..218e9e1
+index 0000000..5add622
 --- /dev/null
 +++ b/examples/looking-glass/byref-stubs.php
 @@ -0,0 +1,15 @@
@@ -389,11 +389,11 @@ index 0000000..218e9e1
 +function first_number(string $input): string
 +{
 +    if (preg_match('/(\d+)/', $input, $matches)) {
-+        return $matches[0]; // $matches は参照渡しの出力引数 → 未定義にならない
++        return $matches[0]; // $matches is a by-ref output parameter → not undefined
 +    }
 +
 +    return '';
 +}
 +
-+$parts = explode(',', 'a,b,c'); // スタブにより list<string> → array<int, string>
++$parts = explode(',', 'a,b,c'); // list<string> from the stub → array<int, string>
 +$first = $parts[0];             // string

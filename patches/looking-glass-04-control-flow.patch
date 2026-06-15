@@ -1,5 +1,5 @@
 diff --git a/dev/src/Analyser/NodeScopeResolver.php b/dev/src/Analyser/NodeScopeResolver.php
-index 436b684..8915eeb 100644
+index 701a1f1..3b4599f 100644
 --- a/dev/src/Analyser/NodeScopeResolver.php
 +++ b/dev/src/Analyser/NodeScopeResolver.php
 @@ -12,7 +12,9 @@ use Ministan\Type\Constant\ConstantArrayType;
@@ -12,7 +12,7 @@ index 436b684..8915eeb 100644
  use PhpParser\Node\Stmt;
  
  /**
-@@ -85,6 +87,7 @@ final class NodeScopeResolver
+@@ -88,6 +90,7 @@ final class NodeScopeResolver
              $node instanceof Expr\BinaryOp\BooleanAnd,
              $node instanceof Expr\BinaryOp\BooleanOr => $this->processLogical($node, $scope),
              $node instanceof Stmt\If_            => $this->processIf($node, $scope),
@@ -20,12 +20,12 @@ index 436b684..8915eeb 100644
              $node instanceof Expr\Ternary        => $this->processTernary($node, $scope),
              $node instanceof Stmt\Foreach_       => $this->processForeach($node, $scope),
              $node instanceof Stmt\Catch_         => $this->processCatch($node, $scope),
-@@ -192,6 +195,18 @@ final class NodeScopeResolver
+@@ -195,6 +198,18 @@ final class NodeScopeResolver
      private function processExpressionStmt(Stmt\Expression $node, Scope $scope): Scope
      {
          $expr = $node->expr;
 +
-+        // assert($x instanceof Foo) は、以降のスコープで $x を絞り込む。
++        // assert($x instanceof Foo) narrows $x in the scope that follows.
 +        if ($expr instanceof Expr\FuncCall
 +            && $expr->name instanceof Name
 +            && $expr->name->toLowerString() === 'assert'
@@ -39,12 +39,12 @@ index 436b684..8915eeb 100644
          $doc = $node->getDocComment();
  
          if ($doc !== null
-@@ -236,24 +251,38 @@ final class NodeScopeResolver
+@@ -240,24 +255,38 @@ final class NodeScopeResolver
          $scope = $this->processNode($node->cond, $scope);
          $specified = $this->typeSpecifier->specify($node->cond, $scope);
  
-+        // return / throw で終わる枝は合流に寄与しない。これが早期 return の絞り込みを生む:
-+        // `if ($x === null) { return; }` を抜けた後、$x は非 null として続く。
++        // A branch that ends in return / throw does not contribute to the merge. This is what produces early-return narrowing:
++        // after passing `if ($x === null) { return; }`, $x continues as non-null.
          $endScopes = [];
 -        $endScopes[] = $this->processStmts($node->stmts, $specified->truthy);
 +        $thenScope = $this->processStmts($node->stmts, $specified->truthy);
@@ -52,7 +52,7 @@ index 436b684..8915eeb 100644
 +            $endScopes[] = $thenScope;
 +        }
  
--        // それまでの条件がすべて偽だった世界線を運びながら elseif を辿る。
+-        // Carry the world line where every preceding condition was false while walking the elseifs.
          $falsy = $specified->falsy;
          foreach ($node->elseifs as $elseif) {
              $falsy = $this->processNode($elseif->cond, $falsy);
@@ -72,22 +72,23 @@ index 436b684..8915eeb 100644
 +                $endScopes[] = $elseScope;
 +            }
          } else {
-             $endScopes[] = $falsy; // else が無ければ「全条件が偽」の経路がそのまま続く
+             $endScopes[] = $falsy; // with no else, the "all conditions false" path simply continues
          }
  
 +        if ($endScopes === []) {
-+            return $falsy; // 全経路が終了
++            return $falsy; // every path terminates
 +        }
 +
          $result = array_shift($endScopes);
          foreach ($endScopes as $branchScope) {
              $result = $result->mergeWith($branchScope);
-@@ -262,6 +291,67 @@ final class NodeScopeResolver
+@@ -266,6 +295,68 @@ final class NodeScopeResolver
          return $result;
      }
  
 +    /**
-+     * 文の並びが必ず return / throw / exit で終わるか（＝後続コードに到達しないか）。
++     * Whether a sequence of statements always ends in return / throw / exit (i.e.
++     * the following code is unreachable).
 +     *
 +     * @param Node[] $stmts
 +     */
@@ -113,14 +114,14 @@ index 436b684..8915eeb 100644
 +    }
 +
 +    /**
-+     * match の各腕を、絞り込まれたスコープで解析する。S2 で宿題にした
-+     * 「match の腕での narrowing」をここで回収する。
++     * Analyses each arm of a match in its narrowed scope. This is where we pay off
++     * the "narrowing in match arms" left as homework in S2.
 +     */
 +    private function processMatch(Expr\Match_ $node, Scope $scope): Scope
 +    {
 +        $scope = $this->processNode($node->cond, $scope);
 +
-+        // `match (true)` は腕の条件式そのものが真偽条件。`match ($x)` は $x === 腕の値。
++        // For `match (true)` the arm's condition expression is itself the truth condition. For `match ($x)` it is $x === the arm's value.
 +        $matchesTrue = $node->cond instanceof Expr\ConstFetch
 +            && $node->cond->name->toLowerString() === 'true';
 +
@@ -151,10 +152,10 @@ index 436b684..8915eeb 100644
      {
          $scope = $this->processNode($node->cond, $scope);
 diff --git a/dev/src/Analyser/TypeSpecifier.php b/dev/src/Analyser/TypeSpecifier.php
-index 581297a..7d833a6 100644
+index cc1b83c..749f97a 100644
 --- a/dev/src/Analyser/TypeSpecifier.php
 +++ b/dev/src/Analyser/TypeSpecifier.php
-@@ -146,7 +146,7 @@ final class TypeSpecifier
+@@ -148,7 +148,7 @@ final class TypeSpecifier
          return new SpecifiedTypes($truthy, $scope);
      }
  
@@ -165,7 +166,7 @@ index 581297a..7d833a6 100644
          if ($variable === null || $value === null) {
 diff --git a/dev/tests/Analyser/NarrowingTest.php b/dev/tests/Analyser/NarrowingTest.php
 new file mode 100644
-index 0000000..fcaadc4
+index 0000000..ad328f9
 --- /dev/null
 +++ b/dev/tests/Analyser/NarrowingTest.php
 @@ -0,0 +1,35 @@
@@ -188,16 +189,16 @@ index 0000000..fcaadc4
 +        (new AnnotateCommand())->run([__DIR__ . '/../fixtures/narrowing.php']);
 +        $output = ob_get_clean();
 +
-+        // 早期 return で $x: int → $y: int
++        // Early return makes $x: int → $y: int
 +        self::assertMatchesRegularExpression('/\$y\s+:\s+int$/m', $output);
-+        // assert(is_int($value)) で $value: int → $r: int
++        // assert(is_int($value)) makes $value: int → $r: int
 +        self::assertMatchesRegularExpression('/\$r\s+:\s+int$/m', $output);
 +    }
 +
 +    public function testMatchArmNarrowingAvoidsUndefinedMethodFalsePositive(): void
 +    {
-+        // level 0 でも未定義メソッド検出は有効。match の腕で Circle に絞り込めていれば
-+        // $shape->radius() は誤検出されない。
++        // Undefined method detection is active even at level 0. If the match arm narrows
++        // to Circle, $shape->radius() is not flagged as a false positive.
 +        $registry = (new RuleRegistryFactory())->createForLevel(0);
 +        $errors = (new Analyser($registry))->analyseFile(__DIR__ . '/../fixtures/narrowing.php');
 +
@@ -206,7 +207,7 @@ index 0000000..fcaadc4
 +}
 diff --git a/dev/tests/fixtures/narrowing.php b/dev/tests/fixtures/narrowing.php
 new file mode 100644
-index 0000000..bbf846b
+index 0000000..83eab50
 --- /dev/null
 +++ b/dev/tests/fixtures/narrowing.php
 @@ -0,0 +1,43 @@
@@ -220,7 +221,7 @@ index 0000000..bbf846b
 +        return 0;
 +    }
 +
-+    $y = $x + 1; // 早期 return により $x は int → $y : int
++    $y = $x + 1; // early return makes $x int → $y : int
 +
 +    return $y;
 +}
@@ -229,7 +230,7 @@ index 0000000..bbf846b
 +{
 +    assert(is_int($value));
 +
-+    $r = $value + 1; // assert により $value は int → $r : int
++    $r = $value + 1; // assert makes $value int → $r : int
 +
 +    return $r;
 +}
@@ -249,13 +250,13 @@ index 0000000..bbf846b
 +function area(Shape $shape): int
 +{
 +    return match (true) {
-+        $shape instanceof Circle => $shape->radius(), // match の腕で Circle に絞り込み
++        $shape instanceof Circle => $shape->radius(), // match arm narrows to Circle
 +        default => 0,
 +    };
 +}
 diff --git a/examples/looking-glass/narrowing.php b/examples/looking-glass/narrowing.php
 new file mode 100644
-index 0000000..bbf846b
+index 0000000..b937687
 --- /dev/null
 +++ b/examples/looking-glass/narrowing.php
 @@ -0,0 +1,43 @@
@@ -269,7 +270,7 @@ index 0000000..bbf846b
 +        return 0;
 +    }
 +
-+    $y = $x + 1; // 早期 return により $x は int → $y : int
++    $y = $x + 1; // early return makes $x an int → $y : int
 +
 +    return $y;
 +}
@@ -278,7 +279,7 @@ index 0000000..bbf846b
 +{
 +    assert(is_int($value));
 +
-+    $r = $value + 1; // assert により $value は int → $r : int
++    $r = $value + 1; // assert makes $value an int → $r : int
 +
 +    return $r;
 +}
@@ -298,7 +299,7 @@ index 0000000..bbf846b
 +function area(Shape $shape): int
 +{
 +    return match (true) {
-+        $shape instanceof Circle => $shape->radius(), // match の腕で Circle に絞り込み
++        $shape instanceof Circle => $shape->radius(), // narrowed to Circle in this match arm
 +        default => 0,
 +    };
 +}

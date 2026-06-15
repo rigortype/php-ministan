@@ -9,10 +9,10 @@ use Ministan\Output\ErrorFormatter;
 use Ministan\Rules\RuleRegistryFactory;
 
 /**
- * `ministan analyse [--level=N] <file>` の実装。
+ * Implementation of `ministan analyse [--level=N] <file>`.
  *
- * PHPStan の AnalyseCommand に対応する最小版。Part 9 で複数ファイル・複数フォーマットや
- * baseline へ拡張する。
+ * A minimal counterpart to PHPStan's AnalyseCommand. Part 9 extends it with
+ * support for multiple files and formats and the baseline.
  */
 final class AnalyseCommand
 {

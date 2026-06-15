@@ -5,12 +5,12 @@ declare(strict_types=1);
 namespace Ministan\Reflection;
 
 /**
- * 現在の {@see ReflectionProvider} への静的アクセス点。
+ * A static access point to the current {@see ReflectionProvider}.
  *
- * 型オブジェクト（{@see \Ministan\Type\ObjectType}）はスコープ推論のあちこちで生成され、
- * provider を引数で持ち回すのが難しい。PHPStan も同じ理由で静的アクセサという「継ぎ目」を
- * 置いている。解析の開始時に {@see set()} され、未設定なら null（= リフレクション無しで
- * 安全側に倒す）を返す。
+ * Type objects (e.g. {@see \Ministan\Type\ObjectType}) are created all over scope inference,
+ * which makes threading the provider through arguments awkward. For the same reason PHPStan
+ * places a static accessor as a "seam." It is populated via {@see set()} at the start of analysis,
+ * and returns null when unset (= falling back to the safe side, without reflection).
  */
 final class ReflectionProviderStaticAccessor
 {
