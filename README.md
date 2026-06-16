@@ -19,8 +19,8 @@ reported syntax error.
 The book comes in two editions, built from the same code:
 
 - 📖 **English — [`book/en/`](book/en/README.md)** — *ministan in PHP's Wonderland* (basics)
-  and *Through PHP's Looking-Glass* (advanced). *Part 0 is available; the remaining chapters
-  are in progress.*
+  and *Through PHP's Looking-Glass* (advanced). A transcreation, complete (Part 0–9 plus the
+  seven advanced chapters S1–S7).
 - 📖 **日本語 — [`book/ja/`](book/ja/README.md)** — the original edition, complete
   (Part 0–9 plus the seven advanced chapters S1–S7).
 
@@ -48,13 +48,15 @@ a false positive. This connects directly to PHPStan's rule levels and the semant
 ## Layout
 
 ```
-book/en/          Online book — English edition (transcreation; in progress)
+book/en/          Online book — English edition (transcreation; complete)
 book/ja/          Online book — Japanese edition (original; complete)
 dev/              Live implementation tree (grown chapter by chapter)
 examples/         Sample PHP to analyse
 impls/<vol>/NN    Per-chapter snapshots (self-contained Composer projects)
 patches/          Chapter-to-chapter diffs that build impls/
 tools/            Snapshot-generation scripts
+CLAUDE.md         Contributor guide — conventions, workflow, gotchas
+docs/             Contributor docs (e.g. the figures guide)
 ```
 
 Development happens in the single `dev/` tree; chapter boundaries are marked with git tags
